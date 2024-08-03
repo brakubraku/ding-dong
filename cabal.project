@@ -1,0 +1,14 @@
+packages:
+ .
+ ./entropy-0.4.1.10
+-- ./effectful-2.3.1.0
+ ./miso
+
+-- remove TemplateHaskell
+--source-repository-package
+--    type: git
+--    location: https://github.com/amesgen/miso
+--    tag: 27dd5fc80be9d0a3b80a9ecc81ee3401bc610e01
+
+
+allow-newer: all

@@ -1,0 +1,6 @@
+{
+    "haskell.serverExecutablePath": "/home/branko/Documents/haskell-language-server-2.9.0.0/dist-newstyle/build/x86_64-linux/ghc-9.10.1/haskell-language-server-2.9.0.0/x/haskell-language-server/build/haskell-language-server/haskell-language-server",
+    "haskell.serverEnvironment": {
+
+    }
+}
