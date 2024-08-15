@@ -62,12 +62,15 @@ library
                       -- Nostr.Relay
                       Nostr.Request
                       Nostr.Response
+                      Nostr.Relay
                       Nostr.Filter
                       Nostr.Kind
                       Nostr.Event
                       Nostr.Keys
                       Nostr.Profile
+                      Nostr.OtherUtils
                       MyCrypto
+                      MyMain
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -89,7 +92,6 @@ library
                       -- , base16-bytestring
                       ,base16
                     -- dependencies for the nostr part
-                      , lens
                       , data-default
                       , text
                       , modern-uri
@@ -97,6 +99,8 @@ library
                       , containers
                       , string-conversions
                       , datetime
+                      , lens
+                      , optics
     -- Directories containing source files.
     hs-source-dirs:   src
 
@@ -105,10 +109,15 @@ library
 
 executable nostr-wasm
   hs-source-dirs: app 
+  -- default-language: GHC2021
   main-is:
-    Main.hs
-  default-language: GHC2021
-  ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
+     App.hs
+  -- other-modules:
+  --    MyMain
+  if arch(wasm32)
+    ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
+  else 
+    ghc-options: -main-is App.main 
   build-depends: 
     wasm-test-project
     , aeson
@@ -120,5 +129,6 @@ executable nostr-wasm
     , ghc-experimental
     , base
     , mtl
-
+    , lens
+    , optics
     -- , jsaddle-warp
