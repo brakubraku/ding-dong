@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE OverloadedStrings          #-}
+-- {-# LANGUAGE QuasiQuotes       #-}
 
 module Nostr.JSM where 
 
@@ -11,10 +12,11 @@ import Data.Aeson
 import           GHCJS.Marshal
 import           GHCJS.Foreign
 import           GHCJS.Types ()
-import Control.Monad
 import Control.Monad.IO.Class
 import Miso.String
-import Control.Concurrent
+import Nostr.Relay 
+import qualified Text.URI.QQ as QQ
+import Text.URI (mkURI, emptyURI)
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
 {-# INLINE createWebSocket #-}
@@ -51,20 +53,16 @@ send :: ToJSON a => Socket -> a -> JSM ()
 send s x = do
   sendJson' s x
 
-
 startWebSocketSubscriptions
   :: FromJSON m
-  => URL
-  -> Protocols
-  -> (WebSocket m -> action)
+  => (WebSocket m -> action)
   -> Sub action
-startWebSocketSubscriptions (URL u) (Protocols ps) f sink = do
+startWebSocketSubscriptions f sink = do
 --   void . forkJSM $ handleReconnect
-  pure ()
-
+  initRelay . Prelude.head $ defaultRelays
   where
     initRelay relay = do
-      socket <- createWebSocket u ps
+      socket <- createWebSocket ("wss://sg.qemura.xyz") []
       WS.addEventListener socket "open" $ \_ -> liftIO $ do
         sink (f WebSocketOpen)
       WS.addEventListener socket "message" $ \v -> do
@@ -101,3 +99,29 @@ startWebSocketSubscriptions (URL u) (Protocols ps) f sink = do
     --       unless (code == Just CLOSE_NORMAL) $
     --         websocketSub (URL u) (Protocols ps) f sink
     --     else handleReconnect
+
+
+defaultRelays :: [Relay]
+defaultRelays =
+  [
+    Relay
+      { uri = emptyURI,
+        info = RelayInfo True True,
+        connected = False
+      }
+    -- Relay
+    --   { uri = "wss://sg.qemura.xyz",
+    --     info = RelayInfo True True,
+    --     connected = False
+    --   }
+    -- Relay
+    --   { uri = [QQ.uri|wss://nostr-02.dorafactory.org|],
+    --     info = RelayInfo True True,
+    --     connected = False
+    --   }  ,
+    -- Relay
+    --   { uri = [QQ.uri|wss://nostr.wine|],
+    --     info = RelayInfo True True,
+    --     connected = False
+    --   }
+  ]

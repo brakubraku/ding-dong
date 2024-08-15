@@ -7,10 +7,8 @@
 
 module Nostr.Relay where
 
-import Basement.IntegralConv
 import Control.Lens
 import Data.Aeson
-import Data.Default
 import Data.Maybe (fromJust)
 import Data.Text (Text, append, pack)
 import GHC.Exts (fromList)
@@ -19,7 +17,6 @@ import Text.URI (URI, mkURI, render)
 import Text.URI.Lens
 
 import qualified Text.URI as URI
-import qualified Text.URI.QQ as QQ
 
 data RelayInfo = RelayInfo
   { readable  :: Bool
@@ -76,13 +73,13 @@ extractHostname r =
   where
     uri' = uri r
 
-extractPort :: Relay -> Int
-extractPort r =
-  case uri' ^? uriAuthority . _Right . authPort of
-    Just (Just p) -> wordToInt p
-    _ -> if extractScheme r == "wss" then 443 else 80
-  where
-    uri' = uri r
+-- extractPort :: Relay -> Int
+-- extractPort r =
+--   case uri' ^? uriAuthority . _Right . authPort of
+--     Just (Just p) -> wordToInt p
+--     _ -> if extractScheme r == "wss" then 443 else 80
+--   where
+--     uri' = uri r
 
 extractPath :: Relay -> Text
 extractPath r =

@@ -59,6 +59,15 @@ library
 
     -- Modules exported by the library.
     exposed-modules:  Nostr.JSM
+                      -- Nostr.Relay
+                      Nostr.Request
+                      Nostr.Response
+                      Nostr.Filter
+                      Nostr.Kind
+                      Nostr.Event
+                      Nostr.Keys
+                      Nostr.Profile
+                      MyCrypto
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -68,14 +77,48 @@ library
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.20.0.0
-                    --   , websockets
                       , secp256k1-haskell
                       , effectful
                       , miso
                       , aeson
                       , jsaddle
+                      , jsaddle-dom
+                      , bytestring
+                      , vector
+                      , cryptohash-sha256
+                      -- , base16-bytestring
+                      ,base16
+                    -- dependencies for the nostr part
+                      , lens
+                      , data-default
+                      , text
+                      , modern-uri
+                      , time
+                      , containers
+                      , string-conversions
+                      , datetime
     -- Directories containing source files.
     hs-source-dirs:   src
 
     -- Base language which the package is written in.
     default-language: Haskell2010
+
+executable nostr-wasm
+  hs-source-dirs: app 
+  main-is:
+    Main.hs
+  default-language: GHC2021
+  ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
+  build-depends: 
+    wasm-test-project
+    , aeson
+    , miso
+    , containers
+    , transformers
+    , jsaddle
+    , jsaddle-wasm
+    , ghc-experimental
+    , base
+    , mtl
+
+    -- , jsaddle-warp

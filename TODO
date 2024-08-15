@@ -1,0 +1,2 @@
+* port nostr-client to secp256k1-haskell
+* port nostr-client to websocket functionality from Miso JSM websocket
