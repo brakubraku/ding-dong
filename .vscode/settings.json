@@ -6,6 +6,6 @@
     "haskell.serverExtraArgs": "-d",
     "haskell.trace.client": "debug",
     "haskell.trace.server": "verbose",
-    "haskell.plugin.semanticTokens.globalOn": true,
+    "haskell.plugin.semanticTokens.globalOn": false,
     "haskell.logFile": "/tmp/logfile"
 }

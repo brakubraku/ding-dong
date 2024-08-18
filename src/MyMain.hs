@@ -18,7 +18,7 @@ import           GHC.Generics
 import           Data.Bool
 import qualified Data.Map as M
 
-import           Miso
+import           Miso hiding (send)
 import           Miso.String  (MisoString)
 import qualified Miso.String  as S
 import Optics
@@ -27,14 +27,25 @@ import Nostr.Filter
 import Nostr.Response
 import Nostr.Event
 
+import Nostr.WebSocket
+import Control.Concurrent
+import Control.Monad.IO.Class
+import Miso.FFI.WebSocket
+
+import Nostr.Network
+import Data.Map as Map
+import Control.Monad
+
 start :: JSM ()
-start = startApp App { initialAction = Id, ..}
+start = do 
+  nn <- NostrNet <$> (liftIO . newMVar) Map.empty
+  let subs = [ websocketConnect nn ["wss://relay.nostrdice.com", "wss://lunchbox.sandwich.farm"] HandleWebSocket ] 
+      update = updateModel nn
+  startApp App { initialAction = Id, ..}
   where
     model = Model (Message "") mempty "No error yet bitch!"
     events = defaultEvents
-    subs = [ websocketSub uri protocols HandleWebSocket ]
     -- subs = [ ]
-    update = updateModel
     view = appView
     -- uri = URL "wss://echo.websocket.org"
     uri = URL "wss://relay.nostrdice.com"
@@ -42,16 +53,20 @@ start = startApp App { initialAction = Id, ..}
     mountPoint = Nothing
     logLevel = Off
 
-updateModel :: Action -> Model -> Effect Action Model
-updateModel (HandleWebSocket (WebSocketMessage evt)) model
+updateModel :: NostrNet -> Action -> Model -> Effect Action Model
+updateModel nn (HandleWebSocket (WebSocketMessage (resp,rel))) model
   -- = noEff (model & #received .~ S.ms (show evt))
-  = noEff $ model & #received %~ (S.ms (displayResp evt) :)
-updateModel (HandleWebSocket (WebSocketClose _ _ _)) model = noEff $ model & #err .~ "Connection closed"
-updateModel (HandleWebSocket (WebSocketError er)) model = noEff $ model & #err .~ er
-updateModel (HandleWebSocket (WebSocketOpen)) model = model <# do send nostrRequest >> pure Id
-updateModel (SendMessage msg) model = model <# do send msg >> pure Id
+  = noEff $ model & #received %~ (S.ms (show rel <> ": " <> displayResp resp) :)
+updateModel _ (HandleWebSocket (WebSocketClose _ _ _)) model = noEff $ model & #err .~ "Connection closed"
+updateModel _ (HandleWebSocket (WebSocketError er)) model = noEff $ model & #err .~ er
+updateModel nn (HandleWebSocket (WebSocketOpen)) model = 
+  let checkAndSend = do 
+        ac <- liftIO . allConnected $ nn 
+        when ac $ sendAll nn nostrRequest
+  in model <# (checkAndSend >> pure Id)
+updateModel ms (SendMessage msg) model = model <# do sendAll ms msg >> pure Id
 -- updateModel (UpdateMessage m) model = noEff model { msg = Message m }
-updateModel _ model = noEff model
+updateModel _ _ model = noEff model
 
 nostrRequest :: Request
 nostrRequest = Subscribe (Subscription [AllNotes] "123")
@@ -70,7 +85,7 @@ newtype Message = Message MisoString
   deriving (Eq, Show, Generic)
 
 data Action
-  = HandleWebSocket (WebSocket Response)
+  = HandleWebSocket (WebSocket (Response, MisoString))
   | SendMessage Message
   -- | UpdateMessage MisoString
   | Id
@@ -98,5 +113,6 @@ onEnter action = onKeyDown $ bool Id action . (== KeyCode 13)
 displayResp :: Response -> String
 displayResp r = 
   case r of 
-    EventReceived _ evt -> show $ evt ^. #content
+    EventReceived _ evt -> (show $ verifySignature evt) <> ": " <> show (evt ^. #content) <> " :: " <> (show $ evt ^. #eventId)<> " :pubkey: " <> (show $ evt ^. #pubKey)
+    -- EventReceived _ evt -> (show $ evt ^. #sig) <> " :: " <> (show $ evt ^. #pubKey)
     _ -> show r

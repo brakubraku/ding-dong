@@ -68,9 +68,11 @@ library
                       Nostr.Event
                       Nostr.Keys
                       Nostr.Profile
-                      Nostr.OtherUtils
+                      Nostr.WebSocket
+                      Nostr.Network
                       MyCrypto
                       MyMain
+                      ProfileLoader
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -101,6 +103,7 @@ library
                       , datetime
                       , lens
                       , optics
+                      , stm
     -- Directories containing source files.
     hs-source-dirs:   src
 

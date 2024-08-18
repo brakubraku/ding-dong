@@ -51,8 +51,11 @@ import Data.String.Conversions
 ctx :: Secp.Ctx
 ctx = unsafePerformIO Secp.createContext
 
+exportXOnlyPubKey :: Secp.XOnlyPubKey -> String
 exportXOnlyPubKey = exportText . Internal.exportXOnlyPubKey ctx
+parseXOnlyPubKey :: ByteString -> Maybe Secp.XOnlyPubKey
 parseXOnlyPubKey = Secp.importXOnlyPubKey ctx
+deriveSecKey :: Secp.KeyPair -> Secp.SecKey
 deriveSecKey = Secp.deriveSecKey ctx
 -- newtype KeyPair
 --   = KeyPair
@@ -87,7 +90,6 @@ signBip340 kp msg = Secp.signBip340 ctx (deriveSecKey kp) msg Nothing
 verifyBip340 :: Secp.XOnlyPubKey -> Secp.Msg -> Secp.Bip340Sig -> Bool
 verifyBip340 = Secp.verifyBip340 ctx
 
-
 -- TODO: check if this works with new version of B16
 decodeHex :: (ConvertibleStrings a ByteString) => a -> Maybe ByteString
 decodeHex str =
@@ -96,6 +98,4 @@ decodeHex str =
     Left _   -> Nothing
 
   
-
-
 

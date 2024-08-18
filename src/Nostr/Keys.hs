@@ -14,7 +14,6 @@ import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
-import Nostr.OtherUtils (decodeHex)
 
 type ProfileName = Text
 
@@ -103,7 +102,7 @@ initialKeys = Keys kp xo True Nothing where
   xo = load "134bdeaf23fe7078d94b2836dcb748e762073d4bc274a2c188a44a3fc29df31c" parseXOnlyPubKey
   load :: String -> (ByteString -> Maybe a) -> a
   load s f =
-    case decodeHex s of
+    case Schnorr.decodeHex s of
       Just bs ->
         case f bs of
           Just b -> b

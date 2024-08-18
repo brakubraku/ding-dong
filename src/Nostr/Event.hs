@@ -11,7 +11,7 @@ module Nostr.Event where
 
 import           Control.Monad          (mzero)
 import qualified Crypto.Hash.SHA256     as SHA256
-import           MyCrypto hiding (decodeHex)
+import           MyCrypto 
 import           Data.Aeson
 import           Data.Aeson.Text        (encodeToTextBuilder)
 import           Data.ByteString        (ByteString)
@@ -35,7 +35,6 @@ import Nostr.Kind
 import Nostr.Profile (Profile(..), RelayURL, Username)
 import Nostr.Relay
 import Debug.Trace
-import Nostr.OtherUtils (decodeHex)
 import Data.DateTime 
 import GHC.Generics
 
@@ -216,14 +215,31 @@ signEvent u kp xo = flip (maybe (Left "signing failed")) msig $
 validateEventId :: Event -> Bool
 validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
 
+-- TODO: use this to debug the problems with verifying signatures
+-- checking below event (taken from nostr) works with verifyThis function
+-- {
+--   "id": "a3c9b0bc3c13cb12343917bb4b02b869469f0a8fe3e2e67bd5759373dafa3265",
+--   "pubkey": "180a6d42c7d64f8c3958d9d10dd5a4117eaaacea8e7f980781e9a53136cf5693",
+--   "created_at": 1723898165,
+--   "kind": 1,
+--   "tags": [],
+--   "content": "nostr pillowtalk, literally ",
+--   "sig": "256d4749f68313f902cea8e766f981feac9403b8dffe9b1d04866371a13701b5385a1025e9427b04689a0976075862e7d6b74f0b15ecd48bbbc8733e3908be55"
+-- }
+
+verifyThis :: Text -> Text -> Text -> Maybe Bool
+verifyThis eid pubKey signature = do
+  id <- decodeHex eid
+  pk <- decodeHex pubKey >>= parseXOnlyPubKey
+  si <- decodeHex signature >>= bip340sig
+  mm <- msg id
+  pure $ verifyBip340 pk mm si
+
 verifySignature :: Event -> Bool
 verifySignature e =
-  case msg $ toStrict $ encode e of
-    Just m  -> verifyBip340 p m s
+  case msg $ getEventId $ eventId e of
+    Just m  -> verifyBip340 (pubKey e) m (sig e)
     Nothing -> False
-  where
-    p = pubKey e
-    s = sig e
 
 textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 textNote note xo t =

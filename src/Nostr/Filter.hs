@@ -42,7 +42,7 @@ data Filter
 instance ToJSON Filter where
   toJSON :: Filter -> Value
   toJSON (AllNotes) =
-    object . fromList $  [ ("kinds", toJSON [TextNote]), ("limit", Number 500) ]
+    object . fromList $  [ ("kinds", toJSON [TextNote]), ("limit", Number 20) ]
 
 -- toPairs :: Filter -> [Item [Pair]]
 -- toPairs AllNotes =
