@@ -6,6 +6,7 @@
 {-# LANGUAGE DuplicateRecordFields     #-}
 {-# LANGUAGE DeriveAnyClass     #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE TupleSections #-}
 
 module Nostr.Event where
 
@@ -37,6 +38,7 @@ import Nostr.Relay
 import Debug.Trace
 import Data.DateTime 
 import GHC.Generics
+import Optics
 
 newtype EventId = EventId
   { getEventId :: ByteString
@@ -44,14 +46,14 @@ newtype EventId = EventId
   deriving (Eq, Ord)
 
 data Marker = Reply | Root | Mention
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data Tag
   = ETag EventId (Maybe RelayURL) (Maybe Marker)
   | PTag UnknownXOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
   | NonceTag
   | UnknownTag String
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data Event = Event
   { eventId    :: EventId
@@ -63,6 +65,9 @@ data Event = Event
   , sig        :: Bip340Sig
   }
   deriving (Eq, Show, Generic)
+
+instance Ord Event where
+  e1 `compare` e2 = eventId e1 `compare` eventId e2
 
 data UnsignedEvent = UnsignedEvent
   { pubKey'     :: XOnlyPubKey

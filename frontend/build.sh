@@ -10,6 +10,7 @@ fi
 rm -rf dist
 mkdir dist
 cp ./*.html dist/
+cp ./*.css dist/
 
 pushd ../
 cabal --with-compiler=wasm32-wasi-ghc  \

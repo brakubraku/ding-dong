@@ -6,10 +6,6 @@ import           MyCrypto       (KeyPair, Bip340Sig, XOnlyPubKey, keyPairFromSec
 import qualified MyCrypto         as Schnorr
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as B16
-import           Data.ByteString.Lazy   (toStrict)
-import           Data.List              (length)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Vector            as V
@@ -25,7 +21,7 @@ data Keys = Keys KeyPair XOnlyPubKey CurrentlyActive (Maybe ProfileName)
 data UnknownXOnlyPubKey
   = ValidXOnlyPubKey XOnlyPubKey
   | InvalidXOnlyPubKey
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 instance Ord Keys where
   compare (Keys (Schnorr.KeyPair a) _ _ _) (Keys (Schnorr.KeyPair b) _ _ _) =

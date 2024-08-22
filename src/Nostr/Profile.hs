@@ -1,13 +1,13 @@
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE OverloadedLabels   #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Nostr.Profile where
 
 import           Data.Aeson
 import           Data.Default
 import           Data.Text              (Text)
-import Control.Concurrent
-import MyCrypto
-import Data.Map
+import GHC.Generics
 
 type RelayURL = Text
 
@@ -19,17 +19,23 @@ type About = Text
 
 type Picture = Text
 
-data Profile = Profile Username (Maybe DisplayName) (Maybe About) (Maybe Picture)
-  deriving (Eq, Ord, Show)
+data Profile = Profile {
+  username :: Text ,
+  displayName :: Maybe DisplayName,
+  about :: Maybe About,
+  picture :: Maybe Picture,
+  banner :: Maybe Picture
+}
+  deriving (Eq, Ord, Show, Generic)
 
 instance Default Profile where
-  def = Profile "" Nothing Nothing Nothing
+  def = Profile "" Nothing Nothing Nothing Nothing
 
-getPicUrl :: Profile -> Maybe Picture
-getPicUrl (Profile _ _ _ pic) = pic
+-- getPicUrl :: Profile -> Maybe Picture
+-- getPicUrl (Profile _ _ _ pic) = pic
 
 instance ToJSON Profile where
-  toJSON (Profile username displayName about picture) = object
+  toJSON (Profile username displayName about picture banner) = object
     [ "name" .= toJSON username
     , "display_name" .= toJSON displayName
     , "about" .= toJSON about
@@ -42,3 +48,4 @@ instance FromJSON Profile where
     <*> e .:? "display_name"
     <*> e .:? "about"
     <*> e .:? "picture"
+    <*> e .:? "banner"

@@ -58,7 +58,8 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  Nostr.JSM
+    exposed-modules: 
+                      -- Nostr.JSM
                       -- Nostr.Relay
                       Nostr.Request
                       Nostr.Response
@@ -70,9 +71,12 @@ library
                       Nostr.Profile
                       Nostr.WebSocket
                       Nostr.Network
+                      Nostr.RelayPool
+                      Nostr.API
+                      Nostr.Log
                       MyCrypto
                       MyMain
-                      ProfileLoader
+                      -- ProfileLoader
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -104,6 +108,10 @@ library
                       , lens
                       , optics
                       , stm
+                      , mtl
+                      , intervals
+                      , entropy
+                      -- , hslogger
     -- Directories containing source files.
     hs-source-dirs:   src
 

@@ -14,7 +14,8 @@ data Kind
   | CalendarTime
   | CalendarDay
   | CalendarRSVP
-  deriving (Eq, Show, Enum, Bounded)
+  | RelayList
+  deriving (Eq, Show, Enum, Bounded, Ord)
 
 instance FromJSON Kind where
   parseJSON = withScientific "kind" $ \k -> do
@@ -29,6 +30,7 @@ instance FromJSON Kind where
       31923 -> return CalendarDay
       31924 -> return Calendar
       31925 -> return CalendarRSVP
+      10002 -> return RelayList
       _ -> mzero
 
 instance ToJSON Kind where
@@ -42,3 +44,4 @@ instance ToJSON Kind where
   toJSON CalendarDay = Number 31923
   toJSON Calendar = Number 31924
   toJSON CalendarRSVP = Number 31925
+  toJSON RelayList = Number 10002

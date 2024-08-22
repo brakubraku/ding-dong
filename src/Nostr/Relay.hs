@@ -1,22 +1,18 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE InstanceSigs #-}
 
 module Nostr.Relay where
 
-import Control.Lens
 import Data.Aeson
-import Data.Maybe (fromJust)
-import Data.Text (Text, append, pack)
+import Data.Text (Text)
 import GHC.Exts (fromList)
 import GHC.Generics
-import Text.URI (URI, mkURI, render)
-import Text.URI.Lens
 
-import qualified Text.URI as URI
 
 data RelayInfo = RelayInfo
   { readable  :: Bool
@@ -24,24 +20,27 @@ data RelayInfo = RelayInfo
   }
   deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
+type RelayURI = Text
 data Relay = Relay
-  { uri       :: URI
+  { 
+    -- uri       :: URI
+    uri :: RelayURI
   , info      :: RelayInfo
   , connected :: Bool
   }
-  deriving (Show)
+  deriving (Show, Generic)
 
 instance Eq Relay where 
   (==) = \r1 r2 -> uri r1 == uri r2
 
-instance FromJSON URI where
-  parseJSON = withText "RelayURI" $ \u -> do
-    case mkURI u of
-      Just u' -> return u'
-      Nothing -> fail "invalid relay URI"
+-- instance FromJSON URI where
+--   parseJSON = withText "RelayURI" $ \u -> do
+--     case mkURI u of
+--       Just u' -> return u'
+--       Nothing -> fail "invalid relay URI"
 
-instance ToJSON URI where
-  toJSON u = String $ render u
+-- instance ToJSON URI where
+--   toJSON u = String $ render u
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
@@ -54,24 +53,24 @@ instance FromJSON Relay where
 
 instance ToJSON Relay where
   toJSON r = object $ fromList
-    [ ( "uri", String $ render $ uri r)
+    [ ( "uri", String $ uri r)
     , ( "info", toJSON $ info r)
     ]
     
 relayName :: Relay -> Text
-relayName r = render $ uri r
+relayName = uri 
 
-extractScheme :: Relay -> Text
-extractScheme r = URI.unRText scheme
-  where
-    scheme = fromJust $ uri' ^. uriScheme
-    uri' = uri r
+-- extractScheme :: Relay -> Text
+-- extractScheme r = URI.unRText scheme
+--   where
+--     scheme = fromJust $ uri' ^. uriScheme
+--     uri' = uri r
 
-extractHostname :: Relay -> Text
-extractHostname r =
-  URI.unRText $ fromJust $ uri' ^? uriAuthority . _Right . authHost
-  where
-    uri' = uri r
+-- extractHostname :: Relay -> Text
+-- extractHostname r =
+--   URI.unRText $ fromJust $ uri' ^? uriAuthority . _Right . authHost
+--   where
+--     uri' = uri r
 
 -- extractPort :: Relay -> Int
 -- extractPort r =
@@ -81,14 +80,14 @@ extractHostname r =
 --   where
 --     uri' = uri r
 
-extractPath :: Relay -> Text
-extractPath r =
-  case uri' ^? uriPath of
-    Just [] -> "/"
-    Just p  -> foldl (\x y -> x `append` "/" `append` y ) "" (map URI.unRText p)
-    _       -> "/"
-  where
-    uri' = uri r
+-- extractPath :: Relay -> Text
+-- extractPath r =
+--   case uri' ^? uriPath of
+--     Just [] -> "/"
+--     Just p  -> foldl (\x y -> x `append` "/" `append` y ) "" (map URI.unRText p)
+--     _       -> "/"
+--   where
+--     uri' = uri r
 
 sameRelay :: Relay -> Relay -> Bool
 sameRelay r r' = uri r == uri r'

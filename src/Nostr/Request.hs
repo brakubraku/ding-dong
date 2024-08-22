@@ -2,33 +2,42 @@
 
 module Nostr.Request where
 
--- import Control.Concurrent.STM.TChan
--- import Control.Monad.STM            (atomically)
--- import Crypto.Random.DRBG           (CtrDRBG, genBytes, newGen, newGenIO)
 import Data.Aeson
--- import Data.DateTime
+import Data.DateTime
 import Data.Text                    (Text, pack)
 import GHC.Exts                     (fromList)
 
--- import qualified Data.ByteString.Base16 as B16
-
--- import Nostr.Event
+import Nostr.Event
 import Nostr.Filter
--- import Nostr.Relay
+import Nostr.Relay
 
 type SubscriptionId = Text
 
 data Subscription = Subscription
-  { filters :: [Filter]
+  { filters :: [DatedFilter]
   , subId   :: SubscriptionId
   }
   deriving (Eq, Show)
 
 data Request
-  = Subscribe Subscription
+  = SendEvent Event
+  | Subscribe Subscription
+  | Close SubscriptionId
+  | Disconnect Relay
   deriving (Eq, Show)
 
 instance ToJSON Request where
-  toJSON (Subscribe (Subscription efs s)) = 
-    Array $ fromList ([ String "REQ", String s] ++ map toJSON efs)
-    
+  toJSON sr = case sr of
+    SendEvent e -> Array $ fromList
+       [ String "EVENT"
+       , toJSON e
+       ]
+    Subscribe (Subscription efs s) -> Array $ fromList
+      ([ String "REQ"
+      , String s
+       ] ++ map toJSON efs)
+    Close subId -> Array $ fromList
+       [ String "CLOSE"
+       , String subId
+       ]
+    Disconnect r -> String "Bye!"
