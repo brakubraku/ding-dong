@@ -12,4 +12,9 @@ generate sec key (32 bytes of randomness)
 -> (from sec key) generate keypair 
 -> (from keypair) generate xonlypubkey
 
-save keypair (to sign) and xonlypubkey (to identify yourself and for others to verify your signatures)
+save sec key (to sign) and xonlypubkey (to identify yourself and for others to verify your signatures)
+
+You can probably simplify further and only store sec key (you can derive xonlypub key from it)
+
+
+
