@@ -209,9 +209,9 @@ eventId' t = do
 exportEventId :: EventId -> String
 exportEventId i = unpack . B16.extractBase16 . B16.encodeBase16 $ getEventId i
 
-signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Maybe Event
-signEvent u kp xo = do
-  signature <- signBip340 kp $ fromJust $ msg $ getEventId eid
+signEvent :: UnsignedEvent -> SecKey -> XOnlyPubKey -> Maybe Event
+signEvent u sk xo = do
+  signature <- signBip340 sk . fromJust . msg . getEventId $ eid
   pure
     Event
       { eventId = eid,

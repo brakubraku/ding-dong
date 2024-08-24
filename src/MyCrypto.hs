@@ -19,7 +19,8 @@ module MyCrypto
     keyPairFromSecKey,
     bip340sig,
     decodeHex,
-    generateKeyPair
+    generateKeyPair,
+    Secp.SecKey(..)
   )
 where
 
@@ -86,8 +87,8 @@ bip340sig bs
 
 -- TODO: passing Nothing for randomness seems common. Make sure this does not affect 
 -- the signature negatively
-signBip340 :: Secp.KeyPair -> Secp.Msg -> Maybe Secp.Bip340Sig
-signBip340 kp msg = Secp.signBip340 ctx (deriveSecKey kp) msg Nothing 
+signBip340 :: Secp.SecKey -> Secp.Msg -> Maybe Secp.Bip340Sig
+signBip340 sk msg = Secp.signBip340 ctx sk msg Nothing 
 
 verifyBip340 :: Secp.XOnlyPubKey -> Secp.Msg -> Secp.Bip340Sig -> Bool
 verifyBip340 = Secp.verifyBip340 ctx
