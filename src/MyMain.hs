@@ -47,7 +47,8 @@ import Data.Aeson (encode)
 start :: JSM ()
 start = do
   -- liftIO $ writeFile "wild" $ "smash and dash"
-  -- liftIO . putStrLn =<< (liftIO $ readFile "wild")
+  keys <- loadKeys 
+  liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
     liftIO $
       initNetwork
@@ -88,7 +89,7 @@ updateModel ::
   Action ->
   Model ->
   Effect Action Model
-updateModel nn action model =
+updateModel nn action model  =
   case action of
     HandleWebSocket (WebSocketClose _ _ _) ->
       noEff $ model & #err .~ "Connection closed"
@@ -109,6 +110,7 @@ updateModel nn action model =
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ subscribe nn [textNotes] InitialSubs sink
                 subscribe nn [getProfiles] ReceivedProfiles sink
+                -- saveContacts 
           )
     InitialSubs responses ->
       noEff $
@@ -243,17 +245,16 @@ displayResp r =
 --     decode @[(XOnlyPubKey, (ProfileLoader.Types.Profile, DateTime))]
 --       <$> LazyBytes.readF  let contacts  Map.keys <$> liftIO . fromJust . loadContactsFromDisk $ "contacts.json"
 
--- loadKeys :: JSM (Maybe Keys)
--- loadKeys = do 
---   let identifier = "my-keys"
---   keys <- getLocalStorage identifier
---   case keys of 
---     Right k -> pure . Just $ k 
---     Left _ -> do
---       newKeys <- liftIO $ generateKeyPair
---       setLocalStorage identifier $ encode newKeys
-      
-      
+loadKeys :: JSM Keys
+loadKeys = do 
+  let identifier = "my-keys"
+  keys <- getLocalStorage identifier
+  case keys of 
+    Right k -> pure k 
+    Left _ -> do
+      newKeys <- liftIO $ generateKeys
+      setLocalStorage identifier newKeys
+      pure newKeys
       -- xo <- deriveXon
       -- pure $ Keys kp 
       --  >>= \case

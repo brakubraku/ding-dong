@@ -11,6 +11,7 @@ import Control.Concurrent.STM
 import Control.Monad.Reader
 import Data.Map
 import Nostr.Relay
+import Nostr.Keys
 import Nostr.Request
 import Nostr.Response
 import Data.Text hiding (zip)
@@ -28,7 +29,8 @@ data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
     requestCh :: TChan Request,
-    connEventCh :: TChan ConnectionEvent
+    connEventCh :: TChan ConnectionEvent,
+    keys :: Keys
   } deriving (Generic, Eq)
   
 runNostr :: NostrNetwork -> NostrNetworkT a -> IO a

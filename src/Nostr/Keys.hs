@@ -1,13 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Nostr.Keys where
 
+import Crypto.Secp256k1 (derivePubKey, deriveXOnlyPubKey, createContext)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import GHC.Exts (fromList)
+import JSDOM.Generated.SVGMatrix (skewX)
 import MyCrypto
   ( Bip340Sig,
     SecKey (SecKey),
@@ -19,6 +22,7 @@ import MyCrypto
     exportXOnlyPubKey,
     parseXOnlyPubKey,
   )
+import System.Entropy 
 
 type ProfileName = Text
 
@@ -39,10 +43,9 @@ data UnknownXOnlyPubKey
 
 instance Ord Keys where
   compare k1 k2 =
-    let (SecKey s1) = secKey k1 
+    let (SecKey s1) = secKey k1
         (SecKey s2) = secKey k2
-    in 
-    compare s1 s2
+     in compare s1 s2
 
 instance FromJSON Keys where
   parseJSON = withArray "Keys" $ \arr -> do
@@ -148,3 +151,11 @@ sameKeys k1 k2 = secKey k1 == secKey k2
 
 -- disableKeys :: [Keys] -> [Keys]
 -- disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
+
+generateKeys :: IO Keys
+generateKeys = do
+  ctx <- createContext
+  secKey <- SecKey <$> getEntropy 32
+  let xo = deriveXOnlyPubKey ctx . derivePubKey ctx $ secKey
+      current = True
+  pure Keys {..}
