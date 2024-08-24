@@ -76,6 +76,7 @@ library
                       Nostr.Log
                       MyCrypto
                       MyMain
+                      Contacts
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.

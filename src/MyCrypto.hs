@@ -18,7 +18,8 @@ module MyCrypto
     exportBip340Sig,
     keyPairFromSecKey,
     bip340sig,
-    decodeHex
+    decodeHex,
+    generateKeyPair
   )
 where
 
@@ -40,7 +41,8 @@ import qualified Crypto.Secp256k1 as Secp
     SecKey(..),
     PubKey(..),
     KeyPair(..),
-    importXOnlyPubKey
+    importXOnlyPubKey,
+    generateKeyPair
   )
 import qualified Crypto.Secp256k1.Internal.Base as Internal (exportXOnlyPubKey)
 -- import qualified Crypto.Secp256k1.Internal.BaseOps as Internal (xOnlyPubKeyParse)
@@ -53,15 +55,14 @@ ctx = unsafePerformIO Secp.createContext
 
 exportXOnlyPubKey :: Secp.XOnlyPubKey -> String
 exportXOnlyPubKey = exportText . Internal.exportXOnlyPubKey ctx
+
 parseXOnlyPubKey :: ByteString -> Maybe Secp.XOnlyPubKey
 parseXOnlyPubKey = Secp.importXOnlyPubKey ctx
+
 deriveSecKey :: Secp.KeyPair -> Secp.SecKey
 deriveSecKey = Secp.deriveSecKey ctx
--- newtype KeyPair
---   = KeyPair
---   { getKeyPair :: ByteString
---   }
---   deriving (Eq)
+
+generateKeyPair  = Secp.generateKeyPair ctx
 
 keyPairFromSecKey :: Secp.SecKey -> Secp.KeyPair
 keyPairFromSecKey (Secp.SecKey s) = Secp.KeyPair (s <> p)
@@ -83,7 +84,8 @@ bip340sig bs
   | Data.ByteString.length bs == 64 = Just $ Secp.Bip340Sig bs
   | otherwise = Nothing
 
--- TODO: passing Nothing for randomness seems common
+-- TODO: passing Nothing for randomness seems common. Make sure this does not affect 
+-- the signature negatively
 signBip340 :: Secp.KeyPair -> Secp.Msg -> Maybe Secp.Bip340Sig
 signBip340 kp msg = Secp.signBip340 ctx (deriveSecKey kp) msg Nothing 
 
@@ -96,6 +98,3 @@ decodeHex str =
   case B16.decodeBase16Untyped $ cs str of
     Right bs -> Just bs
     Left _   -> Nothing
-
-  
-

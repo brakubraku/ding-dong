@@ -1,43 +1,41 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 -- optics support
-{-# LANGUAGE OverloadedLabels     #-}
-{-# LANGUAGE DuplicateRecordFields     #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
 module Nostr.Event where
 
-import           Control.Monad          (mzero)
-import qualified Crypto.Hash.SHA256     as SHA256
-import           MyCrypto 
-import           Data.Aeson
-import           Data.Aeson.Text        (encodeToTextBuilder)
-import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as B16
+import Control.Monad (mzero)
+import qualified Crypto.Hash.SHA256 as SHA256
+import Data.Aeson
+import Data.Aeson.Text (encodeToTextBuilder)
 import qualified Data.Base16.Types as B16
-import           Data.ByteString.Lazy   (fromStrict, toStrict)
-import           Data.Time
-import           Data.Default
-import           Data.Maybe             (fromJust, fromMaybe)
-import           Data.Text              (Text, toLower, pack, unpack)
-import           Data.Text.Encoding     (encodeUtf8)
-import qualified Data.Text.Lazy         as LazyText
-import           Data.Text.Lazy.Builder (toLazyText)
-import qualified Data.Vector            as V
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as B16
+import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.DateTime
+import Data.Default
 import Data.List
-import           GHC.Exts               (fromList)
-
+import Data.Maybe (fromJust, fromMaybe)
+import Data.Text (Text, pack, toLower, unpack)
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.Text.Lazy as LazyText
+import Data.Text.Lazy.Builder (toLazyText)
+import Data.Time
+import qualified Data.Vector as V
+import Debug.Trace
+import GHC.Exts (fromList)
+import GHC.Generics
+import MyCrypto
 import Nostr.Keys
 import Nostr.Kind
-import Nostr.Profile (Profile(..), RelayURL, Username)
+import Nostr.Profile (Profile (..), RelayURL, Username)
 import Nostr.Relay
-import Debug.Trace
-import Data.DateTime 
-import GHC.Generics
 import Optics
 
 newtype EventId = EventId
@@ -56,13 +54,13 @@ data Tag
   deriving (Eq, Show, Ord)
 
 data Event = Event
-  { eventId    :: EventId
-  , pubKey     :: XOnlyPubKey
-  , created_at :: DateTime
-  , kind       :: Kind
-  , tags       :: [Tag]
-  , content    :: Text
-  , sig        :: Bip340Sig
+  { eventId :: EventId,
+    pubKey :: XOnlyPubKey,
+    created_at :: DateTime,
+    kind :: Kind,
+    tags :: [Tag],
+    content :: Text,
+    sig :: Bip340Sig
   }
   deriving (Eq, Show, Generic)
 
@@ -70,11 +68,11 @@ instance Ord Event where
   e1 `compare` e2 = eventId e1 `compare` eventId e2
 
 data UnsignedEvent = UnsignedEvent
-  { pubKey'     :: XOnlyPubKey
-  , created_at' :: DateTime
-  , kind'       :: Kind
-  , tags'       :: [Tag]
-  , content'    :: Text
+  { pubKey' :: XOnlyPubKey,
+    created_at' :: DateTime,
+    kind' :: Kind,
+    tags' :: [Tag],
+    content' :: Text
   }
   deriving (Eq, Show)
 
@@ -87,7 +85,7 @@ instance FromJSON EventId where
   parseJSON = withText "EventId" $ \i -> do
     case eventId' i of
       Just e -> return e
-      _      -> fail "invalid event id"
+      _ -> fail "invalid event id"
 
 -- TODO: check this extractBase is correct
 instance ToJSON EventId where
@@ -95,127 +93,137 @@ instance ToJSON EventId where
   toJSON e = String . B16.extractBase16 . B16.encodeBase16 . getEventId $ e
 
 instance FromJSON Event where
-  parseJSON = withObject "event data" $ \e -> Event
-    <$> e .: "id"
-    <*> e .: "pubkey"
-    <*> (fromSeconds <$> e .: "created_at")
-    <*> e .: "kind"
-    <*> e .: "tags"
-    <*> e .: "content"
-    <*> e .: "sig"
+  parseJSON = withObject "event data" $ \e ->
+    Event
+      <$> e .: "id"
+      <*> e .: "pubkey"
+      <*> (fromSeconds <$> e .: "created_at")
+      <*> e .: "kind"
+      <*> e .: "tags"
+      <*> e .: "content"
+      <*> e .: "sig"
 
 instance ToJSON Event where
-  toJSON Event {..} = object
-     [ "id"         .= exportEventId eventId
-     , "pubkey"     .= exportXOnlyPubKey pubKey
-     , "created_at" .= toSeconds created_at
-     , "kind"       .= kind
-     , "tags"       .= tags
-     , "content"    .= content
-     , "sig"        .= exportBip340Sig sig
-     ]
+  toJSON Event {..} =
+    object
+      [ "id" .= exportEventId eventId,
+        "pubkey" .= exportXOnlyPubKey pubKey,
+        "created_at" .= toSeconds created_at,
+        "kind" .= kind,
+        "tags" .= tags,
+        "content" .= content,
+        "sig" .= exportBip340Sig sig
+      ]
 
 instance ToJSON UnsignedEvent where
-  toJSON (UnsignedEvent {..}) = Array $ fromList
-     [ Number 0
-     , String $ pack $ exportXOnlyPubKey $ pubKey'
-     , Number $ fromIntegral $ toSeconds $ created_at'
-     , toJSON kind'
-     , toJSON tags'
-     , toJSON content'
-     ]
+  toJSON (UnsignedEvent {..}) =
+    Array $
+      fromList
+        [ Number 0,
+          String $ pack $ exportXOnlyPubKey $ pubKey',
+          Number $ fromIntegral $ toSeconds $ created_at',
+          toJSON kind',
+          toJSON tags',
+          toJSON content'
+        ]
 
 instance FromJSON Tag where
- parseJSON (Array v)
-   | V.length v > 0 =
-       case v V.! 0 of
-         String "e" ->
-           ETag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
-         String "p" ->
-           PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
-         _ ->
-           return . UnknownTag $ show v
-   | otherwise = return . UnknownTag $ show v
- parseJSON v = return . UnknownTag $ show v
+  parseJSON (Array v)
+    | V.length v > 0 =
+        case v V.! 0 of
+          String "e" ->
+            ETag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
+          String "p" ->
+            PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
+          _ ->
+            return . UnknownTag $ show v
+    | otherwise = return . UnknownTag $ show v
+  parseJSON v = return . UnknownTag $ show v
 
 instance ToJSON Tag where
- toJSON (ETag eventId Nothing Nothing) =
-   Array $ fromList
-     [ String "e"
-     , String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
-     ]
- toJSON (ETag eventId relayURL Nothing) =
-   Array $ fromList
-     [ String "e"
-     , String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
-     , maybe (String "") (\r -> String r) relayURL
-     ]
- toJSON (ETag eventId relayURL marker) =
-   Array $ fromList
-     [ String "e"
-     , String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
-     , maybe (String "") (\r -> String r) relayURL
-     , case marker of
-         Just Reply ->
-           String "reply"
-         Just Root ->
-           String "root"
-         Just Mention ->
-           String "mention"
-         Nothing ->
-           String ""
-     ]
- toJSON (PTag xo relayURL name) =
-   Array $ fromList
-     [ String "p"
-     , case xo of
-         ValidXOnlyPubKey xo' ->
-           toJSON xo'
-         InvalidXOnlyPubKey ->
-           String ""
-     , maybe (String "") (\r -> String r) relayURL
-     , maybe (String "") (\n -> String n) name
-     ]
- toJSON _ = -- @todo implement nonce tag
-   Array $ fromList []
+  toJSON (ETag eventId Nothing Nothing) =
+    Array $
+      fromList
+        [ String "e",
+          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
+        ]
+  toJSON (ETag eventId relayURL Nothing) =
+    Array $
+      fromList
+        [ String "e",
+          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId,
+          maybe (String "") (\r -> String r) relayURL
+        ]
+  toJSON (ETag eventId relayURL marker) =
+    Array $
+      fromList
+        [ String "e",
+          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId,
+          maybe (String "") (\r -> String r) relayURL,
+          case marker of
+            Just Reply ->
+              String "reply"
+            Just Root ->
+              String "root"
+            Just Mention ->
+              String "mention"
+            Nothing ->
+              String ""
+        ]
+  toJSON (PTag xo relayURL name) =
+    Array $
+      fromList
+        [ String "p",
+          case xo of
+            ValidXOnlyPubKey xo' ->
+              toJSON xo'
+            InvalidXOnlyPubKey ->
+              String "",
+          maybe (String "") (\r -> String r) relayURL,
+          maybe (String "") (\n -> String n) name
+        ]
+  toJSON _ =
+    -- @todo implement nonce tag
+    Array $ fromList []
 
 instance FromJSON Marker where
- parseJSON = withText "Marker" $ \m -> do
-   case toLower m of
-     "reply" -> return Reply
-     "root"  -> return Root
-     "mention"  -> return Mention
-     _       -> mzero
+  parseJSON = withText "Marker" $ \m -> do
+    case toLower m of
+      "reply" -> return Reply
+      "root" -> return Root
+      "mention" -> return Mention
+      _ -> mzero
 
 instance ToJSON Marker where
- toJSON (Reply) = String "reply"
- toJSON (Root) = String "root"
- toJSON (Mention) = String "mention"
+  toJSON (Reply) = String "reply"
+  toJSON (Root) = String "root"
+  toJSON (Mention) = String "mention"
 
 eventId' :: Text -> Maybe EventId
 eventId' t = do
   bs <- decodeHex t
   case BS.length bs of
     32 -> Just $ EventId bs
-    _  -> Nothing
+    _ -> Nothing
 
 exportEventId :: EventId -> String
 exportEventId i = unpack . B16.extractBase16 . B16.encodeBase16 $ getEventId i
 
-signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Either Text Event
-signEvent u kp xo = flip (maybe (Left "signing failed")) msig $ 
-  \signature -> Right Event
-      { eventId = eid
-      , pubKey = xo
-      , created_at = created_at' u
-      , kind = kind' u
-      , tags = tags' u
-      , content = content' u
-      , sig = signature
+signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Maybe Event
+signEvent u kp xo = do
+  signature <- signBip340 kp $ fromJust $ msg $ getEventId eid
+  pure
+    Event
+      { eventId = eid,
+        pubKey = xo,
+        created_at = created_at' u,
+        kind = kind' u,
+        tags = tags' u,
+        content = content' u,
+        sig = signature
       }
   where
     eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
-    msig = signBip340 kp $ fromJust $ msg $ getEventId eid
 
 validateEventId :: Event -> Bool
 validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
@@ -243,22 +251,27 @@ verifyThis eid pubKey signature = do
 verifySignature :: Event -> Bool
 verifySignature e =
   case msg $ getEventId $ eventId e of
-    Just m  -> verifyBip340 (pubKey e) m (sig e)
+    Just m -> verifyBip340 (pubKey e) m (sig e)
     Nothing -> False
 
 textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = TextNote,
+      tags' = [],
+      content' = note
+    }
 
 setMetadata :: Profile -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setMetadata profile xo t =
   UnsignedEvent
-    { pubKey' = xo
-    , created_at' = t
-    , kind' = Metadata
-    , tags' = []
-    , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = Metadata,
+      tags' = [],
+      content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
     }
 
 readProfile :: Event -> Maybe Profile
@@ -271,22 +284,32 @@ readProfile event = case kind event of
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = TextNote,
+      tags' = [ETag (eventId event) Nothing (Just Reply)],
+      content' = note
+    }
 
 setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
-    { pubKey' = xo
-    , created_at' = t
-    , kind' = Contacts
-    , tags' = map (\c -> PTag (ValidXOnlyPubKey $ fst c) (Just "") (snd c)) contacts
-    , content' = ""
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = Contacts,
+      tags' = map (\c -> PTag (ValidXOnlyPubKey $ fst c) (Just "") (snd c)) contacts,
+      content' = ""
     }
 
 deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = Delete, tags' = toDelete, content' = reason}
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = Delete,
+      tags' = toDelete,
+      content' = reason
+    }
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
@@ -318,20 +341,18 @@ getParentId event =
       replyTag = do
         (ETag eid _ _) <- find isReplyTag eTags
         pure eid
-  in
-      case replyTag of
+   in case replyTag of
         Just _ -> replyTag -- if found reply tag than this is the parent
-        Nothing -> do -- else see if you find a root tag
+        Nothing -> do
+          -- else see if you find a root tag
           (ETag eid _ _) <- find isRootTag eTags
           pure eid
   where
-
     isEtag ETag {} = True
     isEtag _ = False
 
     isRootTag (ETag _ _ (Just Root)) = True
     isRootTag _ = False
-
 
 isReplyTag :: Tag -> Bool
 isReplyTag (ETag _ _ (Just Reply)) = True

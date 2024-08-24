@@ -7,7 +7,6 @@ import Data.Text
 
 import Nostr.Relay
 
-
 logError :: Text -> IO ()
 logError e = do
   now <- getCurrentTime

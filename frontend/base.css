@@ -8,18 +8,27 @@
     float: left;
     padding: 20px;
     border: 2px solid red;
-}  
+}
 
 .flex-container {
     display: flex;
 }
 
-.flex-profile-pic {
+.profile-pic-container {
     flex: 1;
-    border: 1px solid magenta;
-}  
+    /* border: 1px solid magenta; */
+    text-align:right
+}
 
-.flex-text-note {
+.text-note-container {
     flex: 6;
-    border: 1px solid magenta;
-}  
+    /* border: 1px solid magenta; */
+    text-align:left
+}
+
+.profile-pic {
+    height: 100px;
+    width: 100px;
+    border-radius: 70%;
+    padding-right: 20px;
+}

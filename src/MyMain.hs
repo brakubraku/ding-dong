@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 
 module MyMain where
 
@@ -39,9 +40,14 @@ import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
 import Optics
+import JSDOM.Generated.WebKitMediaKeys (newWebKitMediaKeys)
+import Nostr.Keys
+import Data.Aeson (encode)
 
 start :: JSM ()
 start = do
+  -- liftIO $ writeFile "wild" $ "smash and dash"
+  -- liftIO . putStrLn =<< (liftIO $ readFile "wild")
   nn <-
     liftIO $
       initNetwork
@@ -65,7 +71,7 @@ data Action
   | ResponseReceived SubscriptionId [(Response, RelayURI)]
   | InitialSubs [(Response, Relay)]
   | HandleWebSocket (WebSocket ())
-  | ReceivedContacts [(Response, Relay)]
+  | ReceivedProfiles [(Response, Relay)]
   | NoAction
 
 data Model = Model
@@ -92,7 +98,8 @@ updateModel nn action model =
       do
         let simpleF f = DatedFilter f Nothing Nothing
             textNotes = simpleF $ TextNoteFilter $ model ^. #contacts
-            getContacts = simpleF $ MetadataFilter $ model ^. #contacts
+            -- getContacts = simpleF $ ContactsFilter 
+            getProfiles = simpleF $ MetadataFilter $ model ^. #contacts
         effectSub
           model
           ( \sink ->
@@ -101,14 +108,14 @@ updateModel nn action model =
                 liftIO . flip runReaderT nn $ RP.waitForActiveConnections (secs 2)
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ subscribe nn [textNotes] InitialSubs sink
-                subscribe nn [getContacts] ReceivedContacts sink
+                subscribe nn [getProfiles] ReceivedProfiles sink
           )
     InitialSubs responses ->
       noEff $
         model
           & #textNotes
           %~ Set.union (Set.fromList . catMaybes $ getEvent . fst <$> responses)
-    ReceivedContacts responses ->
+    ReceivedProfiles responses ->
       let profiles = catMaybes $ extractProfile <$> responses
        in noEff $
             model
@@ -197,25 +204,27 @@ displayNote model evt =
   div_
     [class_ "flex-container"]
     [ div_
-        [ class_ "flex-profile-pic",
+        [ class_ "profile-pic-container",
           style_ $ M.fromList [("float", "left")]
         ]
-        [ img_
-            [ prop "src" $ picUrl model evt,
-              style_ $
-                M.fromList
-                  [("width", "100px"), ("height", "100px")]
-            ]
-        ],
+        (displayProfilePic $ picUrl model evt),
       div_
-        [ class_ "flex-text-note",
+        [ class_ "text-note-container",
           style_ $ M.fromList [("float", "left")]
         ]
         [p_ [] [text (evt ^. #content)]]
     ]
+  where
+    displayProfilePic (Just pic) =
+      [ img_
+          [ class_ "profile-pic",
+            prop "src" $ pic
+          ]
+      ]
+    displayProfilePic _ = [div_ [class_ "profile-pic"] []]
 
-picUrl :: Model -> Event -> MisoString
-picUrl m e = fromMaybe "missing" $ do
+picUrl :: Model -> Event -> Maybe MisoString
+picUrl m e = do
   (Profile {..}, _) <- m ^. #profiles % at (e ^. #pubKey)
   picture
 
@@ -233,6 +242,26 @@ displayResp r =
 --   loadedProfilesList <-
 --     decode @[(XOnlyPubKey, (ProfileLoader.Types.Profile, DateTime))]
 --       <$> LazyBytes.readF  let contacts  Map.keys <$> liftIO . fromJust . loadContactsFromDisk $ "contacts.json"
+
+-- loadKeys :: JSM (Maybe Keys)
+-- loadKeys = do 
+--   let identifier = "my-keys"
+--   keys <- getLocalStorage identifier
+--   case keys of 
+--     Right k -> pure . Just $ k 
+--     Left _ -> do
+--       newKeys <- liftIO $ generateKeyPair
+--       setLocalStorage identifier $ encode newKeys
+      
+      
+      -- xo <- deriveXon
+      -- pure $ Keys kp 
+      --  >>= \case
+      --   Right _ -> pure . Just $ newKeys 
+      --   _ -> do 
+      --     liftIO $ logError "Failed to save new keys"
+      --     pure Nothing
+
 
 pubKeys :: [String]
 pubKeys =
