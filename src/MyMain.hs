@@ -4,21 +4,23 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 -- optics support
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
 
 module MyMain where
 
+import Contacts (saveContacts)
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Aeson (encode)
 import Data.Bool
 import Data.DateTime (DateTime)
 import Data.Map as Map
@@ -26,12 +28,14 @@ import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Set as Set
 import GHC.Generics
+import JSDOM.Generated.WebKitMediaKeys (newWebKitMediaKeys)
 import Miso hiding (at, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
 import MyCrypto
 import Nostr.Event
 import Nostr.Filter
+import Nostr.Keys
 import Nostr.Network
 import Nostr.Profile
 import Nostr.Relay
@@ -39,23 +43,21 @@ import qualified Nostr.RelayPool as RP
 import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
-import Optics
-import JSDOM.Generated.WebKitMediaKeys (newWebKitMediaKeys)
-import Nostr.Keys
-import Data.Aeson (encode)
+import Optics as O
 
 start :: JSM ()
 start = do
-  -- liftIO $ writeFile "wild" $ "smash and dash"
-  keys <- loadKeys 
+  keys <- loadKeys
   liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
-    liftIO $
-      initNetwork
-        [ "wss://relay.nostrdice.com",
-          "wss://lunchbox.sandwich.farm",
-          "wss://relay.nostr.net"
-        ]
+    pure . (O.set #keys (Just keys))
+      =<< ( liftIO $
+              initNetwork
+                [ "wss://relay.nostrdice.com",
+                  "wss://lunchbox.sandwich.farm",
+                  "wss://relay.nostr.net"
+                ]
+          )
   let subs = [connectRelays nn HandleWebSocket]
       update = updateModel nn
   startApp App {initialAction = NoAction, ..}
@@ -77,6 +79,7 @@ data Action
 
 data Model = Model
   { textNotes :: Set.Set Event,
+    reactions :: Map.Map EventId Reaction,
     err :: MisoString,
     intialSubs :: [(Event, [RelayURI])], -- events from your contacts
     contacts :: [XOnlyPubKey],
@@ -89,7 +92,7 @@ updateModel ::
   Action ->
   Model ->
   Effect Action Model
-updateModel nn action model  =
+updateModel nn action model =
   case action of
     HandleWebSocket (WebSocketClose _ _ _) ->
       noEff $ model & #err .~ "Connection closed"
@@ -99,18 +102,23 @@ updateModel nn action model  =
       do
         let simpleF f = DatedFilter f Nothing Nothing
             textNotes = simpleF $ TextNoteFilter $ model ^. #contacts
-            -- getContacts = simpleF $ ContactsFilter 
+            -- getContacts = simpleF $ ContactsFilter
             getProfiles = simpleF $ MetadataFilter $ model ^. #contacts
+
         effectSub
           model
           ( \sink ->
               do
+                let runInNostr = liftIO . flip runReaderT nn
                 -- wait for connections to relays having been established
-                liftIO . flip runReaderT nn $ RP.waitForActiveConnections (secs 2)
+                runInNostr $ RP.waitForActiveConnections (secs 2)
                 -- TODO: Is this the way to run 2 subs in parallel?
-                forkJSM $ subscribe nn [textNotes] InitialSubs sink
-                subscribe nn [getProfiles] ReceivedProfiles sink
-                -- saveContacts 
+                -- forkJSM $ subscribe nn [textNotes] InitialSubs sink
+                -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles sink
+                let mSaveConts = do
+                      ks <- nn ^. #keys
+                      pure . saveContacts ks $ zip (model ^. #contacts) (repeat Nothing)
+                maybe (pure ()) runInNostr mSaveConts
           )
     InitialSubs responses ->
       noEff $
@@ -246,23 +254,23 @@ displayResp r =
 --       <$> LazyBytes.readF  let contacts  Map.keys <$> liftIO . fromJust . loadContactsFromDisk $ "contacts.json"
 
 loadKeys :: JSM Keys
-loadKeys = do 
+loadKeys = do
   let identifier = "my-keys"
   keys <- getLocalStorage identifier
-  case keys of 
-    Right k -> pure k 
+  case keys of
+    Right k -> pure k
     Left _ -> do
       newKeys <- liftIO $ generateKeys
       setLocalStorage identifier newKeys
       pure newKeys
-      -- xo <- deriveXon
-      -- pure $ Keys kp 
-      --  >>= \case
-      --   Right _ -> pure . Just $ newKeys 
-      --   _ -> do 
-      --     liftIO $ logError "Failed to save new keys"
-      --     pure Nothing
 
+-- xo <- deriveXon
+-- pure $ Keys kp
+--  >>= \case
+--   Right _ -> pure . Just $ newKeys
+--   _ -> do
+--     liftIO $ logError "Failed to save new keys"
+--     pure Nothing
 
 pubKeys :: [String]
 pubKeys =

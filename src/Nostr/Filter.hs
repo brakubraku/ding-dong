@@ -69,7 +69,7 @@ toPairs (ContactsFilter xos) =
 toPairs (TextNoteFilter xos) =
   [ ("kinds", toJSON [TextNote, Delete]),
     ("authors", toJSON xos),
-    ("limit", Number 50)
+    ("limit", Number 10)
   ]
 toPairs (LinkedEvents eids) =
   [ ("kinds", toJSON [TextNote]),

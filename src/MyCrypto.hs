@@ -15,12 +15,12 @@ module MyCrypto
     exportXOnlyPubKey,
     deriveSecKey,
     exportSecKey,
-    exportBip340Sig,
+    exportSignature,
     keyPairFromSecKey,
-    bip340sig,
+    parseSignature,
     decodeHex,
-    generateKeyPair,
-    Secp.SecKey(..)
+    Secp.SecKey(..),
+    signBip340Rand
   )
 where
 
@@ -42,14 +42,14 @@ import qualified Crypto.Secp256k1 as Secp
     SecKey(..),
     PubKey(..),
     KeyPair(..),
-    importXOnlyPubKey,
-    generateKeyPair
+    importXOnlyPubKey
   )
 import qualified Crypto.Secp256k1.Internal.Base as Internal (exportXOnlyPubKey)
 -- import qualified Crypto.Secp256k1.Internal.BaseOps as Internal (xOnlyPubKeyParse)
 import Data.Text(unpack)
 import System.IO.Unsafe
 import Data.String.Conversions
+import Crypto.Secp256k1 (Rand32)
 
 ctx :: Secp.Ctx
 ctx = unsafePerformIO Secp.createContext
@@ -63,8 +63,6 @@ parseXOnlyPubKey = Secp.importXOnlyPubKey ctx
 deriveSecKey :: Secp.KeyPair -> Secp.SecKey
 deriveSecKey = Secp.deriveSecKey ctx
 
-generateKeyPair  = Secp.generateKeyPair ctx
-
 keyPairFromSecKey :: Secp.SecKey -> Secp.KeyPair
 keyPairFromSecKey (Secp.SecKey s) = Secp.KeyPair (s <> p)
   where
@@ -74,14 +72,14 @@ keyPairFromSecKey (Secp.SecKey s) = Secp.KeyPair (s <> p)
 exportText :: ByteString -> String
 exportText = unpack . B16.extractBase16 . B16.encodeBase16
 
-exportBip340Sig :: Secp.Bip340Sig -> String
-exportBip340Sig (Secp.Bip340Sig sig) = exportText sig
+exportSignature :: Secp.Bip340Sig -> String
+exportSignature (Secp.Bip340Sig sig) = exportText sig
 
 exportSecKey :: Secp.SecKey -> String
 exportSecKey (Secp.SecKey sec) = exportText sec
 
-bip340sig :: ByteString -> Maybe Secp.Bip340Sig
-bip340sig bs
+parseSignature :: ByteString -> Maybe Secp.Bip340Sig
+parseSignature bs
   | Data.ByteString.length bs == 64 = Just $ Secp.Bip340Sig bs
   | otherwise = Nothing
 
@@ -89,6 +87,9 @@ bip340sig bs
 -- the signature negatively
 signBip340 :: Secp.SecKey -> Secp.Msg -> Maybe Secp.Bip340Sig
 signBip340 sk msg = Secp.signBip340 ctx sk msg Nothing 
+
+signBip340Rand :: Secp.SecKey -> Maybe Rand32 -> Secp.Msg -> Maybe Secp.Bip340Sig
+signBip340Rand sk rand msg = Secp.signBip340 ctx sk msg rand 
 
 verifyBip340 :: Secp.XOnlyPubKey -> Secp.Msg -> Secp.Bip340Sig -> Bool
 verifyBip340 = Secp.verifyBip340 ctx

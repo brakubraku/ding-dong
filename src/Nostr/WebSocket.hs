@@ -66,8 +66,13 @@ import Nostr.Event
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString (fromStrict)
 import Nostr.Request
+import Crypto.Secp256k1 (verifyBip340)
 
-
+import qualified Data.ByteString.Char8 as BS
+import System.Entropy
+import qualified Data.Text as T
+import Data.ByteString.Base16 (decodeBase16Untyped)
+import Data.Either (fromRight)
 -- data WebSocketEvent = WebSocketOpen | WebSocketError String 
 
 connectRelays
@@ -97,11 +102,16 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
       resp <- pure -- TODO: I am going to hell for this 
                 . decode @Response       
                 . fromStrict 
-                . encodeUtf8 
+                -- . fromRight "" 
+                . encodeUtf8
+                -- . decodeBase16Untyped
                 . strToText $ msg
+      liftIO . putStrLn $ "Raw-dog:" <> T.unpack (strToText $ msg)
+      -- fn <- liftIO $ getEntropy 8
+      -- liftIO . writeFile ("./events/" ++ BS.unpack fn) $ T.unpack . strToText $ msg
       case resp of 
         Just (EventReceived subId event) -> do
-            liftIO . putStrLn $ "branko-it's home:" <> show (event)
+            liftIO . putStrLn $ "branko-it's home:" <> show (event) <> " : " <> show (verifySignature event)
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
             case Map.lookup subId subs of
               Just subscription -> do
@@ -149,10 +159,13 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
           Subscribe (Subscription _ subId) -> 
             liftIO . runReaderT (changeState subId relay Nostr.Network.Running) $ nn
           _ -> pure ()
+        -- TODO: get rid of this
         sendJson' socket request
 
 sendJson' :: ToJSON json => Socket -> json -> JSM ()
-sendJson' socket m = WS.send socket =<< stringify m
+sendJson' socket m = do 
+  liftIO . putStrLn $ "brankoSending: " <> (show . toJSON $ m)
+  WS.send socket =<< stringify m
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
 {-# INLINE createWebSocket #-}

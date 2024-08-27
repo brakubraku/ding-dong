@@ -38,6 +38,8 @@ import Nostr.Profile (Profile (..), RelayURL, Username)
 import Nostr.Relay
 import Optics
 
+import System.Entropy
+
 newtype EventId = EventId
   { getEventId :: ByteString
   }
@@ -112,7 +114,7 @@ instance ToJSON Event where
         "kind" .= kind,
         "tags" .= tags,
         "content" .= content,
-        "sig" .= exportBip340Sig sig
+        "sig" .= exportSignature sig
       ]
 
 instance ToJSON UnsignedEvent where
@@ -244,7 +246,7 @@ verifyThis :: Text -> Text -> Text -> Maybe Bool
 verifyThis eid pubKey signature = do
   id <- decodeHex eid
   pk <- decodeHex pubKey >>= parseXOnlyPubKey
-  si <- decodeHex signature >>= bip340sig
+  si <- decodeHex signature >>= parseSignature
   mm <- msg id
   pure $ verifyBip340 pk mm si
 
