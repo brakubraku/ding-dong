@@ -30,7 +30,7 @@ data NostrNetwork = NostrNetwork
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
     requestCh :: TChan Request,
     connEventCh :: TChan ConnectionEvent,
-    keys :: Maybe Keys
+    keys :: Keys
   } deriving (Generic, Eq)
   
 runNostr :: NostrNetwork -> NostrNetworkT a -> IO a
@@ -50,9 +50,8 @@ isSubFinished subId subStates =
     subState <- Map.lookup subId subStates
     pure . notElem Running . elems $ subState ^. #relaysState
 
-initNetwork :: [RelayURI] -> IO NostrNetwork
-initNetwork relays = do
-  let keys = Nothing
+initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
+initNetwork relays keys = do
   relays <- newMVar . fromList . zip relays $ (newRelay <$> relays)
   -- requestCh <- atomically $ do 
   --   ch <- newBroadcastTChan

@@ -74,9 +74,14 @@ library
                       Nostr.RelayPool
                       Nostr.API
                       Nostr.Log
+                      Nostr.Reaction
+                      Nostr.ReactionUtils
+                      PeriodicLoader
+                      ReactionsLoader
                       MyCrypto
                       MyMain
                       Contacts
+                      MisoSubscribe
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.

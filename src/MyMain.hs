@@ -6,7 +6,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
--- optics support
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -14,13 +13,8 @@
 
 module MyMain where
 
-import Contacts (saveContacts)
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Aeson (encode)
 import Data.Bool
 import Data.DateTime (DateTime)
 import Data.Map as Map
@@ -28,42 +22,53 @@ import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Set as Set
 import GHC.Generics
-import JSDOM.Generated.WebKitMediaKeys (newWebKitMediaKeys)
 import Miso hiding (at, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
+import MisoSubscribe (subscribe)
 import MyCrypto
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
 import Nostr.Network
 import Nostr.Profile
+import Nostr.Reaction
 import Nostr.Relay
 import qualified Nostr.RelayPool as RP
 import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
 import Optics as O
+import PeriodicLoader
+import ReactionsLoader (createReactionsLoader)
+import Debug.Trace (trace)
 
 start :: JSM ()
 start = do
   keys <- loadKeys
   liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
-    pure . (O.set #keys (Just keys))
-      =<< ( liftIO $
-              initNetwork
-                [ "wss://relay.nostrdice.com",
-                  "wss://lunchbox.sandwich.farm",
-                  "wss://relay.nostr.net"
-                ]
-          )
+    liftIO $
+      initNetwork
+        [ "wss://relay.nostrdice.com",
+          "wss://lunchbox.sandwich.farm",
+          "wss://relay.nostr.net"
+        ]
+        keys
+  reactionsLoader <- liftIO createReactionsLoader
   let subs = [connectRelays nn HandleWebSocket]
-      update = updateModel nn
-  startApp App {initialAction = NoAction, ..}
+      update = updateModel nn reactionsLoader
+  startApp App {initialAction = StartAction, ..}
   where
     savedContacts = (\p -> decodeHex p >>= parseXOnlyPubKey) <$> pubKeys
-    model = Model Set.empty "No error yet bitch!" [] (catMaybes savedContacts) Map.empty
+    model =
+      Model
+        Set.empty
+        (Reactions Map.empty Map.empty)
+        "No error yet bitch!"
+        []
+        (catMaybes savedContacts)
+        Map.empty
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -75,30 +80,34 @@ data Action
   | InitialSubs [(Response, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(Response, Relay)]
+  | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
+  | StartAction
 
 data Model = Model
   { textNotes :: Set.Set Event,
-    reactions :: Map.Map EventId Reaction,
+    reactions :: Reactions, -- TODO: what about deleted reactions?
     err :: MisoString,
     intialSubs :: [(Event, [RelayURI])], -- events from your contacts
     contacts :: [XOnlyPubKey],
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime)
   }
-  deriving (Show, Eq, Generic)
+  deriving (Eq, Generic)
 
 updateModel ::
   NostrNetwork ->
+  PeriodicLoader EventId (ReactionEvent, Relay) ->
   Action ->
   Model ->
   Effect Action Model
-updateModel nn action model =
+updateModel nn rl action model =
   case action of
     HandleWebSocket (WebSocketClose _ _ _) ->
       noEff $ model & #err .~ "Connection closed"
     HandleWebSocket (WebSocketError er) ->
       noEff $ model & #err .~ er
-    HandleWebSocket WebSocketOpen ->
+    -- HandleWebSocket WebSocketOpen ->
+    StartAction  ->
       do
         let simpleF f = DatedFilter f Nothing Nothing
             textNotes = simpleF $ TextNoteFilter $ model ^. #contacts
@@ -113,25 +122,35 @@ updateModel nn action model =
                 -- wait for connections to relays having been established
                 runInNostr $ RP.waitForActiveConnections (secs 2)
                 -- TODO: Is this the way to run 2 subs in parallel?
-                -- forkJSM $ subscribe nn [textNotes] InitialSubs sink
+                forkJSM $ startLoader nn rl ReceivedReactions sink
+                forkJSM $ subscribe nn [textNotes] InitialSubs Right sink
                 -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles sink
-                let mSaveConts = do
-                      ks <- nn ^. #keys
-                      pure . saveContacts ks $ zip (model ^. #contacts) (repeat Nothing)
-                maybe (pure ()) runInNostr mSaveConts
+                -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
           )
-    InitialSubs responses ->
-      noEff $
-        model
-          & #textNotes
-          %~ Set.union (Set.fromList . catMaybes $ getEvent . fst <$> responses)
-    ReceivedProfiles responses ->
-      let profiles = catMaybes $ extractProfile <$> responses
+    InitialSubs rs ->
+      let notes = catMaybes $ getEvent . fst <$> rs
+          newModel =
+            model
+              & #textNotes
+              %~ ( Set.union . Set.fromList $
+                     notes
+                 )
+       in newModel <# (load rl (eventId <$> notes) >> pure NoAction)
+    ReceivedReactions rs ->
+      -- traceM "Got reactions my boy"
+      let reactions = model ^. #reactions
+       in trace ("got reactions " <> show (length rs)) $ noEff $
+            model
+              & #reactions
+              .~ Prelude.foldl processReceived reactions rs
+    ReceivedProfiles rs ->
+      let profiles = catMaybes $ extractProfile <$> rs
        in noEff $
             model
               & #profiles
               %~ unionWithKey
                 ( \_ p1@(_, d1) p2@(_, d2) ->
+                    -- prefer most recent profile
                     if d1 > d2 then p1 else p2
                 )
                 (fromList profiles)
@@ -148,38 +167,6 @@ extractProfile (EventReceived _ event, _) = parseProfiles event
             Just p -> Just (xo, (p, created_at e))
             Nothing -> Nothing
 extractProfile _ = Nothing
-
-subscribe ::
-  NostrNetwork ->
-  [DatedFilter] ->
-  ([(Response, Relay)] -> action) ->
-  Sub action
-subscribe nn filter process sink = do
-  (respChan, subId) <-
-    liftIO . flip runReaderT nn $
-      RP.subscribeForFilter filter
-  let collectResponses = do
-        subsState <- readMVar (nn ^. #subscriptions)
-        putStrLn $ -- TODO: send this to hell
-          "1. substates are:"
-            <> show (relaysState <$> Map.elems subsState)
-        let finished = isSubFinished subId $ subsState
-        msgs <-
-          collectJustM . liftIO . atomically $
-            tryReadTChan respChan
-        sink . process $ msgs
-        threadDelay . secs $ 1
-        unless finished collectResponses
-  liftIO collectResponses
-  where
-    collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
-    collectJustM action = do
-      x <- action
-      case x of
-        Nothing -> return []
-        Just x -> do
-          xs <- collectJustM action
-          return (x : xs)
 
 secs :: Int -> Int
 secs = (* 1000000)
@@ -222,7 +209,10 @@ displayNote model evt =
         [ class_ "text-note-container",
           style_ $ M.fromList [("float", "left")]
         ]
-        [p_ [] [text (evt ^. #content)]]
+        [div_ [] [p_ [] [text (evt ^. #content)]], 
+         displayReactions reactions
+        --  div_ [] [text ("reactions from:" <> (S.pack . show $ rCount))]
+         ]
     ]
   where
     displayProfilePic (Just pic) =
@@ -232,6 +222,18 @@ displayNote model evt =
           ]
       ]
     displayProfilePic _ = [div_ [class_ "profile-pic"] []]
+    reactions = model ^. #reactions % #processed % at (eventId evt) 
+
+-- >>> length (Just "a")
+-- 1
+
+displayReactions :: Maybe (Map Sentiment (Set.Set XOnlyPubKey))  -> View action
+displayReactions Nothing = div_ [] [text ("")]
+displayReactions (Just reactions) = 
+  let likes = "Likes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Like))
+      dislikes = "Dislikes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Dislike))
+      others = "Others: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Other))
+  in div_ [] [text (likes <> " " <> dislikes <> " " <> others)]
 
 picUrl :: Model -> Event -> Maybe MisoString
 picUrl m e = do

@@ -10,6 +10,7 @@ import qualified Data.Vector            as V
 import Nostr.Event
 -- import Nostr.Relay
 import Nostr.Request ( SubscriptionId )
+import qualified Data.Text as T
 
 data Response
   = EventReceived SubscriptionId Event
@@ -30,8 +31,11 @@ instance FromJSON Response where
       _ ->
         mzero
 
-
 getEvent :: Response -> Maybe Event 
 getEvent (EventReceived _ e) = Just e 
 getEvent  _ = Nothing
+
+getEventOrError :: Response -> Either Text Event 
+getEventOrError (EventReceived _ e) = Right e 
+getEventOrError  r = Left $ "Received response:" <> (T.pack . show $ r)
 

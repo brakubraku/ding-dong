@@ -9,12 +9,12 @@ data Kind
   | Contacts
   | Delete
   | Boost
-  | Like
   | Calendar
   | CalendarTime
   | CalendarDay
   | CalendarRSVP
   | RelayList
+  | Reaction
   deriving (Eq, Show, Enum, Bounded, Ord)
 
 instance FromJSON Kind where
@@ -25,7 +25,7 @@ instance FromJSON Kind where
       3 -> return Contacts
       5 -> return Delete
       6 -> return Boost
-      7 -> return Like
+      7 -> return Reaction
       31922 -> return CalendarTime
       31923 -> return CalendarDay
       31924 -> return Calendar
@@ -39,7 +39,7 @@ instance ToJSON Kind where
   toJSON Contacts = Number 3
   toJSON Delete = Number 5
   toJSON Boost = Number 6
-  toJSON Like = Number 7
+  toJSON Reaction = Number 7
   toJSON CalendarTime = Number 31922
   toJSON CalendarDay = Number 31923
   toJSON Calendar = Number 31924

@@ -41,6 +41,7 @@ data Filter
   | AllNotes
   | AllMetadata
   | RelayListMetadata [XOnlyPubKey]
+  | ReactionsTo [EventId]
   deriving (Eq, Show, Ord)
 
 instance ToJSON DatedFilter where
@@ -51,6 +52,13 @@ instance ToJSON DatedFilter where
     object . fromList $ (toPairs f ++ addTimeInterval df)
 
 toPairs :: Filter -> [Item [Pair]]
+toPairs (ReactionsTo eids) =
+  [ ("kinds", toJSON [Reaction]),
+    ("#e", toJSON eids)
+    -- ("authors", toJSON xos)
+    -- ("limit", Number 1)
+  ]
+
 toPairs (RelayListMetadata xos) =
   [ ("kinds", toJSON [RelayList]),
     ("authors", toJSON xos)
