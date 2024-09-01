@@ -23,7 +23,23 @@
 .text-note-container {
     flex: 6;
     /* border: 1px solid magenta; */
+    text-align:left;
+    border-bottom: 1px solid gray;
+    overflow:scroll;
+    display: flex;
+    flex-direction: column;
+}
+
+.text-note-right-panel {
+    flex: 1;
+    /* border: 1px solid magenta; */
     text-align:left
+}
+
+.reactions-container {
+    margin-top: auto;
+    /* position: absolute;
+    bottom: 0px; */
 }
 
 .profile-pic {

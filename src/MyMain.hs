@@ -124,7 +124,7 @@ updateModel nn rl action model =
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
                 forkJSM $ subscribe nn [textNotes] InitialSubs Right sink
-                -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles sink
+                forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
           )
     InitialSubs rs ->
@@ -176,16 +176,16 @@ appView m@Model {..} =
   div_ [style_ $ M.fromList [("text-align", "center")]] $
     [ h1_
         [style_ $ M.fromList [("font-weight", "bold")]]
-        [text $ S.pack "Nostr client"],
-      input_
-        [ type_ "text"
-        --  , onInput UpdateMessage
-        -- onEnter (SendMessage msg)
-        ],
-      button_
-        []
-        -- [ onClick (SendMessage msg)    ]
-        [text (S.pack "Do nothing!")]
+        [text $ S.pack "ding-dong"]
+      -- ,input_
+      --   [ type_ "text"
+      --   --  , onInput UpdateMessage
+      --   -- onEnter (SendMessage msg)
+      --   ],
+      -- button_
+      --   []
+      --   -- [ onClick (SendMessage msg)    ]
+      --   [text (S.pack "Do nothing!")]
     ]
       ++ (displayNote m <$> (Set.toList textNotes))
       ++ [ div_
@@ -201,18 +201,19 @@ displayNote model evt =
   div_
     [class_ "flex-container"]
     [ div_
-        [ class_ "profile-pic-container",
-          style_ $ M.fromList [("float", "left")]
+        [ class_ "profile-pic-container"
+          -- style_ $ M.fromList [("float", "left")]
         ]
         (displayProfilePic $ picUrl model evt),
       div_
-        [ class_ "text-note-container",
-          style_ $ M.fromList [("float", "left")]
+        [ class_ "text-note-container"
+          -- style_ $ M.fromList [("float", "left")]
         ]
         [div_ [] [p_ [] [text (evt ^. #content)]], 
          displayReactions reactions
         --  div_ [] [text ("reactions from:" <> (S.pack . show $ rCount))]
          ]
+      , div_ [ class_ "text-note-right-panel"] []
     ]
   where
     displayProfilePic (Just pic) =
@@ -228,12 +229,12 @@ displayNote model evt =
 -- 1
 
 displayReactions :: Maybe (Map Sentiment (Set.Set XOnlyPubKey))  -> View action
-displayReactions Nothing = div_ [] [text ("")]
+displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
 displayReactions (Just reactions) = 
   let likes = "Likes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Like))
       dislikes = "Dislikes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Dislike))
       others = "Others: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Other))
-  in div_ [] [text (likes <> " " <> dislikes <> " " <> others)]
+  in div_ [class_ "reactions-container"] [text (likes <> " " <> dislikes <> " " <> others)]
 
 picUrl :: Model -> Event -> Maybe MisoString
 picUrl m e = do
