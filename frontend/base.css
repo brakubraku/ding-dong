@@ -29,8 +29,8 @@
     overflow: scroll;
     display: flex;
     flex-direction: column;
-    padding-top: 20px;
-    padding-bottom: 20px;
+    padding-top: 10px;
+    padding-bottom: 10px;
 
 }
 
@@ -85,11 +85,28 @@
 
 #username {
     color: #9b9ba5;
-    font-size:12px;
+    font-size: 12px;
 }
 
 #display-name {
     margin-left: 5px;
     color: #9e737b;
-    font-size:12px;
+    font-size: 12px;
+}
+
+.profile {
+    display: flex;
+    flex-direction: row
+}
+
+.profile-pic-container {
+    flex: 1;
+}
+
+.profile-info-container {
+    flex: 8;
+}
+
+.profile-about {
+    margin-top: 20px
 }

@@ -69,6 +69,7 @@ start = do
         []
         (catMaybes savedContacts)
         Map.empty
+        Home
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -83,6 +84,9 @@ data Action
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction
+  | GoPage Page
+
+data Page = Home | Following deriving (Eq, Generic)
 
 data Model = Model
   { textNotes :: Set.Set Event,
@@ -90,7 +94,8 @@ data Model = Model
     err :: MisoString,
     intialSubs :: [(Event, [RelayURI])], -- events from your contacts
     contacts :: [XOnlyPubKey],
-    profiles :: Map.Map XOnlyPubKey (Profile, DateTime)
+    profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
+    page :: Page
   }
   deriving (Eq, Generic)
 
@@ -155,6 +160,8 @@ updateModel nn rl action model =
                     if d1 > d2 then p1 else p2
                 )
                 (fromList profiles)
+    GoPage page ->
+      noEff $ model & #page .~ page
     _ -> noEff model
 
 extractProfile ::
@@ -174,7 +181,7 @@ secs = (* 1000000)
 
 appView :: Model -> View Action
 appView m =
-  div_ [style_ $ M.fromList [("text-align", "center")]] $
+  div_ [] $
     [ -- h1_
       --   [style_ $ M.fromList [("font-weight", "bold")]]
       --   [text $ S.pack "ding-dong"],
@@ -193,10 +200,41 @@ appView m =
       div_
         [class_ "main-container"]
         [ sidePanelView,
-          notesView m
+          displayPage
         ],
       footerView m
     ]
+  where
+    displayPage = case m ^. #page of
+      Home -> notesView m
+      Following -> followingView m
+
+followingView :: Model -> View action
+followingView m@Model {..} =
+  div_
+    [class_ "following-container"]
+    $ displayProfile
+      <$> loadedProfiles
+  where
+    loadedProfiles :: [Profile]
+    loadedProfiles =
+      catMaybes $
+        (\xo -> (fst <$> (m ^. #profiles % at xo)))
+          <$> contacts
+
+    displayProfile :: Profile -> View a
+    displayProfile p =
+      div_
+        [class_ "profile"]
+        [ div_
+            [class_ "profile-pic-container"]
+            [displayProfilePic $ p ^. #picture],
+          div_
+            [class_ "profile-info-container"]
+            [ div_ [class_ "profile-name"] [text $ p ^. #username],
+              div_ [class_ "profile-about"] [text . fromMaybe "" $ p ^. #about]
+            ]
+        ]
 
 notesView :: Model -> View Action
 notesView m@Model {..} =
@@ -213,13 +251,21 @@ footerView Model {..} =
         [text err | not . S.null $ err]
     ]
 
+displayProfilePic :: Maybe Picture -> View action
+displayProfilePic (Just pic) =
+  img_
+    [ class_ "profile-pic",
+      prop "src" $ pic
+    ]
+displayProfilePic _ = div_ [class_ "profile-pic"] []
+
 displayNote :: Model -> Event -> View a
 displayNote m e =
   div_
     [class_ "note-container"]
     [ div_
         [class_ "profile-pic-container"]
-        (displayProfilePic $ picUrl m e),
+        [displayProfilePic $ picUrl m e],
       div_
         [class_ "text-note-container"]
         [ div_ [class_ "profile-info"] [profileName, displayName],
@@ -232,13 +278,6 @@ displayNote m e =
       div_ [class_ "text-note-right-panel"] []
     ]
   where
-    displayProfilePic (Just pic) =
-      [ img_
-          [ class_ "profile-pic",
-            prop "src" $ pic
-          ]
-      ]
-    displayProfilePic _ = [div_ [class_ "profile-pic"] []]
     profile = fromMaybe unknown $ getAuthorProfile m e
     unknown = Profile {username = "", displayName = Nothing}
     profileName :: View action
@@ -250,21 +289,21 @@ displayNote m e =
 -- >>> length (Just "a")
 -- 1
 
-sidePanelView :: View action
+sidePanelView :: View Action
 sidePanelView =
   div_
     [class_ "side-panel"]
-    [ spItem "Feed",
-      spItem "Notifications",
-      spItem "Following",
-      spItem "Followers",
-      spItem "Bookmarks"
+    [ spItem "Feed" Home,
+      spItem "Notifications" Following,
+      spItem "Following" Following,
+      spItem "Followers" Following,
+      spItem "Bookmarks" Following
     ]
   where
-    spItem label =
+    spItem label page =
       div_
         [class_ "side-panel-item"]
-        [text label]
+        [button_ [onClick (GoPage page)] [text label]]
 
 reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action
 reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]
