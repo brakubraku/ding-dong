@@ -21,6 +21,7 @@ import Data.Map as Map
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Set as Set
+import Debug.Trace (trace)
 import GHC.Generics
 import Miso hiding (at, send)
 import Miso.String (MisoString)
@@ -41,7 +42,6 @@ import Nostr.WebSocket
 import Optics as O
 import PeriodicLoader
 import ReactionsLoader (createReactionsLoader)
-import Debug.Trace (trace)
 
 start :: JSM ()
 start = do
@@ -107,7 +107,7 @@ updateModel nn rl action model =
     HandleWebSocket (WebSocketError er) ->
       noEff $ model & #err .~ er
     -- HandleWebSocket WebSocketOpen ->
-    StartAction  ->
+    StartAction ->
       do
         let simpleF f = DatedFilter f Nothing Nothing
             textNotes = simpleF $ TextNoteFilter $ model ^. #contacts
@@ -139,10 +139,11 @@ updateModel nn rl action model =
     ReceivedReactions rs ->
       -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
-       in trace ("got reactions " <> show (length rs)) $ noEff $
-            model
-              & #reactions
-              .~ Prelude.foldl processReceived reactions rs
+       in trace ("got reactions " <> show (length rs)) $
+            noEff $
+              model
+                & #reactions
+                .~ Prelude.foldl processReceived reactions rs
     ReceivedProfiles rs ->
       let profiles = catMaybes $ extractProfile <$> rs
        in noEff $
@@ -172,11 +173,13 @@ secs :: Int -> Int
 secs = (* 1000000)
 
 appView :: Model -> View Action
-appView m@Model {..} =
+appView m =
   div_ [style_ $ M.fromList [("text-align", "center")]] $
-    [ h1_
-        [style_ $ M.fromList [("font-weight", "bold")]]
-        [text $ S.pack "ding-dong"]
+    [ -- h1_
+      --   [style_ $ M.fromList [("font-weight", "bold")]]
+      --   [text $ S.pack "ding-dong"],
+      --
+      --
       -- ,input_
       --   [ type_ "text"
       --   --  , onInput UpdateMessage
@@ -186,34 +189,47 @@ appView m@Model {..} =
       --   []
       --   -- [ onClick (SendMessage msg)    ]
       --   [text (S.pack "Do nothing!")]
+
+      div_
+        [class_ "main-container"]
+        [ sidePanelView,
+          notesView m
+        ],
+      footerView m
     ]
-      ++ (displayNote m <$> (Set.toList textNotes))
-      ++ [ div_
-             []
-             [ p_
-                 [style_ $ M.fromList [("font-weight", "bold")]]
-                 [text err | not . S.null $ err]
-             ]
-         ]
+
+notesView :: Model -> View Action
+notesView m@Model {..} =
+  div_
+    [class_ "notes-container"]
+    (displayNote m <$> (Set.toList textNotes))
+
+footerView :: Model -> View action
+footerView Model {..} =
+  div_
+    [class_ "footer"]
+    [ p_
+        [style_ $ M.fromList [("font-weight", "bold")]]
+        [text err | not . S.null $ err]
+    ]
 
 displayNote :: Model -> Event -> View a
-displayNote model evt =
+displayNote m e =
   div_
-    [class_ "flex-container"]
+    [class_ "note-container"]
     [ div_
-        [ class_ "profile-pic-container"
-          -- style_ $ M.fromList [("float", "left")]
-        ]
-        (displayProfilePic $ picUrl model evt),
+        [class_ "profile-pic-container"]
+        (displayProfilePic $ picUrl m e),
       div_
-        [ class_ "text-note-container"
-          -- style_ $ M.fromList [("float", "left")]
-        ]
-        [div_ [] [p_ [] [text (evt ^. #content)]], 
-         displayReactions reactions
-        --  div_ [] [text ("reactions from:" <> (S.pack . show $ rCount))]
-         ]
-      , div_ [ class_ "text-note-right-panel"] []
+        [class_ "text-note-container"]
+        [ div_ [class_ "profile-info"] [profileName, displayName],
+          div_
+            [class_ "text-note"]
+            [ p_ [] [text (e ^. #content)],
+              reactionsView reactions
+            ]
+        ],
+      div_ [class_ "text-note-right-panel"] []
     ]
   where
     displayProfilePic (Just pic) =
@@ -223,22 +239,47 @@ displayNote model evt =
           ]
       ]
     displayProfilePic _ = [div_ [class_ "profile-pic"] []]
-    reactions = model ^. #reactions % #processed % at (eventId evt) 
+    profile = fromMaybe unknown $ getAuthorProfile m e
+    unknown = Profile {username = "", displayName = Nothing}
+    profileName :: View action
+    profileName = span_ [id_ "username"] [text $ profile ^. #username]
+    displayName :: View action
+    displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
+    reactions = m ^. #reactions % #processed % at (eventId e)
 
 -- >>> length (Just "a")
 -- 1
 
-displayReactions :: Maybe (Map Sentiment (Set.Set XOnlyPubKey))  -> View action
-displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
-displayReactions (Just reactions) = 
-  let likes = "Likes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Like))
-      dislikes = "Dislikes: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Dislike))
+sidePanelView :: View action
+sidePanelView =
+  div_
+    [class_ "side-panel"]
+    [ spItem "Feed",
+      spItem "Notifications",
+      spItem "Following",
+      spItem "Followers",
+      spItem "Bookmarks"
+    ]
+  where
+    spItem label =
+      div_
+        [class_ "side-panel-item"]
+        [text label]
+
+reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action
+reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]
+reactionsView (Just reactions) =
+  let likes = "♥ " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Like))
+      dislikes = "🖓 " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Dislike))
       others = "Others: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Other))
-  in div_ [class_ "reactions-container"] [text (likes <> " " <> dislikes <> " " <> others)]
+   in div_ [class_ "reactions-container"] [text (likes <> " " <> dislikes <> " " <> others)]
+
+getAuthorProfile :: Model -> Event -> Maybe Profile
+getAuthorProfile m e = fst <$> m ^. #profiles % at (e ^. #pubKey)
 
 picUrl :: Model -> Event -> Maybe MisoString
 picUrl m e = do
-  (Profile {..}, _) <- m ^. #profiles % at (e ^. #pubKey)
+  Profile {..} <- getAuthorProfile m e
   picture
 
 onEnter :: Action -> Attribute Action
@@ -292,18 +333,15 @@ pubKeys =
     "9b37d4a2a1cb24652dab5b0aab6b574276507133527a826ae7d20e1ef92d3d41",
     "da27f5dd5068704a520a7dcd61bf004ce00596feb56849756845bb30bf00234c",
     "fa984bd7dbb282f07e16e7ae87b26a2a7b9b90b7246a44771f0cf5ae58018f52",
-    "1ae011cb34999af15602a2aa927f32bb92d65f6161ed71abdaa4f50c1257a556",
     "e9d926146f72aa582bd0a84ede374b656d18b3287b2ce274abb12be062441057",
     "8c667c46b4f20670a52cd5cc41b67f13410660fac78604c6006975453ba70f5b",
     "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-    "cbab7074a03bf89c7dd1623e42e65409e3918662af6c65fe2e38c92ff9f0bd61",
     "d830ee7b7c30a364b1244b779afbb4f156733ffb8c87235086e26b0b4e61cd62",
     "27154fb873badf69c3ea83a0da6e65d6a150d2bf8f7320fc3314248d74645c64",
     "000000dd7a2e54c77a521237a516eefb1d41df39047a9c64882d05bc84c9d666",
     "6b9da920c4b6ecbf2c12018a7a2d143b4dfdf9878c3beac69e39bb597841cc6e",
     "f27c6a9d6e2e0e28115104508d097a04750b357a02c1a7e0ce5bb2fc54210470",
     "14c0aae7882730fb0885723a82ec3010ed8ca46eb65f503d24e3dc3ddc45b472",
-    "f03df3d4134230420cdf7acbb35f96a2542424246ab052ba24c6fec6a4d4f676",
     "59aa572a2b7d8569ce019a0a0dfa43251fdc2aa8947b0d69b5a5010789d8dd7a",
     "eb2d6b7b9825a1b35b4cd22de54a90abade29d89542a906fd223d4e8cee3b484",
     "be6fd25772d10b35df54c10e573fd3e383d2e8eaa4a0bddf0d5def578cb70897",
@@ -324,7 +362,6 @@ pubKeys =
     "dd2dbe6b8c09a4abb9eb18fa2ce174c3ebf311d2ce11251487a32bee477844d7",
     "8c07e2316b9d8b5db37b554b3e2d58cc1dc5ff98d21a826dc4a6f895134127d8",
     "ee772a9ec50f3c664ce3583a23d7f9e036d4e353f11a94b2d11113165d3dced8",
-    "e7bf8dad360828f0289b7b4bea1a1bd28eb6d4d6522fa17f957e0dfb839ef3db",
     "0e6e0dab0d20d1033ef6f4f902024be3ef8948f1203c47e300b325e21b836ddc",
     "382d893abf7bb83b09fa1e37cc6e71b27a4e46a3fea57463bffc8c812ee697e7",
     "97ca76334c49ef77e3c7819a4b3ba42c9ce1bd4a7cbdfd35a6cefd532f1a4dec"

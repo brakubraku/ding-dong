@@ -10,30 +10,38 @@
     border: 2px solid red;
 }
 
-.flex-container {
+.note-container {
     display: flex;
+    flex: 8 0 0
 }
 
 .profile-pic-container {
     flex: 1;
     /* border: 1px solid magenta; */
-    text-align:right
+    text-align: right
 }
 
 .text-note-container {
-    flex: 6;
+    flex: 10 0 0;
     /* border: 1px solid magenta; */
-    text-align:left;
-    border-bottom: 1px solid gray;
-    overflow:scroll;
+    text-align: left;
+    border-bottom: 1px solid #e1e1e1;
+    overflow: scroll;
     display: flex;
     flex-direction: column;
+    padding-top: 20px;
+    padding-bottom: 20px;
+
+}
+
+.text-note {
+    margin-left: 10px
 }
 
 .text-note-right-panel {
     flex: 1;
     /* border: 1px solid magenta; */
-    text-align:left
+    text-align: left
 }
 
 .reactions-container {
@@ -43,8 +51,45 @@
 }
 
 .profile-pic {
-    height: 100px;
-    width: 100px;
+    height: 50px;
+    width: 50px;
     border-radius: 70%;
-    padding-right: 20px;
+    margin-right: 20px;
+    margin-top: 15px;
+}
+
+.main-container {
+    display: flex
+}
+
+.side-panel {
+    flex: 2 0 0;
+    background-color: black;
+    display: flex;
+    flex-direction: column;
+
+    align-items: center;
+    /* justify-content: center; */
+    padding-top: 40px;
+}
+
+.notes-container {
+    flex: 6 0 0;
+    overflow: scroll;
+    margin-left: 15px;
+}
+
+.side-panel-item {
+    color: white;
+}
+
+#username {
+    color: #9b9ba5;
+    font-size:12px;
+}
+
+#display-name {
+    margin-left: 5px;
+    color: #9e737b;
+    font-size:12px;
 }
