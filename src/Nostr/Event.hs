@@ -21,7 +21,7 @@ import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.DateTime
 import Data.Default
 import Data.List
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (catMaybes, fromJust, fromMaybe)
 import Data.Text (Text, pack, toLower, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.Lazy as LazyText
@@ -37,7 +37,6 @@ import Nostr.Kind
 import Nostr.Profile (Profile (..), RelayURL, Username)
 import Nostr.Relay
 import Optics
-
 import System.Entropy
 
 newtype EventId = EventId
@@ -350,9 +349,6 @@ getParentId event =
           (ETag eid _ _) <- find isRootTag eTags
           pure eid
   where
-    isEtag ETag {} = True
-    isEtag _ = False
-
     isRootTag (ETag _ _ (Just Root)) = True
     isRootTag _ = False
 
@@ -368,3 +364,22 @@ event `isReplyTo` parent = any checkTag . tags $ event
   where
     checkTag (ETag eid _ (Just Reply)) = eid == eventId parent
     checkTag _ = False
+
+isEtag :: Tag -> Bool
+isEtag ETag {} = True
+isEtag _ = False
+
+findETags :: Event -> [Tag]
+findETags e = filter isEtag . tags $ e
+
+getSingleETag :: Event -> Maybe Tag
+getSingleETag e = fst <$> (Data.List.uncons $ findETags e)
+
+isReplyNote :: Event -> Bool
+isReplyNote e =
+  any (\m -> m == Root || m == Reply) markers
+  where
+    markers = catMaybes $ getMarker <$> findETags e
+    getMarker tag = case tag of
+      ETag _ _ marker -> marker
+      _ -> Nothing

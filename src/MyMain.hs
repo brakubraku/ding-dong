@@ -15,8 +15,10 @@ module MyMain where
 
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Aeson (ToJSON)
 import Data.Bool
 import Data.DateTime (DateTime)
+import Data.Either (fromRight)
 import Data.Map as Map
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
@@ -31,6 +33,7 @@ import MyCrypto
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
+import Nostr.Kind
 import Nostr.Network
 import Nostr.Profile
 import Nostr.Reaction
@@ -46,28 +49,32 @@ import ReactionsLoader (createReactionsLoader)
 start :: JSM ()
 start = do
   keys <- loadKeys
+  savedContacts <- loadContacts
   liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
     liftIO $
       initNetwork
         [ "wss://relay.nostrdice.com",
           "wss://lunchbox.sandwich.farm",
-          "wss://relay.nostr.net"
+          "wss://relay.nostr.net",
+          "wss://polnostr.xyz",
+          "wss://nostr.at"
         ]
         keys
   reactionsLoader <- liftIO createReactionsLoader
   let subs = [connectRelays nn HandleWebSocket]
       update = updateModel nn reactionsLoader
-  startApp App {initialAction = StartAction, ..}
+  startApp App {initialAction = StartAction, model = initialModel savedContacts, ..}
   where
-    savedContacts = (\p -> decodeHex p >>= parseXOnlyPubKey) <$> pubKeys
-    model =
+    -- savedContacts = (\p -> decodeHex p >>= parseXOnlyPubKey) <$> pubKeys
+    initialModel contacts =
       Model
         Set.empty
         (Reactions Map.empty Map.empty)
         "No error yet bitch!"
         []
-        (catMaybes savedContacts)
+        -- (catMaybes savedContacts)
+        contacts
         Map.empty
         Home
     events = defaultEvents
@@ -78,15 +85,17 @@ start = do
 data Action
   = RelayConnected RelayURI
   | ResponseReceived SubscriptionId [(Response, RelayURI)]
-  | InitialSubs [(Response, Relay)]
+  | TextNotesAndDeletes [(Response, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(Response, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction
   | GoPage Page
+  | Unfollow XOnlyPubKey
+  | WriteModel Model
 
-data Page = Home | Following deriving (Eq, Generic)
+data Page = Home | Following deriving (Eq, Generic, ToJSON)
 
 data Model = Model
   { textNotes :: Set.Set Event,
@@ -128,23 +137,49 @@ updateModel nn rl action model =
                 runInNostr $ RP.waitForActiveConnections (secs 2)
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
-                forkJSM $ subscribe nn [textNotes] InitialSubs Right sink
+                forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes Right sink
                 forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
           )
-    InitialSubs rs ->
-      let notes = catMaybes $ getEvent . fst <$> rs
+    TextNotesAndDeletes rs ->
+      -- TODO: test this
+      let notes = model ^. #textNotes
+          newEvents = catMaybes $ getEvent . fst <$> rs
+          newNotes =
+            Set.fromList $
+              Prelude.filter
+                (\e -> e ^. #kind == TextNote && not (isReplyNote e))
+                newEvents
+          allNotes = notes `Set.union` newNotes
+          deletionEvents =
+            catMaybes $
+              Prelude.filter ((== Delete) . kind) newEvents
+                & fmap
+                  ( \e -> do
+                      ETag eid _ _ <- getSingleETag e
+                      pure (e ^. #pubKey, eid)
+                  )
+          updatedNotes =
+            Set.filter
+              ( \e ->
+                  not $
+                    (e ^. #pubKey, e ^. #eventId)
+                      `elem` deletionEvents
+              )
+              allNotes
+
           newModel =
             model
               & #textNotes
-              %~ ( Set.union . Set.fromList $
-                     notes
-                 )
-       in newModel <# (load rl (eventId <$> notes) >> pure NoAction)
+              .~ updatedNotes
+          reactionsToLoadFor =
+            (eventId <$> Set.toList (newNotes `Set.difference` notes))
+       in newModel
+            <# (load rl reactionsToLoadFor >> pure NoAction)
     ReceivedReactions rs ->
       -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
-       in trace ("got reactions " <> show (length rs)) $
+       in trace ("  " <> show (length rs)) $
             noEff $
               model
                 & #reactions
@@ -162,7 +197,25 @@ updateModel nn rl action model =
                 (fromList profiles)
     GoPage page ->
       noEff $ model & #page .~ page
+    Unfollow xo ->
+      let updatedContacts = Prelude.filter (/= xo) $ model ^. #contacts
+       in (model & #contacts .~ updatedContacts)
+            <# (updateContacts updatedContacts >> pure NoAction)
+    WriteModel m ->
+      model <# (writeModelToStorage m >> pure NoAction)
     _ -> noEff model
+
+writeModelToStorage :: Model -> JSM ()
+writeModelToStorage m = pure ()
+
+-- setLocalStorage "my-model" $ m
+
+updateContacts :: [XOnlyPubKey] -> JSM ()
+updateContacts xos = do
+  setLocalStorage "my-contacts" $ xos
+
+loadContacts :: JSM [XOnlyPubKey]
+loadContacts = fromRight [] <$> getLocalStorage "my-contacts"
 
 extractProfile ::
   (Response, Relay) ->
@@ -199,34 +252,36 @@ appView m =
 
       div_
         [class_ "main-container"]
-        [ sidePanelView,
-          displayPage
+        [ leftPanel,
+          rightPanel m
         ],
       footerView m
     ]
-  where
-    displayPage = case m ^. #page of
-      Home -> notesView m
-      Following -> followingView m
 
-followingView :: Model -> View action
+followingView :: Model -> View Action
 followingView m@Model {..} =
   div_
     [class_ "following-container"]
     $ displayProfile
       <$> loadedProfiles
   where
-    loadedProfiles :: [Profile]
+    loadedProfiles :: [(XOnlyPubKey, Profile)]
     loadedProfiles =
       catMaybes $
-        (\xo -> (fst <$> (m ^. #profiles % at xo)))
+        ( \xo -> do
+            p <- fst <$> (m ^. #profiles % at xo)
+            pure (xo, p)
+        )
           <$> contacts
 
-    displayProfile :: Profile -> View a
-    displayProfile p =
+    displayProfile :: (XOnlyPubKey, Profile) -> View Action
+    displayProfile (xo, p) =
       div_
         [class_ "profile"]
-        [ div_
+        [ button_
+            [class_ "profile-unfollow-button", onClick (Unfollow xo)]
+            [text "Unfollow"],
+          div_
             [class_ "profile-pic-container"]
             [displayProfilePic $ p ^. #picture],
           div_
@@ -289,10 +344,20 @@ displayNote m e =
 -- >>> length (Just "a")
 -- 1
 
-sidePanelView :: View Action
-sidePanelView =
+rightPanel :: Model -> View Action
+rightPanel m =
   div_
-    [class_ "side-panel"]
+    [class_ "right-panel"]
+    [displayPage]
+  where
+    displayPage = case m ^. #page of
+      Home -> notesView m
+      Following -> followingView m
+
+leftPanel :: View Action
+leftPanel =
+  div_
+    [class_ "left-panel"]
     [ spItem "Feed" Home,
       spItem "Notifications" Following,
       spItem "Following" Following,
@@ -302,7 +367,7 @@ sidePanelView =
   where
     spItem label page =
       div_
-        [class_ "side-panel-item"]
+        [class_ "left-panel-item"]
         [button_ [onClick (GoPage page)] [text label]]
 
 reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action

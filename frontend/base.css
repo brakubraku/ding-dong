@@ -62,7 +62,7 @@
     display: flex
 }
 
-.side-panel {
+.left-panel {
     flex: 2 0 0;
     background-color: black;
     display: flex;
@@ -73,13 +73,19 @@
     padding-top: 40px;
 }
 
-.notes-container {
+.right-panel {
     flex: 6 0 0;
     overflow: scroll;
     margin-left: 15px;
 }
 
-.side-panel-item {
+.notes-container {
+    /* flex: 6 0 0;
+    overflow: scroll;
+    margin-left: 15px; */
+}
+
+.left-panel-item {
     color: white;
 }
 
@@ -96,7 +102,8 @@
 
 .profile {
     display: flex;
-    flex-direction: row
+    flex-direction: row;
+    padding-bottom: 20px;
 }
 
 .profile-pic-container {

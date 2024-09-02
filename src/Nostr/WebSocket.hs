@@ -106,12 +106,12 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
                 . encodeUtf8
                 -- . decodeBase16Untyped
                 . strToText $ msg
-      liftIO . putStrLn $ "Raw-dog:" <> T.unpack (strToText $ msg)
+      -- liftIO . putStrLn $ "Raw-dog:" <> T.unpack (strToText $ msg)
       -- fn <- liftIO $ getEntropy 8
       -- liftIO . writeFile ("./events/" ++ BS.unpack fn) $ T.unpack . strToText $ msg
       case resp of 
         Just (EventReceived subId event) -> do
-            liftIO . putStrLn $ "branko-it's home:" <> show (event) <> " : " <> show (verifySignature event)
+            liftIO . putStrLn $ "branko-received-event:" <> show (event)
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
             case Map.lookup subId subs of
               Just subscription -> do
@@ -164,7 +164,7 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
 
 sendJson' :: ToJSON json => Socket -> json -> JSM ()
 sendJson' socket m = do 
-  liftIO . putStrLn $ "brankoSending: " <> (show . toJSON $ m)
+  -- liftIO . putStrLn $ "brankoSending: " <> (show . toJSON $ m)
   WS.send socket =<< stringify m
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
