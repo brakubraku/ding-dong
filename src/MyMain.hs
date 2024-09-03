@@ -13,19 +13,22 @@
 
 module MyMain where
 
+import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Aeson (ToJSON)
 import Data.Bool
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
+import Data.List
 import Data.Map as Map
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Set as Set
+import Data.Time
 import Debug.Trace (trace)
 import GHC.Generics
-import Miso hiding (at, send)
+import Miso hiding (now, at, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
 import MisoSubscribe (subscribe)
@@ -50,6 +53,7 @@ start :: JSM ()
 start = do
   keys <- loadKeys
   savedContacts <- loadContacts
+  actualTime <- liftIO getCurrentTime
   liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
     liftIO $
@@ -64,10 +68,10 @@ start = do
   reactionsLoader <- liftIO createReactionsLoader
   let subs = [connectRelays nn HandleWebSocket]
       update = updateModel nn reactionsLoader
-  startApp App {initialAction = StartAction, model = initialModel savedContacts, ..}
+  startApp App {initialAction = StartAction, model = initialModel savedContacts actualTime, ..}
   where
     -- savedContacts = (\p -> decodeHex p >>= parseXOnlyPubKey) <$> pubKeys
-    initialModel contacts =
+    initialModel contacts actualTime =
       Model
         Set.empty
         (Reactions Map.empty Map.empty)
@@ -77,6 +81,7 @@ start = do
         contacts
         Map.empty
         Home
+        actualTime
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -94,6 +99,7 @@ data Action
   | GoPage Page
   | Unfollow XOnlyPubKey
   | WriteModel Model
+  | ActualTime UTCTime
 
 data Page = Home | Following deriving (Eq, Generic, ToJSON)
 
@@ -104,7 +110,8 @@ data Model = Model
     intialSubs :: [(Event, [RelayURI])], -- events from your contacts
     contacts :: [XOnlyPubKey],
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
-    page :: Page
+    page :: Page,
+    now :: UTCTime -- don't know a better way to supply time
   }
   deriving (Eq, Generic)
 
@@ -139,7 +146,15 @@ updateModel nn rl action model =
                 forkJSM $ startLoader nn rl ReceivedReactions sink
                 forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes Right sink
                 forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
-                -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
+                forkJSM $ -- put actual time to model every 60 seconds
+                  ( \sink ->
+                      do
+                        now <- liftIO getCurrentTime
+                        liftIO . sink . ActualTime $ now
+                        liftIO . threadDelay . secs $ 60
+                  )
+                    sink
+                    -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
           )
     TextNotesAndDeletes rs ->
       -- TODO: test this
@@ -323,7 +338,7 @@ displayNote m e =
         [displayProfilePic $ picUrl m e],
       div_
         [class_ "text-note-container"]
-        [ div_ [class_ "profile-info"] [profileName, displayName],
+        [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
           div_
             [class_ "text-note"]
             [ p_ [] [text (e ^. #content)],
@@ -339,6 +354,7 @@ displayNote m e =
     profileName = span_ [id_ "username"] [text $ profile ^. #username]
     displayName :: View action
     displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
+    noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
     reactions = m ^. #reactions % #processed % at (eventId e)
 
 -- >>> length (Just "a")
@@ -411,6 +427,28 @@ loadKeys = do
       newKeys <- liftIO $ generateKeys
       setLocalStorage identifier newKeys
       pure newKeys
+
+displayAge :: UTCTime -> Event -> String
+displayAge now e =
+  let ageSeconds =
+        round $ diffUTCTime now (e ^. #created_at)
+      format :: Integer -> String
+      format s | days > 0 = show days <> "d"
+               | hours > 0 = show hours <> "h"
+               | minutes > 0 = show minutes <> "m"
+               | otherwise = ""
+        where 
+            days = s `div` (3600 * 24)
+            hours = s `div` 3600
+            minutes = s `div` 60
+
+              --  in unwords $
+        --       -- intersperse " " $
+        --       zipWith
+        --         (\i t -> if i > 0 then show i <> " " <> t else "")
+        --         [days, hours, minutes]
+        --         ["d", "h", "m"]
+   in format ageSeconds
 
 -- xo <- deriveXon
 -- pure $ Keys kp
