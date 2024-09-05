@@ -122,7 +122,10 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
                 liftIO $ atomically $ writeTChan (subscription ^. #responseCh) (EventReceived subId normalizedEvent, relay)
               Nothing ->
                 liftIO . logRelayError  relay . pack $ "SubId=" <> show subId <> " not found in responseChannels. Event received=" <> show event 
-        Just (Nostr.Response.EOSE subId) -> liftIO . runReaderT (changeState subId relay Nostr.Network.EOSE) $ nn
+        Just (Nostr.Response.EOSE subId) -> do 
+          liftIO . runReaderT (changeState subId relay Nostr.Network.EOSE) $ nn
+          sendJson' socket $  Close subId -- TODO: unsubscribe like this?
+          liftIO . logRelayError  relay . pack $ "Unsubscribed"
         _ -> liftIO . logRelayError  relay . pack $ "Could not decode server response: " <> show msg
     
     WS.addEventListener socket "close" $ \e -> do

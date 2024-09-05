@@ -48,11 +48,12 @@ data Model = Model
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
+    -- thread :: Map.Map RootEid Thread
     thread :: Thread
   }
   deriving (Eq, Generic)
 
--- newtype RootEventId = RootEventId EventId
+newtype RootEid = RootEid EventId deriving (Eq)
 
 data Thread = Thread
   { -- rootId :: EventId,
@@ -62,6 +63,9 @@ data Thread = Thread
     events :: EventsWithRelays
   }
   deriving (Eq, Generic)
+
+newThread :: Thread
+newThread = Thread Map.empty Map.empty Map.empty
 
 type EventsWithRelays = Map.Map EventId (Event, Set.Set Relay)
 

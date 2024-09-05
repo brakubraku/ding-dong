@@ -1,10 +1,10 @@
-* unsubscribing after EOSed!
 * verify signatures on all incoming events!
 * following list
     * follow new author by entering xpub or via some firefox extension
-* display thread
 * author profile page
 * relay management
+* display thread
+* go forward/go back
 
 
 * secp256k1 signatures incorrent on wasm
@@ -13,3 +13,6 @@
 * groups of authors
 * write a post inside of thread
 
+* DONE 
+    * unsubscribing after EOSed!
+        * modify so that you can have subscriptions which don't automatically unsubscribe on  EOS but continue running - such as the feed thread

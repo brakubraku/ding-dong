@@ -16,7 +16,7 @@
 }
 
 .profile-pic-container {
-    flex: 1;
+    /* flex: 1; */
     /* border: 1px solid magenta; */
     text-align: right
 }
@@ -44,8 +44,15 @@
     text-align: left
 }
 
+@keyframes blink {
+    50% {
+        opacity: 0.0;
+    }
+}
+
 .reactions-container {
     margin-top: auto;
+    animation: blink 1s linear 2;
     /* position: absolute;
     bottom: 0px; */
 }
@@ -111,15 +118,22 @@
     padding-bottom: 20px;
 }
 
-.profile-pic-container {
-    flex: 1;
+.profile .pic-container {}
+
+.profile .profile-pic {
+    height: 100px;
+    width: 100px;
+    border-radius: 70%;
+    margin-right: 20px;
+    margin-left: 20px;
+    margin-top: 0px;
 }
 
-.profile-info-container {
+.profile .info-container {
     flex: 8;
 }
 
-.profile-about {
+.profile .about {
     margin-top: 20px
 }
 

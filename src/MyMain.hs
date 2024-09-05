@@ -206,6 +206,7 @@ updateModel nn rl pl action model =
                   pure (evt, rel)
               )
                 <$> rs
+      -- let thread = fromMaybe newThread $ model ^. #thread % at (RootEid rootEvtId)
       let newModel = model & #thread .~ Prelude.foldr addToThread (model ^. #thread) evts
       newModel <# do
         load rl (Map.keys $ newModel ^. #thread % #events)
@@ -285,15 +286,15 @@ followingView m@Model {..} =
       div_
         [class_ "profile"]
         [ button_
-            [class_ "profile-unfollow-button", onClick (Unfollow xo)]
+            [class_ "unfollow-button", onClick (Unfollow xo)]
             [text "Unfollow"],
           div_
-            [class_ "profile-pic-container"]
+            [class_ "pic-container"]
             [displayProfilePic $ p ^. #picture],
           div_
-            [class_ "profile-info-container"]
-            [ div_ [class_ "profile-name"] [text $ p ^. #username],
-              div_ [class_ "profile-about"] [text . fromMaybe "" $ p ^. #about]
+            [class_ "info-container"]
+            [ div_ [class_ "name"] [text $ p ^. #username],
+              div_ [class_ "about"] [text . fromMaybe "" $ p ^. #about]
             ]
         ]
 
