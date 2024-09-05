@@ -1,3 +1,4 @@
+* unsubscribing after EOSed!
 * verify signatures on all incoming events!
 * following list
     * follow new author by entering xpub or via some firefox extension
