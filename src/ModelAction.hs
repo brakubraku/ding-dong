@@ -27,7 +27,7 @@ data Action
   | ResponseReceived SubscriptionId [(Response, RelayURI)]
   | TextNotesAndDeletes [(Response, Relay)]
   | HandleWebSocket (WebSocket ())
-  | ReceivedProfiles [(Response, Relay)]
+  | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction

@@ -78,6 +78,7 @@ library
                       Nostr.ReactionUtils
                       PeriodicLoader
                       ReactionsLoader
+                      ProfilesLoader
                       MyCrypto
                       MyMain
                       Contacts

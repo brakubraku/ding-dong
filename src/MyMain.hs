@@ -48,6 +48,7 @@ import Nostr.Response
 import Nostr.WebSocket
 import Optics as O
 import PeriodicLoader
+import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
 
 start :: JSM ()
@@ -67,8 +68,9 @@ start = do
         ]
         keys
   reactionsLoader <- liftIO createReactionsLoader
+  profilesLoader <- liftIO createProfilesLoader
   let subs = [connectRelays nn HandleWebSocket]
-      update = updateModel nn reactionsLoader
+      update = updateModel nn reactionsLoader profilesLoader
   startApp App {initialAction = StartAction, model = initialModel savedContacts actualTime, ..}
   where
     initialModel contacts actualTime =
@@ -89,10 +91,11 @@ start = do
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
+  PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, DateTime, Relay) ->
   Action ->
   Model ->
   Effect Action Model
-updateModel nn rl action model =
+updateModel nn rl pl action model =
   case action of
     HandleWebSocket (WebSocketClose _ _ _) ->
       noEff $ model & #err .~ "Connection closed"
@@ -115,8 +118,9 @@ updateModel nn rl action model =
                 runInNostr $ RP.waitForActiveConnections (secs 2)
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
+                forkJSM $ startLoader nn pl ReceivedProfiles sink
                 forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes Right sink
-                forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
+                -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
                       do
@@ -130,16 +134,16 @@ updateModel nn rl action model =
     TextNotesAndDeletes rs ->
       -- TODO: test this
       let notes = model ^. #textNotes
-          newEvents = catMaybes $ getEvent . fst <$> rs
-          newNotes =
+          receivedEvents = catMaybes $ getEvent . fst <$> rs
+          receivedNotes =
             Set.fromList $
               Prelude.filter
                 (\e -> e ^. #kind == TextNote && not (isReply e))
-                newEvents
-          allNotes = notes `Set.union` newNotes
+                receivedEvents
+          allNotes = notes `Set.union` receivedNotes
           deletionEvents =
             catMaybes $
-              Prelude.filter ((== Delete) . kind) newEvents
+              Prelude.filter ((== Delete) . kind) receivedEvents
                 & fmap
                   ( \e -> do
                       ETag eid _ _ <- getSingleETag e
@@ -158,10 +162,12 @@ updateModel nn rl action model =
             model
               & #textNotes
               .~ updatedNotes
-          reactionsToLoadFor =
-            (eventId <$> Set.toList (newNotes `Set.difference` notes))
-       in newModel
-            <# (load rl reactionsToLoadFor >> pure NoAction)
+
+          newNotes = Set.toList (receivedNotes `Set.difference` notes)
+       in newModel <# do
+            load rl $ eventId <$> newNotes
+            load pl $ pubKey <$> newNotes
+            pure NoAction
     ReceivedReactions rs ->
       -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
@@ -171,7 +177,7 @@ updateModel nn rl action model =
                 & #reactions
                 .~ Prelude.foldl processReceived reactions rs
     ReceivedProfiles rs ->
-      let profiles = catMaybes $ extractProfile <$> rs
+      let profiles = (\(xo, pro, when, rel) -> (xo, (pro, when))) <$> rs
        in noEff $
             model
               & #profiles
@@ -200,9 +206,11 @@ updateModel nn rl action model =
                   pure (evt, rel)
               )
                 <$> rs
-      let newModel = model & #thread.~ Prelude.foldr addToThread (model ^. #thread) evts
-      newModel <# (load rl (Map.keys $ newModel ^. #thread % #events) >> pure NoAction)
-
+      let newModel = model & #thread .~ Prelude.foldr addToThread (model ^. #thread) evts
+      newModel <# do
+        load rl (Map.keys $ newModel ^. #thread % #events)
+        load pl (pubKey . fst <$> (Map.elems $ newModel ^. #thread % #events))
+        pure NoAction
     _ -> noEff model
 
 subscribeForThreadEvents :: NostrNetwork -> Event -> Sub Action
@@ -226,18 +234,6 @@ updateContacts xos = do
 
 loadContacts :: JSM [XOnlyPubKey]
 loadContacts = fromRight [] <$> getLocalStorage "my-contacts"
-
-extractProfile ::
-  (Response, Relay) ->
-  Maybe (XOnlyPubKey, (Profile, DateTime))
-extractProfile (EventReceived _ event, _) = parseProfiles event
-  where
-    parseProfiles e =
-      let xo = pubKey e
-       in case readProfile e of
-            Just p -> Just (xo, (p, created_at e))
-            Nothing -> Nothing
-extractProfile _ = Nothing
 
 secs :: Int -> Int
 secs = (* 1000000)
