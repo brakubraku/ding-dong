@@ -122,3 +122,15 @@
 .profile-about {
     margin-top: 20px
 }
+
+.thread-container .note {
+    margin-left: 30px;
+}
+
+.thread-container .note-no-parent {
+    margin-left: 0px;
+}
+
+.thread-container .reply {
+    margin-left: 100px;
+}

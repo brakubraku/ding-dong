@@ -82,6 +82,7 @@ library
                       MyMain
                       Contacts
                       MisoSubscribe
+                      ModelAction
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.

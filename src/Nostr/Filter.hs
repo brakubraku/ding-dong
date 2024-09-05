@@ -7,7 +7,8 @@
 module Nostr.Filter
   ( DatedFilter (..),
     Filter (..),
-    isAnytime
+    isAnytime,
+    anytime
   )
 where
 
@@ -114,6 +115,11 @@ addTimeInterval (DatedFilter f since until) = catMaybes
 isAnytime :: DatedFilter -> Bool
 isAnytime (DatedFilter f Nothing Nothing) = True
 isAnytime (DatedFilter f _ _) = False
+
+
+anytime :: Filter -> DatedFilter
+anytime f = DatedFilter f Nothing Nothing
+
 
 -- addTimeInterval :: DateTime -> [Item [Pair]]
 -- addTimeInterval interval =

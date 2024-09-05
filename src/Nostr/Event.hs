@@ -36,7 +36,7 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile (Profile (..), RelayURL, Username)
 import Nostr.Relay
-import Optics
+import Optics hiding (uncons)
 import System.Entropy
 
 newtype EventId = EventId
@@ -356,14 +356,35 @@ isReplyTag :: Tag -> Bool
 isReplyTag (ETag _ _ (Just Reply)) = True
 isReplyTag _ = False
 
+isRootTag :: Tag -> Bool
+isRootTag (ETag _ _ (Just Root)) = True
+isRootTag _ = False
+
 isReply :: Event -> Bool
-isReply = any isReplyTag . tags
+isReply = any (\t -> isReplyTag t || isRootTag t) . tags
 
 isReplyTo :: Event -> Event -> Bool
 event `isReplyTo` parent = any checkTag . tags $ event
   where
     checkTag (ETag eid _ (Just Reply)) = eid == eventId parent
     checkTag _ = False
+
+-- If event has Etag with Reply marker then choose that
+-- otherwise if it has Etag with Root marker then choose that
+-- otherwise the event is not a response to anything
+findIsReplyTo :: Event -> Maybe EventId
+findIsReplyTo event =
+  let find [] (replyEid, rootEid) = (replyEid, rootEid)
+      find _ (replyEid@(Just _), rootEid@(Just _)) = (replyEid, rootEid)
+      find (e : tags) (replyEid, rootEid) =
+        case e of
+          ETag eid _ (Just Reply) -> find tags (Just eid, rootEid)
+          ETag eid _ (Just Root) -> find tags (replyEid, Just eid)
+          _ -> find tags (replyEid, rootEid)
+   in case find (tags event) (Nothing, Nothing) of
+        (replyEid@(Just _), _) -> replyEid
+        (Nothing, rootEid@(Just _)) -> rootEid
+        _ -> Nothing
 
 isEtag :: Tag -> Bool
 isEtag ETag {} = True
@@ -373,13 +394,15 @@ findETags :: Event -> [Tag]
 findETags e = filter isEtag . tags $ e
 
 getSingleETag :: Event -> Maybe Tag
-getSingleETag e = fst <$> (Data.List.uncons $ findETags e)
+getSingleETag e =
+  let etags = findETags e
+   in case length etags of
+        1 -> fst <$> Data.List.uncons etags
+        _ -> Nothing
 
-isReplyNote :: Event -> Bool
-isReplyNote e =
-  any (\m -> m == Root || m == Reply) markers
+findRootEid :: Event -> Maybe EventId
+findRootEid e = fst <$> (uncons . catMaybes $ findRoot <$> tags e)
   where
-    markers = catMaybes $ getMarker <$> findETags e
-    getMarker tag = case tag of
-      ETag _ _ marker -> marker
+    findRoot = \tag -> case tag of
+      ETag eid _ (Just Root) -> Just eid
       _ -> Nothing
