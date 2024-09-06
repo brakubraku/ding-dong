@@ -16,18 +16,14 @@ module MyMain where
 import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Aeson (ToJSON)
-import Data.Bool
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
-import Data.List
 import Data.Map as Map
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import Data.Time
 import Debug.Trace (trace)
-import GHC.Generics
 import Miso hiding (at, now, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
@@ -43,7 +39,6 @@ import Nostr.Profile
 import Nostr.Reaction
 import Nostr.Relay
 import qualified Nostr.RelayPool as RP
-import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
 import Optics as O
@@ -82,7 +77,7 @@ start = do
         Map.empty
         Home
         actualTime
-        (Thread Map.empty Map.empty Map.empty)
+        Map.empty
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -197,8 +192,8 @@ updateModel nn rl pl action model =
       model <# (writeModelToStorage m >> pure NoAction)
     ActualTime t -> noEff $ model & #now .~ t
     DisplayThread e -> do
-      effectSub (model & #page .~ ThreadPage e) $ subscribeForThreadEvents nn e
-    ThreadEvents rootEvtId rs -> do
+      effectSub (model & #page .~ ThreadPage e) $ subscribeForWholeThread nn e
+    ThreadEvents reid rs -> do
       let evts =
             catMaybes $
               ( \(resp, rel) -> do
@@ -206,23 +201,33 @@ updateModel nn rl pl action model =
                   pure (evt, rel)
               )
                 <$> rs
-      -- let thread = fromMaybe newThread $ model ^. #thread % at (RootEid rootEvtId)
-      let newModel = model & #thread .~ Prelude.foldr addToThread (model ^. #thread) evts
+      let thread = fromMaybe newThread $ model ^. #thread % at reid
+      let updatedThread = Prelude.foldr addToThread thread evts
+      let newModel = model & #thread % at reid .~ (Just updatedThread)
       newModel <# do
-        load rl (Map.keys $ newModel ^. #thread % #events)
-        load pl (pubKey . fst <$> (Map.elems $ newModel ^. #thread % #events))
+        load rl (Map.keys $ updatedThread ^. #events)
+        load pl (pubKey . fst <$> (Map.elems $ updatedThread ^. #events))
         pure NoAction
     _ -> noEff model
 
-subscribeForThreadEvents :: NostrNetwork -> Event -> Sub Action
-subscribeForThreadEvents nn e sink = do
+subscribeForWholeThread :: NostrNetwork -> Event -> Sub Action
+subscribeForWholeThread nn e sink = do
   -- if there is no root eid in tags then this is a "top-level" note
   -- and so it's eid is the root of the thread
-  let rootEvtId = fromMaybe (e ^. #eventId) $ findRootEid e
+  let reid = fromMaybe (e ^. #eventId) $ findRootEid e
+  subscribeForLinkedEvents nn (RootEid reid) reid sink
+
+subscribeForEventReplies :: NostrNetwork -> Event -> Sub Action
+subscribeForEventReplies nn e = do
+  let reid = fromMaybe (e ^. #eventId) $ findRootEid e
+  subscribeForLinkedEvents nn (RootEid reid) (e ^. #eventId)
+
+subscribeForLinkedEvents :: NostrNetwork -> RootEid -> EventId -> Sub Action
+subscribeForLinkedEvents nn reid eid sink = do
   subscribe
     nn
-    [anytime $ LinkedEvents [rootEvtId]]
-    (ThreadEvents rootEvtId)
+    [anytime $ LinkedEvents [eid]]
+    (ThreadEvents reid)
     Right
     sink
 
@@ -334,7 +339,11 @@ displayNote m e =
           div_
             [class_ "text-note"]
             [ p_ [] [text (e ^. #content)],
-              reactionsView reactions
+              div_
+                [class_ "text-note-properties"]
+                ( maybe [] repliesCount replies
+                    ++ [reactionsView reactions]
+                )
             ]
         ],
       div_ [class_ "text-note-right-panel"] []
@@ -347,7 +356,13 @@ displayNote m e =
     displayName :: View action
     displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
     noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
-    reactions = m ^. #reactions % #processed % at (eventId e)
+    eid = e ^. #eventId
+    reactions = m ^. #reactions % #processed % at eid
+    reid = RootEid $ fromMaybe eid $ findRootEid e
+    replies = do
+      thread <- m ^. #thread % at reid
+      Set.size <$> thread ^. #replies % at eid
+    repliesCount c = [div_ [class_ "replies-count"] [text $ "Replies:" <> (S.pack . show $ c)]]
 
 -- >>> length (Just "a")
 -- 1
@@ -381,26 +396,28 @@ leftPanel =
 
 displayThread :: Model -> Event -> View Action
 displayThread m e =
-  let thread = m ^. #thread
-      parentId = thread ^. #parents % at (e ^. #eventId)
-      parent = parentId >>= \eid -> thread ^. #events % at eid
-      parentDisplay =
-        parent
-          >>= (\p -> Just $ div_ [class_ "parent"] [displayNote m (fst p)])
+  let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+      parentDisplay = do
+        thread <- m ^. #thread % at reid
+        parentId <- thread ^. #parents % at (e ^. #eventId)
+        parent <- thread ^. #events % at parentId
+        pure $ div_ [class_ "parent"] [displayNote m (fst parent)]
+
       noteDisplay =
         Just $
           div_
             [ class_ $
-                if isJust parent
+                if isJust parentDisplay
                   then "note"
                   else "note-no-parent"
             ]
             [displayNote m e]
-      replies = getRepliesFor (m ^. #thread) (e ^. #eventId)
-      repliesDisplay =
-        (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> replies
+      repliesDisplay = do
+        thread <- m ^. #thread % at reid
+        let replies = getRepliesFor thread (e ^. #eventId)
+        pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> replies
    in div_ [class_ "thread-container"] $
-        catMaybes [parentDisplay, noteDisplay] ++ repliesDisplay
+        catMaybes [parentDisplay, noteDisplay] ++ fromMaybe [] repliesDisplay
 
 reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action
 reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]

@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 
 module ModelAction where
 
@@ -36,9 +38,9 @@ data Action
   | WriteModel Model
   | ActualTime UTCTime
   | DisplayThread Event
-  | ThreadEvents EventId [(Response, Relay)]
+  | ThreadEvents RootEid [(Response, Relay)]
 
-data Page = Home | Following | ThreadPage Event deriving (Eq, Generic, ToJSON)
+data Page = Home | Following | ThreadPage Event deriving (Eq, Generic)
 
 data Model = Model
   { textNotes :: Set.Set Event,
@@ -49,11 +51,11 @@ data Model = Model
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     -- thread :: Map.Map RootEid Thread
-    thread :: Thread
+    thread :: Map.Map RootEid Thread
   }
   deriving (Eq, Generic)
 
-newtype RootEid = RootEid EventId deriving (Eq)
+newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
 data Thread = Thread
   { -- rootId :: EventId,
