@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -18,6 +19,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
+import Data.List (groupBy)
 import Data.Map as Map
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, isJust)
@@ -162,7 +164,9 @@ updateModel nn rl pl action model =
        in newModel <# do
             load rl $ eventId <$> newNotes
             load pl $ pubKey <$> newNotes
-            pure NoAction
+            pure $ SubscribeForReplies newNotes
+    SubscribeForReplies es ->
+      effectSub model $ subscribeForEventsReplies nn es
     ReceivedReactions rs ->
       -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
@@ -193,43 +197,44 @@ updateModel nn rl pl action model =
     ActualTime t -> noEff $ model & #now .~ t
     DisplayThread e -> do
       effectSub (model & #page .~ ThreadPage e) $ subscribeForWholeThread nn e
-    ThreadEvents reid rs -> do
-      let evts =
-            catMaybes $
-              ( \(resp, rel) -> do
-                  evt <- getEvent resp
-                  pure (evt, rel)
-              )
-                <$> rs
-      let thread = fromMaybe newThread $ model ^. #thread % at reid
-      let updatedThread = Prelude.foldr addToThread thread evts
-      let newModel = model & #thread % at reid .~ (Just updatedThread)
-      newModel <# do
-        load rl (Map.keys $ updatedThread ^. #events)
-        load pl (pubKey . fst <$> (Map.elems $ updatedThread ^. #events))
+    ThreadEvents es -> do
+      -- if there is no root eid in tags then this is a "top-level" note
+      -- and so it's eid is the root of the thread
+      let getReid e = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+          updateModel (e, rel) model =
+            let reid = getReid e
+                thread = fromMaybe newThread $ model ^. #thread % at reid
+                updatedThread = addToThread (e, rel) thread
+             in model & #thread % at reid .~ (Just updatedThread)
+
+          updated = Prelude.foldr updateModel model es
+      updated <# do
+        load rl (eventId . fst <$> es)
+        load pl (pubKey . fst <$> es)
         pure NoAction
     _ -> noEff model
 
 subscribeForWholeThread :: NostrNetwork -> Event -> Sub Action
 subscribeForWholeThread nn e sink = do
-  -- if there is no root eid in tags then this is a "top-level" note
-  -- and so it's eid is the root of the thread
-  let reid = fromMaybe (e ^. #eventId) $ findRootEid e
-  subscribeForLinkedEvents nn (RootEid reid) reid sink
+  subscribeForLinkedEvents nn [(e ^. #eventId)] sink
 
-subscribeForEventReplies :: NostrNetwork -> Event -> Sub Action
-subscribeForEventReplies nn e = do
-  let reid = fromMaybe (e ^. #eventId) $ findRootEid e
-  subscribeForLinkedEvents nn (RootEid reid) (e ^. #eventId)
+subscribeForEventsReplies :: NostrNetwork -> [Event] -> Sub Action
+subscribeForEventsReplies nn es sink = do
+  subscribeForLinkedEvents nn (eventId <$> es) sink
 
-subscribeForLinkedEvents :: NostrNetwork -> RootEid -> EventId -> Sub Action
-subscribeForLinkedEvents nn reid eid sink = do
+subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Sub Action
+subscribeForLinkedEvents nn eids sink = do
   subscribe
     nn
-    [anytime $ LinkedEvents [eid]]
-    (ThreadEvents reid)
-    Right
+    [anytime $ LinkedEvents eids]
+    ThreadEvents
+    process
     sink
+  where
+    process (resp, rel) =
+      maybe (Left "could not extract Event") Right $ do
+        evt <- getEvent resp
+        pure (evt, rel)
 
 writeModelToStorage :: Model -> JSM ()
 writeModelToStorage m = pure ()
@@ -362,7 +367,7 @@ displayNote m e =
     replies = do
       thread <- m ^. #thread % at reid
       Set.size <$> thread ^. #replies % at eid
-    repliesCount c = [div_ [class_ "replies-count"] [text $ "Replies:" <> (S.pack . show $ c)]]
+    repliesCount c = [div_ [class_ "replies-count"] [text $ "▶ " <> (S.pack . show $ c)]]
 
 -- >>> length (Just "a")
 -- 1

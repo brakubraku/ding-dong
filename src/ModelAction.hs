@@ -38,7 +38,8 @@ data Action
   | WriteModel Model
   | ActualTime UTCTime
   | DisplayThread Event
-  | ThreadEvents RootEid [(Response, Relay)]
+  | ThreadEvents [(Event, Relay)]
+  | SubscribeForReplies [Event]
 
 data Page = Home | Following | ThreadPage Event deriving (Eq, Generic)
 

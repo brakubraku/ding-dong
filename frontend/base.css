@@ -148,3 +148,11 @@
 .thread-container .reply {
     margin-left: 100px;
 }
+
+.text-note-properties {
+    display: flex;
+}
+
+.replies-count {
+    margin-right: 10px;
+}
