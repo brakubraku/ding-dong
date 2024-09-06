@@ -40,8 +40,9 @@ data Action
   | DisplayThread Event
   | ThreadEvents [(Event, Relay)]
   | SubscribeForReplies [Event]
+  | GoBack
 
-data Page = Home | Following | ThreadPage Event deriving (Eq, Generic)
+data Page = Home | Following | ThreadPage Event deriving (Show, Eq, Generic)
 
 data Model = Model
   { textNotes :: Set.Set Event,
@@ -52,7 +53,8 @@ data Model = Model
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     -- thread :: Map.Map RootEid Thread
-    thread :: Map.Map RootEid Thread
+    thread :: Map.Map RootEid Thread,
+    history :: [Page]
   }
   deriving (Eq, Generic)
 

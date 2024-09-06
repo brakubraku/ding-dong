@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLabels #-}
@@ -80,6 +81,7 @@ start = do
         Home
         actualTime
         Map.empty
+        [Home]
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -187,7 +189,15 @@ updateModel nn rl pl action model =
                 )
                 (fromList profiles)
     GoPage page ->
-      noEff $ model & #page .~ page
+      noEff $ model & #page .~ page & #history %~ (page :)
+    GoBack ->
+      let updated = do
+            (_, xs) <- uncons $ model ^. #history
+            (togo, rest) <- trace ("branko-togo " <> show xs) $ uncons xs
+            pure $
+              trace ("branko-togo " <> show togo) $
+                model & #page .~ togo & #history .~ (togo : rest)
+       in noEff $ fromMaybe model updated
     Unfollow xo ->
       let updated = Prelude.filter (/= xo) $ model ^. #contacts
        in (model & #contacts .~ updated)
@@ -196,7 +206,9 @@ updateModel nn rl pl action model =
       model <# (writeModelToStorage m >> pure NoAction)
     ActualTime t -> noEff $ model & #now .~ t
     DisplayThread e -> do
-      effectSub (model & #page .~ ThreadPage e) $ subscribeForWholeThread nn e
+      effectSub model $ \sink -> do
+        forkJSM $ subscribeForWholeThread nn e sink
+        liftIO . sink . GoPage $ ThreadPage e
     ThreadEvents es -> do
       -- if there is no root eid in tags then this is a "top-level" note
       -- and so it's eid is the root of the thread
@@ -252,22 +264,7 @@ secs = (* 1000000)
 appView :: Model -> View Action
 appView m =
   div_ [] $
-    [ -- h1_
-      --   [style_ $ M.fromList [("font-weight", "bold")]]
-      --   [text $ S.pack "ding-dong"],
-      --
-      --
-      -- ,input_
-      --   [ type_ "text"
-      --   --  , onInput UpdateMessage
-      --   -- onEnter (SendMessage msg)
-      --   ],
-      -- button_
-      --   []
-      --   -- [ onClick (SendMessage msg)    ]
-      --   [text (S.pack "Do nothing!")]
-
-      div_
+    [ div_
         [class_ "main-container"]
         [ leftPanel,
           rightPanel m
@@ -369,14 +366,11 @@ displayNote m e =
       Set.size <$> thread ^. #replies % at eid
     repliesCount c = [div_ [class_ "replies-count"] [text $ "▶ " <> (S.pack . show $ c)]]
 
--- >>> length (Just "a")
--- 1
-
 rightPanel :: Model -> View Action
 rightPanel m =
   div_
     [class_ "right-panel"]
-    [displayPage]
+    [div_ [class_ "button-back", onClick (GoBack)] [text "←"], displayPage]
   where
     displayPage = case m ^. #page of
       Home -> notesView m

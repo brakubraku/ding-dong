@@ -156,3 +156,8 @@
 .replies-count {
     margin-right: 10px;
 }
+
+.button-back {
+    font-size: 30px;
+    cursor: pointer;
+}
