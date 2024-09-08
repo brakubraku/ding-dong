@@ -162,7 +162,7 @@ updateModel nn rl pl action model =
               & #textNotes
               .~ updatedNotes
 
-          newNotes = Set.toList (receivedNotes `Set.difference` notes)
+          newNotes = Set.toList (updatedNotes `Set.difference` notes)
        in newModel <# do
             load rl $ eventId <$> newNotes
             load pl $ pubKey <$> newNotes
@@ -297,7 +297,7 @@ followingView m@Model {..} =
             [text "Unfollow"],
           div_
             [class_ "pic-container"]
-            [displayProfilePic $ p ^. #picture],
+            [displayProfilePic xo $ p ^. #picture],
           div_
             [class_ "info-container"]
             [ div_ [class_ "name"] [text $ p ^. #username],
@@ -309,7 +309,7 @@ notesView :: Model -> View Action
 notesView m@Model {..} =
   div_
     [class_ "notes-container"]
-    (displayNote m <$> (Set.toList textNotes))
+    (displayNote m <$> (orderByAgeAsc $ Set.toList textNotes))
 
 footerView :: Model -> View action
 footerView Model {..} =
@@ -320,13 +320,14 @@ footerView Model {..} =
         [text err | not . S.null $ err]
     ]
 
-displayProfilePic :: Maybe Picture -> View action
-displayProfilePic (Just pic) =
+displayProfilePic :: XOnlyPubKey -> Maybe Picture -> View Action
+displayProfilePic xo (Just pic) =
   img_
     [ class_ "profile-pic",
-      prop "src" $ pic
+      prop "src" $ pic,
+      onClick . GoPage $ ProfilePage xo
     ]
-displayProfilePic _ = div_ [class_ "profile-pic"] []
+displayProfilePic _ _ = div_ [class_ "profile-pic"] []
 
 displayNote :: Model -> Event -> View Action
 displayNote m e =
@@ -334,7 +335,7 @@ displayNote m e =
     [class_ "note-container"]
     [ div_
         [class_ "profile-pic-container"]
-        [displayProfilePic $ picUrl m e],
+        [displayProfilePic (e ^. #pubKey) $ picUrl m e],
       div_
         [class_ "text-note-container", onClick $ DisplayThread e]
         [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
@@ -353,9 +354,7 @@ displayNote m e =
   where
     profile = fromMaybe unknown $ getAuthorProfile m e
     unknown = Profile {username = "", displayName = Nothing}
-    profileName :: View action
     profileName = span_ [id_ "username"] [text $ profile ^. #username]
-    displayName :: View action
     displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
     noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
     eid = e ^. #eventId
@@ -376,6 +375,7 @@ rightPanel m =
       Home -> notesView m
       Following -> followingView m
       ThreadPage e -> displayThread m e
+      ProfilePage xo -> displayProfilePage m xo
 
 leftPanel :: View Action
 leftPanel =
@@ -392,6 +392,48 @@ leftPanel =
       div_
         [class_ "left-panel-item"]
         [button_ [onClick (GoPage page)] [text label]]
+
+displayProfilePage :: Model -> XOnlyPubKey -> View Action
+displayProfilePage m xo =
+  let notFound =
+        div_
+          []
+          [ text $
+              "Profile of "
+                <> (S.pack $ show xo)
+                <> " not found."
+          ]
+      profileDisplay = do
+        (p, _) <- m ^. #profiles % at xo
+        let banner =
+              p ^. #banner >>= \b ->
+                pure $
+                  img_ [class_ "banner-pic", prop "src" b]
+        let bannerDef = div_ [class_ "banner-pic-default"] []
+        let profilepic =
+              p ^. #picture >>= \pic ->
+                pure $
+                  img_ [class_ "profile-pic", prop "src" pic]
+        let profilepicDef = div_ [class_ "profile-pic-default"] []
+        let profileName = span_ [id_ "username"] [text $ p ^. #username]
+        let displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ p ^. #displayName]
+        pure $
+          div_
+            []
+            [ div_
+                [class_ "banner"]
+                [fromMaybe bannerDef banner],
+              div_
+                [class_ "profile-pic-container"]
+                [fromMaybe profilepicDef profilepic,
+                div_ [] [profileName, displayName]],
+              div_
+                [class_ "profile-about"]
+                [div_ [class_ "about"] [span_ [] [text . fromMaybe "" $ p ^. #about]]]
+            ]
+   in div_
+        [class_ "profile-page"]
+        [fromMaybe notFound profileDisplay]
 
 displayThread :: Model -> Event -> View Action
 displayThread m e =

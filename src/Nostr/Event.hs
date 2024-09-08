@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
--- optics support
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -406,3 +405,11 @@ findRootEid e = fst <$> (uncons . catMaybes $ findRoot <$> tags e)
     findRoot = \tag -> case tag of
       ETag eid _ (Just Root) -> Just eid
       _ -> Nothing
+
+orderByAgeAsc :: [Event] -> [Event]
+orderByAgeAsc es = reverse $
+  sortBy
+    ( \e1 e2 ->
+        (e1 ^. #created_at) `compare` (e2 ^. #created_at)
+    )
+    es

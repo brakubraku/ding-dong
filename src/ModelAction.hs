@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
 
 module ModelAction where
 
@@ -42,7 +42,12 @@ data Action
   | SubscribeForReplies [Event]
   | GoBack
 
-data Page = Home | Following | ThreadPage Event deriving (Show, Eq, Generic)
+data Page
+  = Home
+  | Following
+  | ThreadPage Event
+  | ProfilePage XOnlyPubKey
+  deriving (Show, Eq, Generic)
 
 data Model = Model
   { textNotes :: Set.Set Event,

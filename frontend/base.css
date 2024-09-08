@@ -161,3 +161,50 @@
     font-size: 30px;
     cursor: pointer;
 }
+
+.profile-page .profile-pic-container {
+    display: flex;
+    flex-direction: row;
+}
+
+.profile-page .profile-pic {
+    height: 150px;
+    width: 150px;
+    border-radius: 70%;
+    margin-right: 20px;
+    margin-top: 15px;
+    position: relative;
+    top: -90px;
+    left: 10px;
+}
+
+.profile-page .profile-pic-default {
+    height: 150px;
+    width: 150px;
+    border-radius: 70%;
+    margin-right: 20px;
+    margin-top: 15px;
+    position: relative;
+    top: -90px;
+    left: 10px;
+    background-color: white
+}
+
+.profile-page #username {
+    font-size: 45px;
+}
+
+.profile-page .banner-pic {
+    max-height: 500px;
+}
+
+.profile-page .banner-pic-default {
+    height: 500px;
+    width: 500px;
+    background-color: pink;
+}
+
+.profile-page .profile-about {
+    position: relative;
+    top: -40px;
+}

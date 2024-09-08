@@ -4,8 +4,9 @@
 * author profile page
 * relay management
 * display thread
-* go forward/go back
-
+* go forward/go back smoothely and with correct scroll (HistoryAPI)
+* display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
+* display quoted notes inside note
 
 * secp256k1 signatures incorrent on wasm
 * more event reactions support
