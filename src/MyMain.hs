@@ -337,7 +337,7 @@ displayNote m e =
         [class_ "profile-pic-container"]
         [displayProfilePic (e ^. #pubKey) $ picUrl m e],
       div_
-        [class_ "text-note-container", onClick $ DisplayThread e]
+        [class_ "text-note-container"]
         [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
           div_
             [class_ "text-note"]
@@ -363,7 +363,7 @@ displayNote m e =
     replies = do
       thread <- m ^. #thread % at reid
       Set.size <$> thread ^. #replies % at eid
-    repliesCount c = [div_ [class_ "replies-count"] [text $ "▶ " <> (S.pack . show $ c)]]
+    repliesCount c = [div_ [class_ "replies-count", onClick $ DisplayThread e] [text $ "▶ " <> (S.pack . show $ c)]]
 
 rightPanel :: Model -> View Action
 rightPanel m =
