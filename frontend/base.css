@@ -209,3 +209,12 @@
     position: relative;
     top: -40px;
 }
+
+.search-box {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.input-xo {
+    width: 500px;
+}

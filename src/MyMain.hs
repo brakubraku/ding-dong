@@ -15,9 +15,11 @@
 
 module MyMain where
 
+import BechUtils
 import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Bool (bool)
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
 import Data.List (groupBy)
@@ -82,6 +84,7 @@ start = do
         actualTime
         Map.empty
         [Home]
+        (FindProfileModel "" Nothing Nothing)
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -182,8 +185,8 @@ updateModel nn rl pl action model =
        in noEff $
             model
               & #profiles
-              %~ unionWithKey
-                ( \_ p1@(_, d1) p2@(_, d2) ->
+              %~ unionWith
+                ( \p1@(_, d1) p2@(_, d2) ->
                     -- prefer most recent profile
                     if d1 > d2 then p1 else p2
                 )
@@ -224,6 +227,16 @@ updateModel nn rl pl action model =
         load rl (eventId . fst <$> es)
         load pl (pubKey . fst <$> es)
         pure NoAction
+    UpdateField l v -> noEff $ model & l .~ v
+    FindProfile ->
+      let xo =
+            either (const Nothing) Just $
+              decodeNpub $
+                model ^. #fpm % #findWho
+       in (model & #fpm % #lookingFor .~ xo) <# do
+            -- TODO: why no singleton in Data.List
+            maybe (pure ()) (load pl . (: [])) xo
+            pure NoAction
     _ -> noEff model
 
 subscribeForWholeThread :: NostrNetwork -> Event -> Sub Action
@@ -276,8 +289,8 @@ followingView :: Model -> View Action
 followingView m@Model {..} =
   div_
     [class_ "following-container"]
-    $ displayProfile
-      <$> loadedProfiles
+    $ [findProfileView m]
+      ++ (displayProfile <$> loadedProfiles)
   where
     loadedProfiles :: [(XOnlyPubKey, Profile)]
     loadedProfiles =
@@ -363,7 +376,11 @@ displayNote m e =
     replies = do
       thread <- m ^. #thread % at reid
       Set.size <$> thread ^. #replies % at eid
-    repliesCount c = [div_ [class_ "replies-count", onClick $ DisplayThread e] [text $ "▶ " <> (S.pack . show $ c)]]
+    repliesCount c =
+      [ div_
+          [class_ "replies-count", onClick $ DisplayThread e]
+          [text $ "▶ " <> (S.pack . show $ c)]
+      ]
 
 rightPanel :: Model -> View Action
 rightPanel m =
@@ -416,7 +433,10 @@ displayProfilePage m xo =
                   img_ [class_ "profile-pic", prop "src" pic]
         let profilepicDef = div_ [class_ "profile-pic-default"] []
         let profileName = span_ [id_ "username"] [text $ p ^. #username]
-        let displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ p ^. #displayName]
+        let displayName =
+              span_
+                [id_ "display-name"]
+                [text . fromMaybe "" $ p ^. #displayName]
         pure $
           div_
             []
@@ -425,8 +445,9 @@ displayProfilePage m xo =
                 [fromMaybe bannerDef banner],
               div_
                 [class_ "profile-pic-container"]
-                [fromMaybe profilepicDef profilepic,
-                div_ [] [profileName, displayName]],
+                [ fromMaybe profilepicDef profilepic,
+                  div_ [] [profileName, displayName]
+                ],
               div_
                 [class_ "profile-about"]
                 [div_ [class_ "about"] [span_ [] [text . fromMaybe "" $ p ^. #about]]]
@@ -463,10 +484,31 @@ displayThread m e =
 reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action
 reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]
 reactionsView (Just reactions) =
-  let likes = "♥ " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Like))
-      dislikes = "🖓 " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Dislike))
-      others = "Others: " <> (S.pack . show . length . fromMaybe Set.empty $ (reactions ^. at Other))
-   in div_ [class_ "reactions-container"] [text (likes <> " " <> dislikes <> " " <> others)]
+  let howMany = S.pack . show . length . fromMaybe Set.empty
+      likes = "♥ " <> howMany (reactions ^. at Like)
+      dislikes = "🖓 " <> howMany (reactions ^. at Dislike)
+      others = "Others: " <> howMany (reactions ^. at Other)
+   in div_
+        [class_ "reactions-container"]
+        [text (likes <> " " <> dislikes <> " " <> others)]
+
+findProfileView :: Model -> View Action
+findProfileView m =
+  let search =
+        input_
+          [ class_ "input-xo",
+            type_ "text",
+            onInput $ UpdateField (#fpm % #findWho),
+            onEnter $ FindProfile
+          ]
+      ppage =
+        (m ^. #fpm % #lookingFor)
+          >>= \xo -> pure [displayProfilePage m xo]
+   in div_ [class_ "find-profile"] $
+        [div_ [class_ "search-box"] [search]] ++ fromMaybe [] ppage
+  where
+    onEnter :: Action -> Attribute Action
+    onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
 
 getAuthorProfile :: Model -> Event -> Maybe Profile
 getAuthorProfile m e = fst <$> m ^. #profiles % at (e ^. #pubKey)

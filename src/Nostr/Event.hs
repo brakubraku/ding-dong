@@ -83,7 +83,7 @@ instance Show EventId where
 
 instance FromJSON EventId where
   parseJSON = withText "EventId" $ \i -> do
-    case eventId' i of
+    case decodeEventId i of
       Just e -> return e
       _ -> fail "invalid event id"
 
@@ -199,8 +199,8 @@ instance ToJSON Marker where
   toJSON (Root) = String "root"
   toJSON (Mention) = String "mention"
 
-eventId' :: Text -> Maybe EventId
-eventId' t = do
+decodeEventId :: Text -> Maybe EventId
+decodeEventId t = do
   bs <- decodeHex t
   case BS.length bs of
     32 -> Just $ EventId bs

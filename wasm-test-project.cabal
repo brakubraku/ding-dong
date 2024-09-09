@@ -84,6 +84,7 @@ library
                       Contacts
                       MisoSubscribe
                       ModelAction
+                      BechUtils
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.
@@ -119,6 +120,7 @@ library
                       , mtl
                       , intervals
                       , entropy
+                      , bech32
                       -- , hslogger
     -- Directories containing source files.
     hs-source-dirs:   src

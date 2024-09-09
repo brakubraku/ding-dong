@@ -42,8 +42,10 @@ subscribe nn subFilter act process sink = do
         let processed = process <$> msgs
         mapM_ logError $ lefts processed
         sink . act . rights $ processed
-        threadDelay $ 10^6 -- TODO
+        threadDelay $ 10^5 -- TODO
         unless finished collectResponses
+        putStrLn $ -- TODO: send this to hell
+          "branko:Subscription finished " <> show subFilter
   liftIO collectResponses
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]

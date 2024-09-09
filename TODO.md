@@ -8,6 +8,8 @@
 * display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
 * display quoted notes inside note
 
+* BUG: diffing algorithm results in previous images being displayed while new one loads?
+
 * secp256k1 signatures incorrent on wasm
 * more event reactions support
 * feed algorithm

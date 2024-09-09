@@ -41,6 +41,8 @@ data Action
   | ThreadEvents [(Event, Relay)]
   | SubscribeForReplies [Event]
   | GoBack
+  | UpdateField (Lens' Model Text) Text
+  | FindProfile
 
 data Page
   = Home
@@ -57,19 +59,31 @@ data Model = Model
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
-    -- thread :: Map.Map RootEid Thread
     thread :: Map.Map RootEid Thread,
-    history :: [Page]
+    history :: [Page],
+    fpm :: FindProfileModel
+    -- subscriptions ::
   }
   deriving (Eq, Generic)
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
+data FindProfileModel = FindProfileModel
+  { findWho :: Text,
+    lookingFor :: Maybe XOnlyPubKey,
+    found :: Maybe Profile
+  }
+  deriving (Eq, Generic)
+
 data Thread = Thread
-  { -- rootId :: EventId,
-    -- mapping from event to it's replies
+  { -- Mapping from event to it's replies
     replies :: Map.Map EventId (Set.Set EventId),
+    -- Mapping from event to that event which it's a reply to
     parents :: Map.Map EventId EventId,
+    -- We are mapping to EventId-s above
+    -- (as opposed mapping directly to Event-s) because those
+    -- events may not be loaded yet.
+    -- Loaded events are stored in 'events' below
     events :: EventsWithRelays
   }
   deriving (Eq, Generic)
@@ -94,8 +108,9 @@ addToThread (e, rel) t =
           t
             & #events
             %~ addEvent (e, rel)
-            & #parents
-            %~ Map.insert (e ^. #eventId) eid
+            & #parents --TODO: check this
+            % at (e ^. #eventId)
+            .~ Just eid
             & #replies
             % at eid
             %~ \mset -> Just $
