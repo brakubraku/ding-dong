@@ -459,6 +459,8 @@ displayProfilePage m xo =
 displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+      -- TODO: This does not work for direct replies to Root. 
+      -- I suspect they don't have Root set. Only Reply
       parentDisplay = do
         thread <- m ^. #thread % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)

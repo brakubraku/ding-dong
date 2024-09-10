@@ -1,3 +1,11 @@
+# Value
+
+* Running Nostr queries/publishing to Nostr with the convenience of Web UI 
+    * rapid WYSIWYG screens development; no need for any REST middle layer... 
+
+* Nostr social media client 
+
+
 
 # Building
 * start nix shell from ghc-wasm-miso-examples project
