@@ -23,6 +23,7 @@ import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
 import Optics
+import Nostr.Network
 
 data Action
   = RelayConnected RelayURI
@@ -43,13 +44,14 @@ data Action
   | GoBack
   | UpdateField (Lens' Model Text) Text
   | FindProfile
+  | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
 
 data Page
   = Home
   | Following
   | ThreadPage Event
   | ProfilePage XOnlyPubKey
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
   { textNotes :: Set.Set Event,
@@ -61,8 +63,8 @@ data Model = Model
     now :: UTCTime, -- don't know a better way to supply time
     thread :: Map.Map RootEid Thread,
     history :: [Page],
-    fpm :: FindProfileModel
-    -- subscriptions ::
+    fpm :: FindProfileModel,
+    subscriptions :: Map.Map Page [(SubscriptionId, Map.Map Relay RelaySubState)]
   }
   deriving (Eq, Generic)
 

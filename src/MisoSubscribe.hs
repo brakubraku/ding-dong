@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module MisoSubscribe where
 
@@ -7,42 +8,64 @@ import Control.Concurrent.STM
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Either
 import qualified Data.Map as Map
-import Miso
+import Data.Maybe
+import Data.Text
+import qualified Data.Text as T
+import Miso hiding (at)
 import Nostr.Filter
+import Nostr.Log (logError)
 import Nostr.Network
 import Nostr.Relay
 import Nostr.RelayPool as RP
+import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
-import Data.Maybe
-import Data.Either
-import Nostr.Log (logError)
-import Data.Text
 
 subscribe ::
   NostrNetwork ->
   [DatedFilter] ->
-  ([e] -> action) -> 
+  ([e] -> action) ->
+  Maybe ((SubscriptionId, Map.Map Relay RelaySubState) -> action) ->
   ((Response, Relay) -> Either Text e) ->
   Sub action
-subscribe nn subFilter act process sink = do
+subscribe nn subFilter actOnResults actOnSubState extractResults sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
   let collectResponses = do
-        subsState <- readMVar (nn ^. #subscriptions)
+        subStates <- readMVar (nn ^. #subscriptions)
         putStrLn $ -- TODO: send this to hell
           "1. substates are:"
-            <> show (relaysState <$> Map.elems subsState)
-        let finished = isSubFinished subId $ subsState
+            <> show (relaysState <$> Map.elems subStates)
+
+        -- inform about subscription state changes if 
+        -- function actOnSubState is provided
+        let actOnStateChange = fromMaybe (pure ()) $ do
+              action <- actOnSubState
+              let state = do
+                    relState <- subStates ^? at subId % _Just % #relaysState
+                    pure (subId, relState)
+
+              Just $
+                maybe
+                  ( logError $
+                      "Could not find relays state for subId="
+                        <> (T.pack . show $ subId)
+                  )
+                  (sink . action)
+                  state
+        actOnStateChange
+
+        let finished = isSubFinished subId $ subStates
         msgs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let processed = process <$> msgs
+        let processed = extractResults <$> msgs
         mapM_ logError $ lefts processed
-        sink . act . rights $ processed
-        threadDelay $ 10^5 -- TODO
+        sink . actOnResults . rights $ processed
+        threadDelay $ 10 ^ 5 -- TODO
         unless finished collectResponses
         putStrLn $ -- TODO: send this to hell
           "branko:Subscription finished " <> show subFilter
@@ -56,4 +79,3 @@ subscribe nn subFilter act process sink = do
         Just x -> do
           xs <- collectJustM action
           return (x : xs)
-

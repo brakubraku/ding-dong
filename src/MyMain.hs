@@ -23,8 +23,8 @@ import Data.Bool (bool)
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
 import Data.List (groupBy)
-import Data.Map as Map
-import qualified Data.Map as M
+import Data.Map as Map hiding (filter)
+import qualified Data.Map as M hiding (filter)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import Data.Time
@@ -85,6 +85,7 @@ start = do
         Map.empty
         [Home]
         (FindProfileModel "" Nothing Nothing)
+        Map.empty
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -121,7 +122,8 @@ updateModel nn rl pl action model =
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
                 forkJSM $ startLoader nn pl ReceivedProfiles sink
-                forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes Right sink
+                forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes
+                   (Just $ SubState Home) Right sink
                 -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
@@ -171,7 +173,7 @@ updateModel nn rl pl action model =
             load pl $ pubKey <$> newNotes
             pure $ SubscribeForReplies newNotes
     SubscribeForReplies es ->
-      effectSub model $ subscribeForEventsReplies nn es
+      effectSub model $ subscribeForEventsReplies nn es Home
     ReceivedReactions rs ->
       -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
@@ -210,7 +212,7 @@ updateModel nn rl pl action model =
     ActualTime t -> noEff $ model & #now .~ t
     DisplayThread e -> do
       effectSub model $ \sink -> do
-        forkJSM $ subscribeForWholeThread nn e sink
+        forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO . sink . GoPage $ ThreadPage e
     ThreadEvents es -> do
       -- if there is no root eid in tags then this is a "top-level" note
@@ -237,22 +239,37 @@ updateModel nn rl pl action model =
             -- TODO: why no singleton in Data.List
             maybe (pure ()) (load pl . (: [])) xo
             pure NoAction
+    SubState p st ->
+      let updateListWith (sid, ss) list =
+            (sid, ss) : filter (\(sid2, _) -> sid2 /= sid) list
+          updatedModel =
+            model
+              & #subscriptions
+              % at p
+              %~ Just
+              . fromMaybe []
+              . fmap (updateListWith st)
+       in updatedModel <# pure NoAction
     _ -> noEff model
 
-subscribeForWholeThread :: NostrNetwork -> Event -> Sub Action
-subscribeForWholeThread nn e sink = do
-  subscribeForLinkedEvents nn [(e ^. #eventId)] sink
+-- subscriptions below are parametrized by Page. The reason is
+-- so that one can within that page track the state (Running, EOS)
+-- of those subscriptions
+subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
+subscribeForWholeThread nn e page sink = do
+  subscribeForLinkedEvents nn [(e ^. #eventId)] page sink
 
-subscribeForEventsReplies :: NostrNetwork -> [Event] -> Sub Action
-subscribeForEventsReplies nn es sink = do
-  subscribeForLinkedEvents nn (eventId <$> es) sink
+subscribeForEventsReplies :: NostrNetwork -> [Event] -> Page -> Sub Action
+subscribeForEventsReplies nn es page sink = do
+  subscribeForLinkedEvents nn (eventId <$> es) page sink
 
-subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Sub Action
-subscribeForLinkedEvents nn eids sink = do
+subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Page -> Sub Action
+subscribeForLinkedEvents nn eids page sink = do
   subscribe
     nn
     [anytime $ LinkedEvents eids]
     ThreadEvents
+    (Just $ SubState page)
     process
     sink
   where
@@ -459,7 +476,7 @@ displayProfilePage m xo =
 displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
-      -- TODO: This does not work for direct replies to Root. 
+      -- TODO: This does not work for direct replies to Root.
       -- I suspect they don't have Root set. Only Reply
       parentDisplay = do
         thread <- m ^. #thread % at reid

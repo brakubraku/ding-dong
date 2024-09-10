@@ -25,7 +25,6 @@ import Debug.Trace
 data LoaderData id = LoaderData
   { loading :: Set id,
      loaded :: Set id
- --   loadedPreviously :: Set e
   }
   deriving (Generic)
 
@@ -37,7 +36,6 @@ data PeriodicLoader id e = PeriodicLoader
   }
   deriving (Generic)
 
--- Sub action = (action -> IO) -> JSM ()
 load :: (Ord id) => PeriodicLoader id e -> [id] -> JSM ()
 load pl ids = do
   liftIO . modifyMVar_ (pl ^. #buffers) $ \b -> do
@@ -67,6 +65,7 @@ startLoader nn pl act sink =
             nn
             ((pl ^. #createFilter) . toList $ toLoad)
             act 
+            Nothing
             (pl ^. #extract)
             sink
         liftIO . threadDelay . miliseconds $ pl ^. #period
