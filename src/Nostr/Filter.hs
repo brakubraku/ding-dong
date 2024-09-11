@@ -116,7 +116,6 @@ isAnytime :: DatedFilter -> Bool
 isAnytime (DatedFilter f Nothing Nothing) = True
 isAnytime (DatedFilter f _ _) = False
 
-
 anytime :: Filter -> DatedFilter
 anytime f = DatedFilter f Nothing Nothing
 

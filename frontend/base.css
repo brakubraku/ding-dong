@@ -168,6 +168,10 @@
     flex-direction: row;
 }
 
+.profile-page .note-container .profile-pic {
+    display: none;
+}
+
 .profile-page .profile-pic {
     height: 150px;
     width: 150px;
@@ -195,6 +199,10 @@
     font-size: 45px;
 }
 
+.profile-page .note-container #username {
+    display: none;
+}
+
 .profile-page .banner-pic {
     max-height: 500px;
 }
@@ -208,6 +216,8 @@
 .profile-page .profile-about {
     position: relative;
     top: -40px;
+    font-weight: bold;
+    font-style: italic;
 }
 
 .search-box {

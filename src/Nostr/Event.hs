@@ -62,7 +62,10 @@ data Event = Event
     content :: Text,
     sig :: Bip340Sig
   }
-  deriving (Eq, Show, Generic)
+  deriving (Show, Generic)
+
+instance Eq Event where
+  (==) e e1 = e ^. #eventId == e1 ^. #eventId
 
 instance Ord Event where
   e1 `compare` e2 = eventId e1 `compare` eventId e2
@@ -407,9 +410,10 @@ findRootEid e = fst <$> (uncons . catMaybes $ findRoot <$> tags e)
       _ -> Nothing
 
 orderByAgeAsc :: [Event] -> [Event]
-orderByAgeAsc es = reverse $
-  sortBy
-    ( \e1 e2 ->
-        (e1 ^. #created_at) `compare` (e2 ^. #created_at)
-    )
-    es
+orderByAgeAsc es =
+  reverse $
+    sortBy
+      ( \e1 e2 ->
+          (e1 ^. #created_at) `compare` (e2 ^. #created_at)
+      )
+      es

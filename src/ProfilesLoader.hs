@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module ProfilesLoader (createProfilesLoader) where
+module ProfilesLoader where
 
 import PeriodicLoader
 

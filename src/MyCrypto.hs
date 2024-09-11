@@ -20,7 +20,8 @@ module MyCrypto
     parseSignature,
     decodeHex,
     Secp.SecKey(..),
-    signBip340Rand
+    signBip340Rand,
+    exportToByteString
   )
 where
 
@@ -53,6 +54,9 @@ import Crypto.Secp256k1 (Rand32)
 
 ctx :: Secp.Ctx
 ctx = unsafePerformIO Secp.createContext
+
+exportToByteString :: Secp.XOnlyPubKey -> ByteString
+exportToByteString = Internal.exportXOnlyPubKey ctx
 
 exportXOnlyPubKey :: Secp.XOnlyPubKey -> String
 exportXOnlyPubKey = exportText . Internal.exportXOnlyPubKey ctx

@@ -5,13 +5,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module MyMain where
 
@@ -22,9 +22,8 @@ import Control.Monad.Reader
 import Data.Bool (bool)
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
-import Data.List (groupBy)
-import Data.Map as Map hiding (filter)
-import qualified Data.Map as M hiding (filter)
+import Data.Map as Map hiding (filter, foldr, singleton)
+import qualified Data.Map as M hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import Data.Time
@@ -84,7 +83,7 @@ start = do
         actualTime
         Map.empty
         [Home]
-        (FindProfileModel "" Nothing Nothing)
+        (FindProfileModel "" Nothing Nothing Map.empty)
         Map.empty
     events = defaultEvents
     view = appView
@@ -122,8 +121,14 @@ updateModel nn rl pl action model =
                 -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
                 forkJSM $ startLoader nn pl ReceivedProfiles sink
-                forkJSM $ subscribe nn [textNotes] TextNotesAndDeletes
-                   (Just $ SubState Home) Right sink
+                forkJSM $
+                  subscribe
+                    nn
+                    [textNotes]
+                    TextNotesAndDeletes
+                    (Just $ SubState Home)
+                    Right
+                    sink
                 -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
@@ -137,6 +142,7 @@ updateModel nn rl pl action model =
           )
     TextNotesAndDeletes rs ->
       -- TODO: test this
+      -- TODO: do this using List partition
       let notes = model ^. #textNotes
           receivedEvents = catMaybes $ getEvent . fst <$> rs
           receivedNotes =
@@ -235,10 +241,31 @@ updateModel nn rl pl action model =
             either (const Nothing) Just $
               decodeNpub $
                 model ^. #fpm % #findWho
-       in (model & #fpm % #lookingFor .~ xo) <# do
-            -- TODO: why no singleton in Data.List
-            maybe (pure ()) (load pl . (: [])) xo
-            pure NoAction
+          updatedModel = model & #fpm % #lookingFor .~ xo
+          -- maybe (pure ()) (load pl . singleton) xo
+          -- pure NoAction
+          runSubscriptions = do
+            xo' <- xo
+            pure $
+              effectSub updatedModel $ \sink -> do
+                subscribe
+                  nn
+                  [DatedFilter (MetadataFilter [xo']) Nothing Nothing]
+                  ReceivedProfiles
+                  (Just . SubState $ ProfilePage)
+                  extractProfile
+                  sink
+                forkJSM $
+                  subscribe -- TODO: need to take Deletes into account
+                    nn
+                    [DatedFilter (TextNoteFilter [xo']) Nothing Nothing] -- TODO: Nothing Nothing
+                    ProfileEvents
+                    (Just . SubState $ ProfilePage)
+                    (\(res, rel) -> (,rel) <$> getEventOrError res)
+                    sink
+       in fromMaybe
+            (noEff $ updatedModel)
+            runSubscriptions
     SubState p st ->
       let updateListWith (sid, ss) list =
             (sid, ss) : filter (\(sid2, _) -> sid2 /= sid) list
@@ -250,6 +277,23 @@ updateModel nn rl pl action model =
               . fromMaybe []
               . fmap (updateListWith st)
        in updatedModel <# pure NoAction
+    ProfileEvents es ->
+      let add (e, r) toThese =
+            toThese & at e %~ \er ->
+              case er of
+                Nothing -> Just $ Set.singleton r
+                Just relays -> Just $ Set.insert r relays
+          addEvents toThese =
+            foldr add toThese es
+       in noEff $ model & #fpm % #events %~ addEvents
+    DisplayProfilePage xo ->
+      let fpm = FindProfileModel (fromMaybe "" $ bechNpub xo) (Just xo) Nothing Map.empty
+       in effectSub
+            (model & #fpm .~ fpm)
+            ( \sink -> do
+                liftIO . sink $ FindProfile
+                liftIO . sink $ GoPage ProfilePage
+            )
     _ -> noEff model
 
 -- subscriptions below are parametrized by Page. The reason is
@@ -306,8 +350,7 @@ followingView :: Model -> View Action
 followingView m@Model {..} =
   div_
     [class_ "following-container"]
-    $ [findProfileView m]
-      ++ (displayProfile <$> loadedProfiles)
+    $ displayProfile <$> loadedProfiles
   where
     loadedProfiles :: [(XOnlyPubKey, Profile)]
     loadedProfiles =
@@ -355,38 +398,22 @@ displayProfilePic xo (Just pic) =
   img_
     [ class_ "profile-pic",
       prop "src" $ pic,
-      onClick . GoPage $ ProfilePage xo
+      onClick $ DisplayProfilePage xo
     ]
 displayProfilePic _ _ = div_ [class_ "profile-pic"] []
 
-displayNote :: Model -> Event -> View Action
-displayNote m e =
+displayNoteShort :: Model -> Event -> View Action
+displayNoteShort m e =
   div_
-    [class_ "note-container"]
-    [ div_
-        [class_ "profile-pic-container"]
-        [displayProfilePic (e ^. #pubKey) $ picUrl m e],
+    [class_ "text-note"]
+    [ p_ [] [text (e ^. #content)],
       div_
-        [class_ "text-note-container"]
-        [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
-          div_
-            [class_ "text-note"]
-            [ p_ [] [text (e ^. #content)],
-              div_
-                [class_ "text-note-properties"]
-                ( maybe [] repliesCount replies
-                    ++ [reactionsView reactions]
-                )
-            ]
-        ],
-      div_ [class_ "text-note-right-panel"] []
+        [class_ "text-note-properties"]
+        ( maybe [] repliesCount replies
+            ++ [reactionsView reactions]
+        )
     ]
   where
-    profile = fromMaybe unknown $ getAuthorProfile m e
-    unknown = Profile {username = "", displayName = Nothing}
-    profileName = span_ [id_ "username"] [text $ profile ^. #username]
-    displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
-    noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
     eid = e ^. #eventId
     reactions = m ^. #reactions % #processed % at eid
     reid = RootEid $ fromMaybe eid $ findRootEid e
@@ -399,6 +426,27 @@ displayNote m e =
           [text $ "▶ " <> (S.pack . show $ c)]
       ]
 
+displayNote :: Model -> Event -> View Action
+displayNote m e =
+  div_
+    [class_ "note-container"]
+    [ div_
+        [class_ "profile-pic-container"]
+        [displayProfilePic (e ^. #pubKey) $ picUrl m e],
+      div_
+        [class_ "text-note-container"]
+        [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
+          displayNoteShort m e
+        ],
+      div_ [class_ "text-note-right-panel"] []
+    ]
+  where
+    profile = fromMaybe unknown $ getAuthorProfile m e
+    unknown = Profile "" Nothing Nothing Nothing Nothing
+    profileName = span_ [id_ "username"] [text $ profile ^. #username]
+    displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
+    noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
+
 rightPanel :: Model -> View Action
 rightPanel m =
   div_
@@ -409,7 +457,7 @@ rightPanel m =
       Home -> notesView m
       Following -> followingView m
       ThreadPage e -> displayThread m e
-      ProfilePage xo -> displayProfilePage m xo
+      ProfilePage -> displayProfilePage m
 
 leftPanel :: View Action
 leftPanel =
@@ -427,8 +475,8 @@ leftPanel =
         [class_ "left-panel-item"]
         [button_ [onClick (GoPage page)] [text label]]
 
-displayProfilePage :: Model -> XOnlyPubKey -> View Action
-displayProfilePage m xo =
+displayProfile :: Model -> XOnlyPubKey -> View Action
+displayProfile m xo =
   let notFound =
         div_
           []
@@ -454,6 +502,9 @@ displayProfilePage m xo =
               span_
                 [id_ "display-name"]
                 [text . fromMaybe "" $ p ^. #displayName]
+        let notes = Map.keys $ m ^. #fpm % #events
+        let notesDisplay =
+              div_ [class_ "profile-notes"] $ displayNote m <$> notes
         pure $
           div_
             []
@@ -467,7 +518,11 @@ displayProfilePage m xo =
                 ],
               div_
                 [class_ "profile-about"]
-                [div_ [class_ "about"] [span_ [] [text . fromMaybe "" $ p ^. #about]]]
+                [ div_
+                    [class_ "about"]
+                    [span_ [] [text . fromMaybe "" $ p ^. #about]]
+                ],
+              notesDisplay
             ]
    in div_
         [class_ "profile-page"]
@@ -511,18 +566,20 @@ reactionsView (Just reactions) =
         [class_ "reactions-container"]
         [text (likes <> " " <> dislikes <> " " <> others)]
 
-findProfileView :: Model -> View Action
-findProfileView m =
-  let search =
+displayProfilePage :: Model -> View Action
+displayProfilePage m =
+  let npub = m ^. #fpm % #findWho
+      search =
         input_
           [ class_ "input-xo",
+            value_ npub,
             type_ "text",
             onInput $ UpdateField (#fpm % #findWho),
             onEnter $ FindProfile
           ]
       ppage =
         (m ^. #fpm % #lookingFor)
-          >>= \xo -> pure [displayProfilePage m xo]
+          >>= \xo -> pure [displayProfile m xo]
    in div_ [class_ "find-profile"] $
         [div_ [class_ "search-box"] [search]] ++ fromMaybe [] ppage
   where

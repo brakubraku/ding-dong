@@ -1,7 +1,9 @@
 Sep 10
 * subscription architecture refactor
+* see author's posts on the profile page
 * follow button on search by npub
 * display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
+* display quoted notes inside note
 
 
 * cache
@@ -14,7 +16,6 @@ Sep 10
 * verify signatures on all incoming events!
 * relay management
 * go forward/go back smoothely and with correct scroll (HistoryAPI)
-* display quoted notes inside note
 * more event reactions support
 * feed algorithm
 * groups of authors

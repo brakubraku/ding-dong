@@ -1,12 +1,12 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module ModelAction where
 
-import Data.Aeson (ToJSON)
 import Data.DateTime (DateTime)
 import Data.Map as Map
 import Data.Maybe
@@ -16,6 +16,7 @@ import GHC.Generics
 import Miso.String
 import MyCrypto
 import Nostr.Event
+import Nostr.Network
 import Nostr.Profile
 import Nostr.Reaction
 import Nostr.Relay
@@ -23,7 +24,6 @@ import Nostr.Request
 import Nostr.Response
 import Nostr.WebSocket
 import Optics
-import Nostr.Network
 
 data Action
   = RelayConnected RelayURI
@@ -40,17 +40,19 @@ data Action
   | ActualTime UTCTime
   | DisplayThread Event
   | ThreadEvents [(Event, Relay)]
+  | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [Event]
   | GoBack
   | UpdateField (Lens' Model Text) Text
   | FindProfile
   | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
+  | DisplayProfilePage XOnlyPubKey
 
 data Page
   = Home
   | Following
   | ThreadPage Event
-  | ProfilePage XOnlyPubKey
+  | ProfilePage
   deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
@@ -73,7 +75,8 @@ newtype RootEid = RootEid EventId deriving (Eq, Ord)
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
     lookingFor :: Maybe XOnlyPubKey,
-    found :: Maybe Profile
+    found :: Maybe Profile,
+    events :: Map Event (Set.Set Relay)
   }
   deriving (Eq, Generic)
 
@@ -95,7 +98,7 @@ newThread = Thread Map.empty Map.empty Map.empty
 
 type EventsWithRelays = Map.Map EventId (Event, Set.Set Relay)
 
-addEvent :: (Event, Relay) -> EventsWithRelays -> EventsWithRelays
+addEvent :: (Event, Relay) -> EventsWithRelays -> EventsWithRelays -- TODO: remove deleted events
 addEvent (evt, rel) ers =
   ers & at (evt ^. #eventId) %~ \x -> Just $
     case x of
@@ -110,7 +113,7 @@ addToThread (e, rel) t =
           t
             & #events
             %~ addEvent (e, rel)
-            & #parents --TODO: check this
+            & #parents -- TODO: check this
             % at (e ^. #eventId)
             .~ Just eid
             & #replies
