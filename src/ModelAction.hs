@@ -75,7 +75,6 @@ newtype RootEid = RootEid EventId deriving (Eq, Ord)
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
     lookingFor :: Maybe XOnlyPubKey,
-    found :: Maybe Profile,
     events :: Map Event (Set.Set Relay)
   }
   deriving (Eq, Generic)

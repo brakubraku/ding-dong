@@ -83,7 +83,7 @@ start = do
         actualTime
         Map.empty
         [Home]
-        (FindProfileModel "" Nothing Nothing Map.empty)
+        (FindProfileModel "" Nothing Map.empty)
         Map.empty
     events = defaultEvents
     view = appView
@@ -287,7 +287,7 @@ updateModel nn rl pl action model =
             foldr add toThese es
        in noEff $ model & #fpm % #events %~ addEvents
     DisplayProfilePage xo ->
-      let fpm = FindProfileModel (fromMaybe "" $ bechNpub xo) (Just xo) Nothing Map.empty
+      let fpm = FindProfileModel (fromMaybe "" $ bechNpub xo) (Just xo) Map.empty
        in effectSub
             (model & #fpm .~ fpm)
             ( \sink -> do
