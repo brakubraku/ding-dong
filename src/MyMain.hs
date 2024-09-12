@@ -16,6 +16,7 @@
 module MyMain where
 
 import BechUtils
+import ContentUtils
 import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -26,6 +27,7 @@ import Data.Map as Map hiding (filter, foldr, singleton)
 import qualified Data.Map as M hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import Data.Time
 import Debug.Trace (trace)
 import Miso hiding (at, now, send)
@@ -53,7 +55,7 @@ import ReactionsLoader (createReactionsLoader)
 start :: JSM ()
 start = do
   keys <- loadKeys
-  savedContacts <- loadContacts
+  savedContacts <- Set.fromList <$> loadContacts
   actualTime <- liftIO getCurrentTime
   liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
@@ -107,9 +109,9 @@ updateModel nn rl pl action model =
     StartAction ->
       do
         let simpleF f = DatedFilter f Nothing Nothing
-            textNotes = simpleF $ TextNoteFilter $ model ^. #contacts
+            textNotes = simpleF . TextNoteFilter . Set.toList $ model ^. #contacts
             -- getContacts = simpleF $ ContactsFilter
-            getProfiles = simpleF $ MetadataFilter $ model ^. #contacts
+            getProfiles = simpleF . MetadataFilter . Set.toList $ model ^. #contacts
 
         effectSub
           model
@@ -210,9 +212,13 @@ updateModel nn rl pl action model =
                 model & #page .~ togo & #history .~ (togo : rest)
        in noEff $ fromMaybe model updated
     Unfollow xo ->
-      let updated = Prelude.filter (/= xo) $ model ^. #contacts
-       in (model & #contacts .~ updated)
-            <# (updateContacts updated >> pure NoAction)
+      let updated = model & #contacts % at xo .~ Nothing
+       in updated
+            <# (updateContacts (updated ^. #contacts) >> pure NoAction)
+    Follow xo ->
+      let updated = model & #contacts % at xo .~ Just ()
+       in updated
+            <# (updateContacts (updated ^. #contacts) >> pure NoAction)
     WriteModel m ->
       model <# (writeModelToStorage m >> pure NoAction)
     ActualTime t -> noEff $ model & #now .~ t
@@ -285,7 +291,9 @@ updateModel nn rl pl action model =
                 Just relays -> Just $ Set.insert r relays
           addEvents toThese =
             foldr add toThese es
-       in noEff $ model & #fpm % #events %~ addEvents
+       in (model & #fpm % #events %~ addEvents) <# do
+            load rl (eventId . fst <$> es)
+            pure NoAction
     DisplayProfilePage xo ->
       let fpm = FindProfileModel (fromMaybe "" $ bechNpub xo) (Just xo) Map.empty
        in effectSub
@@ -325,9 +333,9 @@ subscribeForLinkedEvents nn eids page sink = do
 writeModelToStorage :: Model -> JSM ()
 writeModelToStorage m = pure ()
 
-updateContacts :: [XOnlyPubKey] -> JSM ()
+updateContacts :: Set.Set XOnlyPubKey -> JSM ()
 updateContacts xos = do
-  setLocalStorage "my-contacts" $ xos
+  setLocalStorage "my-contacts" $ Set.toList xos
 
 loadContacts :: JSM [XOnlyPubKey]
 loadContacts = fromRight [] <$> getLocalStorage "my-contacts"
@@ -359,7 +367,7 @@ followingView m@Model {..} =
             p <- fst <$> (m ^. #profiles % at xo)
             pure (xo, p)
         )
-          <$> contacts
+          <$> Set.toList contacts
 
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
@@ -402,11 +410,23 @@ displayProfilePic xo (Just pic) =
     ]
 displayProfilePic _ _ = div_ [class_ "profile-pic"] []
 
+displayNoteContent :: T.Text -> View Action
+displayNoteContent t =
+  let content = processText t
+      displayContent (TextC textWords) =
+        div_ [] [text . T.unwords $ textWords]
+      displayContent (LinkC Image link) =
+        div_ [] [img_ [class_ "link-pic", prop "src" link]]
+      displayContent (LinkC ContentUtils.Other link) =
+        div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
+   in div_ [class_ "note-content"] $
+        displayContent <$> content
+
 displayNoteShort :: Model -> Event -> View Action
 displayNoteShort m e =
   div_
     [class_ "text-note"]
-    [ p_ [] [text (e ^. #content)],
+    [ displayNoteContent (e ^. #content),
       div_
         [class_ "text-note-properties"]
         ( maybe [] repliesCount replies
@@ -514,7 +534,14 @@ displayProfile m xo =
               div_
                 [class_ "profile-pic-container"]
                 [ fromMaybe profilepicDef profilepic,
-                  div_ [] [profileName, displayName]
+                  div_ [] [profileName, displayName],
+                  if isJust $ m ^. #contacts % at xo
+                    then
+                      span_ [class_ "follow-button"] [text "Following"]
+                    else
+                      button_
+                        [class_ "follow-button", onClick (Follow xo)]
+                        [text "Follow"]
                 ],
               div_
                 [class_ "profile-about"]
@@ -561,7 +588,7 @@ reactionsView (Just reactions) =
   let howMany = S.pack . show . length . fromMaybe Set.empty
       likes = "♥ " <> howMany (reactions ^. at Like)
       dislikes = "🖓 " <> howMany (reactions ^. at Dislike)
-      others = "Others: " <> howMany (reactions ^. at Other)
+      others = "Others: " <> howMany (reactions ^. at Nostr.Reaction.Other)
    in div_
         [class_ "reactions-container"]
         [text (likes <> " " <> dislikes <> " " <> others)]

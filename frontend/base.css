@@ -63,6 +63,7 @@
     border-radius: 70%;
     margin-right: 20px;
     margin-top: 15px;
+    cursor:pointer;
 }
 
 .main-container {
@@ -227,4 +228,8 @@
 
 .input-xo {
     width: 500px;
+}
+
+.link-pic {
+    max-width:200px;
 }

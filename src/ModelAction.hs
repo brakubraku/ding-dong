@@ -36,6 +36,7 @@ data Action
   | StartAction
   | GoPage Page
   | Unfollow XOnlyPubKey
+  | Follow XOnlyPubKey
   | WriteModel Model
   | ActualTime UTCTime
   | DisplayThread Event
@@ -59,7 +60,7 @@ data Model = Model
   { textNotes :: Set.Set Event,
     reactions :: Reactions, -- TODO: what about deleted reactions?
     err :: MisoString,
-    contacts :: [XOnlyPubKey],
+    contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time

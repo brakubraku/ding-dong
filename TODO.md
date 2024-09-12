@@ -1,10 +1,10 @@
 Sep 10
 * subscription architecture refactor
-* see author's posts on the profile page
-* follow button on search by npub
+    * load reactions and profiles in a way that state of their subscription can be tracked, i.e. not via PeriodicLoader
+* more robust websocket handling - all gets fucked when relays "misbehave"
+
 * display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
 * display quoted notes inside note
-
 
 * cache
 * recent actions page
@@ -22,6 +22,8 @@ Sep 10
 * write a post inside of thread
 
 * DONE 
+    * see author's posts on the profile page
+    * follow button on search by npub
     * unsubscribing after EOSed!
         * modify so that you can have subscriptions which don't automatically unsubscribe on  EOS but continue running - such as the feed thread
 

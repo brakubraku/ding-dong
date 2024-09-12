@@ -85,6 +85,7 @@ library
                       MisoSubscribe
                       ModelAction
                       BechUtils
+                      ContentUtils
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.
