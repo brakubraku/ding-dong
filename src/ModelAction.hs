@@ -21,13 +21,12 @@ import Nostr.Profile
 import Nostr.Reaction
 import Nostr.Relay
 import Nostr.Request
-import Nostr.Response
 import Nostr.WebSocket
 import Optics
 
 data Action
   = RelayConnected RelayURI
-  | TextNotesAndDeletes [(Response, Relay)]
+  | TextNotesAndDeletes [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]

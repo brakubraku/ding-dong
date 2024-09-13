@@ -11,7 +11,7 @@ import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
 import Miso.Effect (Sub)
-import MisoSubscribe (subscribe)
+import MisoSubscribe (subscribe, SubType (PeriodicUntilEOS))
 import Nostr.Filter
 import Nostr.Network
 import Nostr.Relay
@@ -19,7 +19,6 @@ import Nostr.Response
 import Optics
 import Miso (forkJSM, JSM)
 import Data.Text
-import qualified Data.Text as T
 import Debug.Trace
 
 data LoaderData id = LoaderData
@@ -63,6 +62,7 @@ startLoader nn pl act sink =
         when (not . Set.null $ toLoad) $ do
           forkJSM $ subscribe
             nn
+            PeriodicUntilEOS
             ((pl ^. #createFilter) . toList $ toLoad)
             act 
             Nothing

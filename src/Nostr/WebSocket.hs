@@ -61,18 +61,11 @@ import Nostr.Network
 import Nostr.Log
 import qualified Data.Map as Map
 import Optics
-import Nostr.Event
 
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString (fromStrict)
 import Nostr.Request
-import Crypto.Secp256k1 (verifyBip340)
 
-import qualified Data.ByteString.Char8 as BS
-import System.Entropy
-import qualified Data.Text as T
-import Data.ByteString.Base16 (decodeBase16Untyped)
-import Data.Either (fromRight)
 -- data WebSocketEvent = WebSocketOpen | WebSocketError String 
 
 connectRelays
@@ -124,8 +117,6 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
                 liftIO . logRelayError  relay . pack $ "SubId=" <> show subId <> " not found in responseChannels. Event received=" <> show event 
         Just (Nostr.Response.EOSE subId) -> do 
           liftIO . runReaderT (changeState subId relay Nostr.Network.EOSE) $ nn
-          sendJson' socket $  Close subId -- TODO: unsubscribe like this?
-          liftIO . logRelayError  relay . pack $ "Unsubscribed"
         _ -> liftIO . logRelayError  relay . pack $ "Could not decode server response: " <> show msg
     
     WS.addEventListener socket "close" $ \e -> do

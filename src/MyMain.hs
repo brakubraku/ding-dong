@@ -34,7 +34,7 @@ import Debug.Trace (trace)
 import Miso hiding (at, now, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (subscribe)
+import MisoSubscribe (subscribe, SubType (AllAtEOS, PeriodicUntilEOS, PeriodicForever))
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -122,18 +122,17 @@ updateModel nn rl pl action model =
                 let runInNostr = liftIO . flip runReaderT nn
                 -- wait for connections to relays having been established
                 runInNostr $ RP.waitForActiveConnections (secs 2)
-                -- TODO: Is this the way to run 2 subs in parallel?
                 forkJSM $ startLoader nn rl ReceivedReactions sink
                 forkJSM $ startLoader nn pl ReceivedProfiles sink
                 forkJSM $
                   subscribe
                     nn
+                    AllAtEOS
                     [textNotes]
                     TextNotesAndDeletes
                     (Just $ SubState Home)
-                    Right
+                    getEventRelayEither
                     sink
-                -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
                       let loop = do
@@ -144,13 +143,12 @@ updateModel nn rl pl action model =
                        in loop
                   )
                     sink
-                    -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
           )
     TextNotesAndDeletes rs ->
       -- TODO: test this
       -- TODO: do this using List partition
       let notes = model ^. #textNotes
-          receivedEvents = catMaybes $ getEvent . fst <$> rs
+          receivedEvents = fst <$> rs
           receivedNotes =
             Set.fromList $
               Prelude.filter
@@ -261,14 +259,14 @@ updateModel nn rl pl action model =
               & #fpm
               % #events
               .~ Map.empty
-          -- maybe (pure ()) (load pl . singleton) xo
-          -- pure NoAction
           runSubscriptions = do
             xo' <- xo
+            let sevenDaysAgo = (-nominalDay * 7) `addUTCTime` (model ^. #now)
             pure $
               effectSub updatedModel $ \sink -> do
                 subscribe
                   nn
+                  PeriodicUntilEOS
                   [DatedFilter (MetadataFilter [xo']) Nothing Nothing]
                   ReceivedProfiles
                   (Just . SubState $ ProfilePage)
@@ -277,7 +275,8 @@ updateModel nn rl pl action model =
                 forkJSM $
                   subscribe -- TODO: need to take Deletes into account
                     nn
-                    [DatedFilter (TextNoteFilter [xo']) Nothing Nothing] -- TODO: Nothing Nothing
+                    AllAtEOS
+                    [sinceF sevenDaysAgo (TextNoteFilter [xo'])] -- TODO: Time bounds
                     ProfileEvents
                     (Just . SubState $ ProfilePage)
                     (\(res, rel) -> (,rel) <$> getEventOrError res)
@@ -332,6 +331,7 @@ subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Page -> Sub Action
 subscribeForLinkedEvents nn eids page sink = do
   subscribe
     nn
+    PeriodicUntilEOS
     [anytimeF $ LinkedEvents eids]
     ThreadEvents
     (Just $ SubState page)

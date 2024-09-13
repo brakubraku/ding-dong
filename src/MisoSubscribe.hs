@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module MisoSubscribe where
 
@@ -23,53 +25,60 @@ import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
 
+-- 3 types of subscribes:
+--   call actOnResults periodically with whatever messages you have received and quit after EOS
+--   call actOnResults periodically with whatever messages you have received and never quit
+--   call actOnResults only once after EOS, on all collected messages, and quit
+
+-- Motivation here is that for example when receiving TextNotes and Deletes you want to be able to process 
+-- all of them at once, so that you don't display TextNotes which are Delete-d (in later messages).
+
+data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
+  deriving (Eq)
+
+-- TODO: add timeout to *AtEOS subscriptions
 subscribe ::
   NostrNetwork ->
+  SubType ->
   [DatedFilter] ->
   ([e] -> action) ->
   Maybe ((SubscriptionId, Map.Map Relay RelaySubState) -> action) ->
   ((Response, Relay) -> Either Text e) ->
   Sub action
-subscribe nn subFilter actOnResults actOnSubState extractResults sink = do
+subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
-  let collectResponses = do
+
+  let collectResponses collectedSoFar = do
         subStates <- readMVar (nn ^. #subscriptions)
-        -- putStrLn $ -- TODO: send this to hell
-          -- "1. substates are:"
-            -- <> show (relaysState <$> Map.elems subStates)
-
-        -- inform about subscription state changes if 
-        -- function actOnSubState is provided
-        let actOnStateChange = fromMaybe (pure ()) $ do
-              action <- actOnSubState
-              let state = do
-                    relState <- subStates ^? at subId % _Just % #relaysState
-                    pure (subId, relState)
-
-              Just $
-                maybe
-                  ( logError $
-                      "Could not find relays state for subId="
-                        <> (T.pack . show $ subId)
-                  )
-                  (sink . action)
-                  state
-        actOnStateChange
-
-        let finished = isSubFinished subId $ subStates
-        msgs <-
+        reportSubState actOnSubState subId subStates
+        rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let processed = extractResults <$> msgs
-        mapM_ logError $ lefts processed
-        sink . actOnResults . rights $ processed
-        threadDelay $ 10 ^ 5 -- TODO
-        unless finished collectResponses
-        -- putStrLn $ -- TODO: send this to hell
-          -- "branko:Subscription finished " <> show subFilter
-  liftIO collectResponses
+
+        let finished = isSubFinished subId $ subStates
+        let continueCollecting csf = do
+              threadDelay $ 10 ^ 5 -- TODO
+              collectResponses csf
+        case subType of
+          AllAtEOS ->
+            if finished
+              then
+                processMsgs $ collectedSoFar ++ rrs
+              else do
+                continueCollecting $ collectedSoFar ++ rrs
+          PeriodicUntilEOS -> do
+            processMsgs rrs
+            unless finished $
+              continueCollecting []
+          PeriodicForever -> do
+            processMsgs rrs
+            continueCollecting []
+
+  liftIO $ collectResponses []
+  liftIO . flip runReaderT nn $
+    RP.unsubscribe subId
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
     collectJustM action = do
@@ -79,3 +88,22 @@ subscribe nn subFilter actOnResults actOnSubState extractResults sink = do
         Just x -> do
           xs <- collectJustM action
           return (x : xs)
+
+    processMsgs :: [(Response, Relay)] -> IO ()
+    processMsgs rrs = do
+      let processed = extractResults <$> rrs
+      mapM_ logError $ lefts processed
+      sink . actOnResults . rights $ processed
+
+    -- inform about subscription state changes if
+    -- function actOnSubState is provided
+    reportSubState Nothing _ _ = pure ()
+    reportSubState (Just act) subId subStates = do
+      let state = (subId,) <$> subStates ^? at subId % _Just % #relaysState
+      maybe
+        ( logError $
+            "Could not find relays state for subId="
+              <> (T.pack . show $ subId)
+        )
+        (sink . act)
+        state
