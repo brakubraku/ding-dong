@@ -23,6 +23,7 @@ import Control.Monad.Reader
 import Data.Bool (bool)
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
+import Data.List (singleton)
 import Data.Map as Map hiding (filter, foldr, singleton)
 import qualified Data.Map as M hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
@@ -108,10 +109,10 @@ updateModel nn rl pl action model =
     -- HandleWebSocket WebSocketOpen ->
     StartAction ->
       do
-        let simpleF f = DatedFilter f Nothing Nothing
-            textNotes = simpleF . TextNoteFilter . Set.toList $ model ^. #contacts
+        let twoDaysAgo = (-nominalDay * 2) `addUTCTime` (model ^. #now)
+            textNotes = sinceF twoDaysAgo . TextNoteFilter . Set.toList $ model ^. #contacts
             -- getContacts = simpleF $ ContactsFilter
-            getProfiles = simpleF . MetadataFilter . Set.toList $ model ^. #contacts
+            getProfiles = anytimeF . MetadataFilter . Set.toList $ model ^. #contacts
 
         effectSub
           model
@@ -134,10 +135,13 @@ updateModel nn rl pl action model =
                 -- forkJSM $ subscribe nn [getProfiles] ReceivedProfiles Right sink
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
-                      do
-                        now <- liftIO getCurrentTime
-                        liftIO . sink . ActualTime $ now
-                        liftIO . threadDelay . secs $ 60
+                      let loop = do
+                            liftIO . print $ "branko-textnotes-size:" <> show (Set.size $ model ^. #textNotes)
+                            now <- liftIO getCurrentTime
+                            liftIO . sink . ActualTime $ now
+                            liftIO . threadDelay . secs $ 2 -- TODO: 2 secs is only for debugging
+                            loop
+                       in loop
                   )
                     sink
                     -- runInNostr $ saveContacts $ zip (model ^. #contacts) (repeat Nothing)
@@ -177,6 +181,7 @@ updateModel nn rl pl action model =
 
           newNotes = Set.toList (updatedNotes `Set.difference` notes)
        in newModel <# do
+            liftIO . print $ "branko-textnotes-udpated-size:" <> show (Set.size $ updatedNotes)
             load rl $ eventId <$> newNotes
             load pl $ pubKey <$> newNotes
             pure $ SubscribeForReplies newNotes
@@ -221,7 +226,8 @@ updateModel nn rl pl action model =
             <# (updateContacts (updated ^. #contacts) >> pure NoAction)
     WriteModel m ->
       model <# (writeModelToStorage m >> pure NoAction)
-    ActualTime t -> noEff $ model & #now .~ t
+    ActualTime t -> do
+      noEff $ model & #now .~ t
     DisplayThread e -> do
       effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
@@ -247,7 +253,14 @@ updateModel nn rl pl action model =
             either (const Nothing) Just $
               decodeNpub $
                 model ^. #fpm % #findWho
-          updatedModel = model & #fpm % #lookingFor .~ xo
+          updatedModel =
+            model
+              & #fpm
+              % #lookingFor
+              .~ xo
+              & #fpm
+              % #events
+              .~ Map.empty
           -- maybe (pure ()) (load pl . singleton) xo
           -- pure NoAction
           runSubscriptions = do
@@ -319,7 +332,7 @@ subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Page -> Sub Action
 subscribeForLinkedEvents nn eids page sink = do
   subscribe
     nn
-    [anytime $ LinkedEvents eids]
+    [anytimeF $ LinkedEvents eids]
     ThreadEvents
     (Just $ SubState page)
     process
@@ -349,7 +362,8 @@ appView m =
     [ div_
         [class_ "main-container"]
         [ leftPanel,
-          rightPanel m
+          middlePanel m,
+          rightPanel
         ],
       footerView m
     ]
@@ -416,7 +430,12 @@ displayNoteContent t =
       displayContent (TextC textWords) =
         div_ [] [text . T.unwords $ textWords]
       displayContent (LinkC Image link) =
-        div_ [] [img_ [class_ "link-pic", prop "src" link]]
+        div_
+          []
+          [ a_
+              [href_ link, target_ "_blank"]
+              [img_ [class_ "link-pic", prop "src" link]]
+          ]
       displayContent (LinkC ContentUtils.Other link) =
         div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
    in div_ [class_ "note-content"] $
@@ -467,10 +486,10 @@ displayNote m e =
     displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
     noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
 
-rightPanel :: Model -> View Action
-rightPanel m =
+middlePanel :: Model -> View Action
+middlePanel m =
   div_
-    [class_ "right-panel"]
+    [class_ "middle-panel"]
     [div_ [class_ "button-back", onClick (GoBack)] [text "←"], displayPage]
   where
     displayPage = case m ^. #page of
@@ -478,6 +497,9 @@ rightPanel m =
       Following -> followingView m
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
+
+rightPanel :: View Action 
+rightPanel = div_ [class_"right-panel"] []
 
 leftPanel :: View Action
 leftPanel =
@@ -605,8 +627,9 @@ displayProfilePage m =
             onEnter $ FindProfile
           ]
       ppage =
-        (m ^. #fpm % #lookingFor)
-          >>= \xo -> pure [displayProfile m xo]
+        singleton
+          . displayProfile m
+          <$> (m ^. #fpm % #lookingFor)
    in div_ [class_ "find-profile"] $
         [div_ [class_ "search-box"] [search]] ++ fromMaybe [] ppage
   where

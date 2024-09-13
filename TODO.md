@@ -1,15 +1,31 @@
 Sep 10
 * subscription architecture refactor
     * load reactions and profiles in a way that state of their subscription can be tracked, i.e. not via PeriodicLoader
-* more robust websocket handling - all gets fucked when relays "misbehave"
+
+* more robust websocket handling - all gets fucked when relays "misbehave" 
+    * investigating this it seems the javascript exceptions have a different source
+
+* after suspend wake up there is massive mem leak - likely a websocket code issue
+
+* partition events on profile page to original posts and replies. Display replies with their parent event.
+
+* subscription state view
+
+* optimize page transitions
+    * possible to cache previous views in Miso? I suspect the lag is due to new view having to be computed every time
+
+* display relays in profile 
+    * it might be that you don't see reactions and replies because you are not taking them from profile's preffered relay
 
 * display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
 * display quoted notes inside note
 
+* long running subscription on Home page and new arrivals displayed differently (as on Twitter for example)
+
 * cache
 * recent actions page
     * you unfollowed 
-    * you followed
+    * you followed  
     * you published
     * you replied
     * you liked/...

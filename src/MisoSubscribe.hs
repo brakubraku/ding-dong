@@ -36,9 +36,9 @@ subscribe nn subFilter actOnResults actOnSubState extractResults sink = do
       RP.subscribeForFilter subFilter
   let collectResponses = do
         subStates <- readMVar (nn ^. #subscriptions)
-        putStrLn $ -- TODO: send this to hell
-          "1. substates are:"
-            <> show (relaysState <$> Map.elems subStates)
+        -- putStrLn $ -- TODO: send this to hell
+          -- "1. substates are:"
+            -- <> show (relaysState <$> Map.elems subStates)
 
         -- inform about subscription state changes if 
         -- function actOnSubState is provided
@@ -67,8 +67,8 @@ subscribe nn subFilter actOnResults actOnSubState extractResults sink = do
         sink . actOnResults . rights $ processed
         threadDelay $ 10 ^ 5 -- TODO
         unless finished collectResponses
-        putStrLn $ -- TODO: send this to hell
-          "branko:Subscription finished " <> show subFilter
+        -- putStrLn $ -- TODO: send this to hell
+          -- "branko:Subscription finished " <> show subFilter
   liftIO collectResponses
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]

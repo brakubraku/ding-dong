@@ -63,7 +63,7 @@
     border-radius: 70%;
     margin-right: 20px;
     margin-top: 15px;
-    cursor:pointer;
+    cursor: pointer;
 }
 
 .main-container {
@@ -72,7 +72,7 @@
 
 .left-panel {
     flex: 2 0 0;
-    background-color: black;
+    /* background-color: black; */
     display: flex;
     flex-direction: column;
 
@@ -81,10 +81,18 @@
     padding-top: 40px;
 }
 
-.right-panel {
+.left-panel-item {
+    width: 100px;
+}
+
+.middle-panel {
     flex: 6 0 0;
     overflow: scroll;
     margin-left: 15px;
+}
+
+.right-panel {
+    flex: 2 0 0;
 }
 
 .notes-container {
@@ -93,8 +101,16 @@
     margin-left: 15px; */
 }
 
-.left-panel-item {
-    color: white;
+.left-panel-item button {
+    background-color: white;
+    color: black;
+    border: 2px solid #e7e7e7;
+    width: 100%;
+}
+
+.left-panel-item button:hover {
+
+    background-color: #e7e7e7;
 }
 
 #username {
@@ -118,8 +134,6 @@
     flex-direction: row;
     padding-bottom: 20px;
 }
-
-.profile .pic-container {}
 
 .profile .profile-pic {
     height: 100px;
@@ -231,5 +245,5 @@
 }
 
 .link-pic {
-    max-width:200px;
+    max-width: 200px;
 }

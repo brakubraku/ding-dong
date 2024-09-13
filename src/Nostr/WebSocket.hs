@@ -111,7 +111,7 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
       -- liftIO . writeFile ("./events/" ++ BS.unpack fn) $ T.unpack . strToText $ msg
       case resp of 
         Just (EventReceived subId event) -> do
-            liftIO . putStrLn $ "branko-received-event:" <> show (event)
+            -- liftIO . putStrLn $ "branko-received-event:" <> show (event)
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
             case Map.lookup subId subs of
               Just subscription -> do
@@ -134,6 +134,7 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
       clean <- WS.wasClean e
       liftIO . sink . sendMsg $ (WebSocketClose code clean reason)
       status <- WS.socketState socket
+      liftIO . logRelayError  relay . pack $ "branko-websocket closed: " <> show reason
       when (status == 3) $ 
         unless (code == CLOSE_NORMAL) $
           -- websocketConnect chan [r] sink
@@ -151,6 +152,7 @@ connectRelays nn@(NostrNetwork{..}) sendMsg sink = do
           liftIO . sink . sendMsg $ (WebSocketError mempty)
         else do
           Just d <- fromJSVal d'
+          liftIO . logRelayError  relay . pack $ "branko-Websocket error" <> show d
           liftIO . sink . sendMsg $ (WebSocketError d)
 
     -- listen for requests to send 

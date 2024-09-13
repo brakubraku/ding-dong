@@ -8,7 +8,8 @@ module Nostr.Filter
   ( DatedFilter (..),
     Filter (..),
     isAnytime,
-    anytime
+    anytimeF, 
+    sinceF
   )
 where
 
@@ -116,8 +117,11 @@ isAnytime :: DatedFilter -> Bool
 isAnytime (DatedFilter f Nothing Nothing) = True
 isAnytime (DatedFilter f _ _) = False
 
-anytime :: Filter -> DatedFilter
-anytime f = DatedFilter f Nothing Nothing
+anytimeF :: Filter -> DatedFilter
+anytimeF f = DatedFilter f Nothing Nothing
+
+sinceF :: DateTime -> Filter -> DatedFilter
+sinceF when f = DatedFilter f (Just when) Nothing
 
 
 -- addTimeInterval :: DateTime -> [Item [Pair]]
