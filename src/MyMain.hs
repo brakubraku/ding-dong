@@ -111,6 +111,7 @@ updateModel nn rl pl action model =
       do
         let twoDaysAgo = (-nominalDay * 2) `addUTCTime` (model ^. #now)
             textNotes = sinceF twoDaysAgo . TextNoteFilter . Set.toList $ model ^. #contacts
+            -- textNotes = anytimeF . TextNoteFilter . Set.toList $ model ^. #contacts
             -- getContacts = simpleF $ ContactsFilter
             getProfiles = anytimeF . MetadataFilter . Set.toList $ model ^. #contacts
 
@@ -136,10 +137,9 @@ updateModel nn rl pl action model =
                 forkJSM $ -- put actual time to model every 60 seconds
                   ( \sink ->
                       let loop = do
-                            liftIO . print $ "branko-textnotes-size:" <> show (Set.size $ model ^. #textNotes)
                             now <- liftIO getCurrentTime
                             liftIO . sink . ActualTime $ now
-                            liftIO . threadDelay . secs $ 2 -- TODO: 2 secs is only for debugging
+                            liftIO . threadDelay . secs $ 60 
                             loop
                        in loop
                   )

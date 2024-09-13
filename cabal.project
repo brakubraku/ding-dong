@@ -1,18 +1,14 @@
 packages:
  .
---./entropy-0.4.1.10
--- ./effectful-2.3.1.0
- ./miso
  ./jsaddle-wasm
- ./jsaddle-0.9.9.2
  ./secp256k1-haskell/secp256k1-haskell
  ./datetime-0.3.1
 
 -- remove TemplateHaskell
---source-repository-package
---    type: git
---    location: https://github.com/amesgen/miso
---    tag: 27dd5fc80be9d0a3b80a9ecc81ee3401bc610e01
+source-repository-package
+    type: git
+    location: https://github.com/amesgen/miso
+    tag: 27dd5fc80be9d0a3b80a9ecc81ee3401bc610e01
 
 
 --source-repository-package

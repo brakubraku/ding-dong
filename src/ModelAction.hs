@@ -27,7 +27,6 @@ import Optics
 
 data Action
   = RelayConnected RelayURI
-  | ResponseReceived SubscriptionId [(Response, RelayURI)]
   | TextNotesAndDeletes [(Response, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
@@ -113,7 +112,7 @@ addToThread (e, rel) t =
           t
             & #events
             %~ addEvent (e, rel)
-            & #parents -- TODO: check this
+            & #parents 
             % at (e ^. #eventId)
             .~ Just eid
             & #replies
