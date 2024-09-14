@@ -22,6 +22,8 @@ Sep 10
 
 * long running subscription on Home page and new arrivals displayed differently (as on Twitter for example)
 
+* password protected seckey
+
 * cache
 * recent actions page
     * you unfollowed 

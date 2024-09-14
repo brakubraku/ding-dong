@@ -46,6 +46,7 @@ data Action
   | FindProfile
   | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
   | DisplayProfilePage XOnlyPubKey
+  | LogReceived [(Event, Relay)]
 
 data Page
   = Home

@@ -13,8 +13,8 @@ import Control.Monad.Reader
 import Data.Either
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Text
-import qualified Data.Text as T
+import Data.Text hiding (length)
+import qualified Data.Text as T hiding (length)
 import Miso hiding (at)
 import Nostr.Filter
 import Nostr.Log (logError)
@@ -36,6 +36,10 @@ import Optics
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
   deriving (Eq)
 
+data Stats = Stats
+  { msgsRecvd :: Int
+  }
+
 -- TODO: add timeout to *AtEOS subscriptions
 subscribe ::
   NostrNetwork ->
@@ -50,7 +54,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
 
-  let collectResponses collectedSoFar = do
+  let collectResponses collectedSoFar stats = do
         subStates <- readMVar (nn ^. #subscriptions)
         reportSubState actOnSubState subId subStates
         rrs <-
@@ -69,26 +73,31 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         --         )
 
         let finished = isSubFinished subId $ subStates
-        let continueCollecting csf = do
+        let continueCollecting csf stats = do
               threadDelay $ 10 ^ 5 -- TODO
-              collectResponses csf
+              collectResponses csf stats
         case subType of
           AllAtEOS ->
             if finished
-              then
+              then do
                 processMsgs $ collectedSoFar ++ rrs
+                pure $ addStats (length rrs) stats
               else do
-                continueCollecting $ collectedSoFar ++ rrs
+                continueCollecting (collectedSoFar ++ rrs) $ addStats (length rrs) stats
           PeriodicUntilEOS -> do
             processMsgs rrs
-            unless finished $
-              continueCollecting []
+            if finished
+              then
+                pure $ addStats (length rrs) stats
+              else
+                continueCollecting [] $ addStats (length rrs) stats
           PeriodicForever -> do
             processMsgs rrs
-            continueCollecting []
+            continueCollecting [] stats
 
   liftIO $ do
-    collectResponses []
+    Stats howMany <- collectResponses [] (Stats 0)
+    print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show howMany
     flip runReaderT nn $ RP.unsubscribe subId
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
@@ -118,3 +127,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         )
         (sink . act)
         state
+
+    addStats :: Int -> Stats -> Stats
+    addStats n (Stats howMany) = Stats $ howMany + n

@@ -86,6 +86,7 @@ library
                       ModelAction
                       BechUtils
                       ContentUtils
+                      Tabs
                       -- ProfileLoader
 
     -- Modules included in this library but not exported.

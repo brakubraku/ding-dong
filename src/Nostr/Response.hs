@@ -47,7 +47,7 @@ getEventRelayEither ::
   (Response, Relay) -> Either Text (Event, Relay)
 getEventRelayEither rr =
   fromMaybe
-    (Left "Failed to extract event from response")
+    (Left $ "Failed to extract event from response:" <> (T.pack . show $ fst rr))
     $ Right <$> getEventRelay rr
 
 getEventOrError :: Response -> Either Text Event

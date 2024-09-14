@@ -58,7 +58,6 @@ start = do
   keys <- loadKeys
   savedContacts <- Set.fromList <$> loadContacts
   actualTime <- liftIO getCurrentTime
-  liftIO . putStrLn $ "Keys are:" <> show keys
   nn <-
     liftIO $
       initNetwork
@@ -66,7 +65,7 @@ start = do
           "wss://lunchbox.sandwich.farm",
           "wss://relay.nostr.net",
           "wss://polnostr.xyz",
-          -- "wss://relay.damus.io",
+          "wss://relay.damus.io",
           "wss://nostr.at"
         ]
         keys
@@ -144,6 +143,7 @@ updateModel nn rl pl action model =
                        in loop
                   )
                     sink
+                forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
           )
     TextNotesAndDeletes rs ->
       -- TODO: test this
@@ -315,6 +315,9 @@ updateModel nn rl pl action model =
                 liftIO . sink $ FindProfile
                 liftIO . sink $ GoPage ProfilePage
             )
+    LogReceived ers ->
+      let unique = Set.toList . Set.fromList $ fst <$> ers
+       in trace ("branko-log-kind10002:" <> show unique) $ noEff model
     _ -> noEff model
 
 -- subscriptions below are parametrized by Page. The reason is
@@ -359,15 +362,15 @@ secs = (* 1000000)
 
 appView :: Model -> View Action
 appView m =
-    div_ [] $
-      [ div_
-          [class_ "main-container"]
-          [ leftPanel,
-            middlePanel m,
-            rightPanel
-          ],
-        footerView m
-      ]
+  div_ [] $
+    [ div_
+        [class_ "main-container"]
+        [ leftPanel,
+          middlePanel m,
+          rightPanel
+        ],
+      footerView m
+    ]
 
 followingView :: Model -> View Action
 followingView m@Model {..} =
@@ -673,3 +676,15 @@ displayAge now e =
           hours = s `div` 3600
           minutes = s `div` 60
    in format ageSeconds
+
+subscribeForRelays :: NostrNetwork -> [XOnlyPubKey] -> Sub Action
+subscribeForRelays nn xo =
+  subscribe
+    nn
+    PeriodicUntilEOS
+    [subFilter]
+    LogReceived
+    Nothing
+    getEventRelayEither
+  where
+    subFilter = anytimeF . RelayListMetadata $ xo

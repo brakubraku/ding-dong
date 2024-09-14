@@ -18,16 +18,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.DateTime
-import Data.Default
 import Data.List
 import Data.Maybe (catMaybes, fromJust, fromMaybe)
 import Data.Text (Text, pack, toLower, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.Lazy as LazyText
 import Data.Text.Lazy.Builder (toLazyText)
-import Data.Time
 import qualified Data.Vector as V
-import Debug.Trace
 import GHC.Exts (fromList)
 import GHC.Generics
 import MyCrypto
@@ -36,7 +33,6 @@ import Nostr.Kind
 import Nostr.Profile (Profile (..), RelayURL, Username)
 import Nostr.Relay
 import Optics hiding (uncons)
-import System.Entropy
 
 newtype EventId = EventId
   { getEventId :: ByteString
@@ -46,9 +42,13 @@ newtype EventId = EventId
 data Marker = Reply | Root | Mention
   deriving (Eq, Show, Ord)
 
+data ReadWrite = Read | Write
+  deriving (Eq, Show, Ord)
+ 
 data Tag
   = ETag EventId (Maybe RelayURL) (Maybe Marker)
   | PTag UnknownXOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
+  | RTag Text (Maybe ReadWrite)
   | NonceTag
   | UnknownTag String
   deriving (Eq, Show, Ord)
@@ -89,6 +89,13 @@ instance FromJSON EventId where
     case decodeEventId i of
       Just e -> return e
       _ -> fail "invalid event id"
+      
+instance FromJSON ReadWrite where
+  parseJSON = withText "ReadWrite" $ \r -> do
+    case r of
+      "read"-> pure Read
+      "write"-> pure Write
+      _ -> fail "invalid ReadWrite"
 
 -- TODO: check this extractBase is correct
 instance ToJSON EventId where
@@ -138,6 +145,8 @@ instance FromJSON Tag where
             ETag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
           String "p" ->
             PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
+          String "r" ->
+            RTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2)
           _ ->
             return . UnknownTag $ show v
     | otherwise = return . UnknownTag $ show v
