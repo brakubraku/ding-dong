@@ -30,7 +30,7 @@ import Optics
 --   call actOnResults periodically with whatever messages you have received and never quit
 --   call actOnResults only once after EOS, on all collected messages, and quit
 
--- Motivation here is that for example when receiving TextNotes and Deletes you want to be able to process 
+-- Motivation here is that for example when receiving TextNotes and Deletes you want to be able to process
 -- all of them at once, so that you don't display TextNotes which are Delete-d (in later messages).
 
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
@@ -57,6 +57,17 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
 
+        -- rrs <-
+        --   catMaybes
+        --     . Prelude.takeWhile (isJust)
+        --     <$> ( sequence
+        --             . repeat
+        --             . liftIO
+        --             . atomically
+        --             . tryReadTChan
+        --             $ respChan
+        --         )
+
         let finished = isSubFinished subId $ subStates
         let continueCollecting csf = do
               threadDelay $ 10 ^ 5 -- TODO
@@ -76,15 +87,15 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             processMsgs rrs
             continueCollecting []
 
-  liftIO $ collectResponses []
-  liftIO . flip runReaderT nn $
-    RP.unsubscribe subId
+  liftIO $ do
+    collectResponses []
+    flip runReaderT nn $ RP.unsubscribe subId
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
     collectJustM action = do
       x <- action
       case x of
-        Nothing -> return []
+        Nothing -> pure []
         Just x -> do
           xs <- collectJustM action
           return (x : xs)

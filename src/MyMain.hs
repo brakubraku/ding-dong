@@ -34,7 +34,7 @@ import Debug.Trace (trace)
 import Miso hiding (at, now, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (subscribe, SubType (AllAtEOS, PeriodicUntilEOS, PeriodicForever))
+import MisoSubscribe (SubType (AllAtEOS, PeriodicUntilEOS), subscribe)
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -66,6 +66,7 @@ start = do
           "wss://lunchbox.sandwich.farm",
           "wss://relay.nostr.net",
           "wss://polnostr.xyz",
+          -- "wss://relay.damus.io",
           "wss://nostr.at"
         ]
         keys
@@ -138,7 +139,7 @@ updateModel nn rl pl action model =
                       let loop = do
                             now <- liftIO getCurrentTime
                             liftIO . sink . ActualTime $ now
-                            liftIO . threadDelay . secs $ 60 
+                            liftIO . threadDelay . secs $ 60
                             loop
                        in loop
                   )
@@ -186,16 +187,15 @@ updateModel nn rl pl action model =
     SubscribeForReplies es ->
       effectSub model $ subscribeForEventsReplies nn es Home
     ReceivedReactions rs ->
-      -- traceM "Got reactions my boy"
       let reactions = model ^. #reactions
-       in trace ("  " <> show (length rs)) $
-            noEff $
-              model
-                & #reactions
-                .~ Prelude.foldl processReceived reactions rs
-    ReceivedProfiles rs ->
-      let profiles = (\(xo, pro, when, rel) -> (xo, (pro, when))) <$> rs
        in noEff $
+            model
+              & #reactions
+              .~ Prelude.foldl processReceived reactions rs
+    ReceivedProfiles rs ->
+      let profiles =
+            (\(xo, pro, when, rel) -> (xo, (pro, when))) <$> rs
+          updated =
             model
               & #profiles
               %~ unionWith
@@ -204,6 +204,7 @@ updateModel nn rl pl action model =
                     if d1 > d2 then p1 else p2
                 )
                 (fromList profiles)
+       in noEff $ updated
     GoPage page ->
       noEff $ model & #page .~ page & #history %~ (page :)
     GoBack ->
@@ -358,15 +359,15 @@ secs = (* 1000000)
 
 appView :: Model -> View Action
 appView m =
-  div_ [] $
-    [ div_
-        [class_ "main-container"]
-        [ leftPanel,
-          middlePanel m,
-          rightPanel
-        ],
-      footerView m
-    ]
+    div_ [] $
+      [ div_
+          [class_ "main-container"]
+          [ leftPanel,
+            middlePanel m,
+            rightPanel
+          ],
+        footerView m
+      ]
 
 followingView :: Model -> View Action
 followingView m@Model {..} =
@@ -376,12 +377,14 @@ followingView m@Model {..} =
   where
     loadedProfiles :: [(XOnlyPubKey, Profile)]
     loadedProfiles =
-      catMaybes $
-        ( \xo -> do
-            p <- fst <$> (m ^. #profiles % at xo)
-            pure (xo, p)
-        )
-          <$> Set.toList contacts
+      ( \xo ->
+          let p = fromMaybe (emptyP xo) $ fst <$> (m ^. #profiles % at xo)
+           in (xo, p)
+      )
+        <$> Set.toList contacts
+      where
+        -- in case profile was not found on any relay display pubKey in about
+        emptyP xo = Profile "" Nothing (bechNpub xo) Nothing Nothing
 
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
@@ -498,8 +501,8 @@ middlePanel m =
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
 
-rightPanel :: View Action 
-rightPanel = div_ [class_"right-panel"] []
+rightPanel :: View Action
+rightPanel = div_ [class_ "right-panel"] []
 
 leftPanel :: View Action
 leftPanel =
