@@ -15,10 +15,9 @@
     flex: 8 0 0
 }
 
-.profile-pic-container {
-    /* flex: 1; */
-    /* border: 1px solid magenta; */
-    text-align: right
+.note-content {
+    filter: blur(5px);
+    padding-top: 5px;
 }
 
 .text-note-container {
@@ -87,8 +86,9 @@
 
 .middle-panel {
     flex: 6 0 0;
-    overflow: scroll;
-    margin-left: 15px;
+    overflow: hidden;
+    padding-left: 5px;
+    padding-right: 5px;
 }
 
 .right-panel {
@@ -166,6 +166,8 @@
 
 .text-note-properties {
     display: flex;
+    font-size: 14px;
+    padding-top: 5px;
 }
 
 .replies-count {
@@ -183,8 +185,23 @@
     flex-direction: row;
 }
 
+.profile-page .profile-pic-container .follow-button-container {
+    flex: 1;
+    text-align: center;
+    padding-top: 10px;
+}
+
+.profile-page .profile-pic-container .names {
+    display: flex;
+    flex-direction: column;
+}
+
 .profile-page .note-container .profile-pic {
     display: none;
+}
+
+.profile-page .banner {
+    text-align: center;
 }
 
 .profile-page .profile-pic {
@@ -219,13 +236,13 @@
 }
 
 .profile-page .banner-pic {
-    max-height: 500px;
+    width: 600px;
+    object-fit: scale-down;
 }
 
 .profile-page .banner-pic-default {
-    height: 500px;
-    width: 500px;
-    background-color: pink;
+    height: 200px;
+    background-color: rgba(218, 86, 26, 0.664);
 }
 
 .profile-page .profile-about {
@@ -233,17 +250,26 @@
     top: -40px;
     font-weight: bold;
     font-style: italic;
+    padding-bottom: 20px;
+    border-bottom: 1px solid grey;
 }
 
 .search-box {
-    text-align: center;
+    /* text-align: center; */
     margin-bottom: 20px;
+    font-size: 20px;
 }
 
 .input-xo {
-    width: 500px;
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid gray
 }
 
 .link-pic {
     max-width: 200px;
+}
+
+.follow-button {
+    margin-top: 10px;
 }
