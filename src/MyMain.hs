@@ -434,7 +434,7 @@ displayNoteContent :: T.Text -> View Action
 displayNoteContent t =
   let content = processText t
       displayContent (TextC textWords) =
-        div_ [] [text . T.unwords $ textWords]
+        text . T.unwords $ textWords
       displayContent (LinkC Image link) =
         div_
           []
@@ -562,14 +562,17 @@ displayProfile m xo =
               div_
                 [class_ "profile-pic-container"]
                 [ fromMaybe profilepicDef profilepic,
-                  div_ [] [profileName, displayName],
-                  if isJust $ m ^. #contacts % at xo
-                    then
-                      span_ [class_ "follow-button"] [text "Following"]
-                    else
-                      button_
-                        [class_ "follow-button", onClick (Follow xo)]
-                        [text "Follow"]
+                  div_ [class_ "names"] [profileName, displayName],
+                  div_
+                    [class_ "follow-button-container"]
+                    [ if isJust $ m ^. #contacts % at xo
+                        then
+                          span_ [class_ "follow-button"] [text "Following"]
+                        else
+                          button_
+                            [class_ "follow-button", onClick (Follow xo)]
+                            [text "Follow"]
+                    ]
                 ],
               div_
                 [class_ "profile-about"]
