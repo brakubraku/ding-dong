@@ -58,9 +58,7 @@ start = do
   keys <- loadKeys
   savedContacts <- Set.fromList <$> loadContacts
   actualTime <- liftIO getCurrentTime
-  nn <-
-    liftIO $
-      initNetwork
+  let relaysList =
         [ "wss://relay.nostrdice.com",
           "wss://lunchbox.sandwich.farm",
           "wss://relay.nostr.net",
@@ -68,14 +66,18 @@ start = do
           "wss://relay.damus.io",
           "wss://nostr.at"
         ]
+  nn <-
+    liftIO $
+      initNetwork
+        relaysList
         keys
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
   let subs = [connectRelays nn HandleWebSocket]
       update = updateModel nn reactionsLoader profilesLoader
-  startApp App {initialAction = StartAction, model = initialModel savedContacts actualTime, ..}
+  startApp App {initialAction = StartAction, model = initialModel savedContacts actualTime relaysList, ..}
   where
-    initialModel contacts actualTime =
+    initialModel contacts actualTime relaysList =
       Model
         Set.empty
         (Reactions Map.empty Map.empty)
@@ -88,6 +90,8 @@ start = do
         [Home]
         (FindProfileModel "" Nothing Map.empty)
         Map.empty
+        relaysList
+        (RelaysPageModel "")
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -105,7 +109,9 @@ updateModel nn rl pl action model =
     HandleWebSocket (WebSocketClose _ _ _) ->
       noEff $ model & #err .~ "Connection closed"
     HandleWebSocket (WebSocketError er) ->
-      noEff $ model & #err .~ er
+      (model & #err .~ er) <# do
+        liftIO . print $ "branko-got-websocket-error"
+        pure NoAction
     -- HandleWebSocket WebSocketOpen ->
     StartAction ->
       do
@@ -496,13 +502,18 @@ middlePanel :: Model -> View Action
 middlePanel m =
   div_
     [class_ "middle-panel"]
-    [div_ [class_ "button-back", onClick (GoBack)] [text "←"], displayPage]
+    [ div_
+        []
+        [span_ [class_ "button-back", onClick (GoBack)] [text "←"]],
+      displayPage
+    ]
   where
     displayPage = case m ^. #page of
       Home -> notesView m
       Following -> followingView m
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
+      RelaysPage -> displayRelaysPage m
 
 rightPanel :: View Action
 rightPanel = div_ [class_ "right-panel"] []
@@ -512,10 +523,11 @@ leftPanel =
   div_
     [class_ "left-panel"]
     [ spItem "Feed" Home,
-      spItem "Notifications" Following,
-      spItem "Following" Following,
+      -- spItem "Notifications" Following,
+      -- spItem "Following" Following,
       spItem "Followers" Following,
-      spItem "Bookmarks" Following
+      spItem "Relays" RelaysPage
+      -- spItem "Bookmarks" Following
     ]
   where
     spItem label page =
@@ -644,6 +656,36 @@ displayProfilePage m =
   where
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+
+displayRelaysPage :: Model -> View Action
+displayRelaysPage m =
+  div_ [class_ "relays-page"] $
+    ( displayRelay
+        <$> m ^. #relays
+    )
+      ++ [inputRelay]
+  where
+    displayRelay r =
+      div_ [class_ "relay"] [text r]
+    inputRelay =
+      input_
+        [ class_ "input-relay",
+          class_
+            $ bool
+              "incorrect"
+              "correct"
+            $ validateUrl (m ^. #relaysPage % #relay),
+          -- value_ npub,
+          type_ "text",
+          onInput $ UpdateField (#relaysPage % #relay),
+          onEnter $ AddRelay
+        ]
+    validateUrl _ = True -- TODO
+    onEnter :: Action -> Attribute Action
+    onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+
+
+
 
 getAuthorProfile :: Model -> Event -> Maybe Profile
 getAuthorProfile m e = fst <$> m ^. #profiles % at (e ^. #pubKey)

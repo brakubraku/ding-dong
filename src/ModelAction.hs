@@ -47,12 +47,14 @@ data Action
   | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
   | DisplayProfilePage XOnlyPubKey
   | LogReceived [(Event, Relay)]
+  | AddRelay 
 
 data Page
   = Home
   | Following
   | ThreadPage Event
   | ProfilePage
+  | RelaysPage
   deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
@@ -66,11 +68,17 @@ data Model = Model
     thread :: Map.Map RootEid Thread,
     history :: [Page],
     fpm :: FindProfileModel,
-    subscriptions :: Map.Map Page [(SubscriptionId, Map.Map Relay RelaySubState)]
+    subscriptions :: Map.Map Page [(SubscriptionId, Map.Map Relay RelaySubState)],
+    relays :: [Text],
+    relaysPage :: RelaysPageModel
   }
   deriving (Eq, Generic)
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
+
+data RelaysPageModel = RelaysPageModel {
+  relay :: Text
+} deriving (Eq, Generic)
 
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
