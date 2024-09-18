@@ -116,10 +116,12 @@ updateModel nn rl pl action model =
     StartAction ->
       do
         let twoDaysAgo = (-nominalDay * 2) `addUTCTime` (model ^. #now)
-            textNotes = sinceF twoDaysAgo . TextNoteFilter . Set.toList $ model ^. #contacts
-            -- textNotes = anytimeF . TextNoteFilter . Set.toList $ model ^. #contacts
-            -- getContacts = simpleF $ ContactsFilter
-            getProfiles = anytimeF . MetadataFilter . Set.toList $ model ^. #contacts
+            textNotes =
+              textNotesWithDeletes
+                (Just twoDaysAgo)
+                Nothing
+                . Set.toList
+                $ model ^. #contacts
 
         effectSub
           model
@@ -134,7 +136,7 @@ updateModel nn rl pl action model =
                   subscribe
                     nn
                     AllAtEOS
-                    [textNotes]
+                    textNotes
                     TextNotesAndDeletes
                     (Just $ SubState Home)
                     getEventRelayEither
@@ -269,6 +271,10 @@ updateModel nn rl pl action model =
           runSubscriptions = do
             xo' <- xo
             let sevenDaysAgo = (-nominalDay * 7) `addUTCTime` (model ^. #now)
+                textNotes =
+                  textNotesWithDeletes
+                    (Just sevenDaysAgo)
+                    Nothing
             pure $
               effectSub updatedModel $ \sink -> do
                 subscribe
@@ -283,7 +289,7 @@ updateModel nn rl pl action model =
                   subscribe -- TODO: need to take Deletes into account
                     nn
                     AllAtEOS
-                    [sinceF sevenDaysAgo (TextNoteFilter [xo'])] -- TODO: Time bounds
+                    (textNotes [xo']) -- TODO: Time bounds
                     ProfileEvents
                     (Just . SubState $ ProfilePage)
                     (\(res, rel) -> (,rel) <$> getEventOrError res)
@@ -524,8 +530,8 @@ leftPanel =
     [class_ "left-panel"]
     [ spItem "Feed" Home,
       -- spItem "Notifications" Following,
-      -- spItem "Following" Following,
-      spItem "Followers" Following,
+      -- spItem "Followers"
+      spItem "Following" Following,
       spItem "Relays" RelaysPage
       -- spItem "Bookmarks" Following
     ]
@@ -683,9 +689,6 @@ displayRelaysPage m =
     validateUrl _ = True -- TODO
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
-
-
-
 
 getAuthorProfile :: Model -> Event -> Maybe Profile
 getAuthorProfile m e = fst <$> m ^. #profiles % at (e ^. #pubKey)

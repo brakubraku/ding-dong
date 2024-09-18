@@ -1,27 +1,28 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Nostr.Filter
   ( DatedFilter (..),
     Filter (..),
     isAnytime,
-    anytimeF, 
-    sinceF
+    anytimeF,
+    sinceF,
+    textNotesWithDeletes,
   )
 where
 
-import MyCrypto
+import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.DateTime
+import Data.Maybe (catMaybes)
 import GHC.Exts (Item, fromList)
+import MyCrypto
 import Nostr.Event
 import Nostr.Kind
 import Prelude hiding (until)
-import Data.Maybe (catMaybes)
-import Data.Aeson
 
 -- TODO: check that these are toJSON/fromJSON properly
 data DatedFilter = DatedFilter
@@ -35,6 +36,7 @@ data Filter
   = MetadataFilter [XOnlyPubKey]
   | ContactsFilter [XOnlyPubKey]
   | TextNoteFilter [XOnlyPubKey]
+  | DeletesFilter [XOnlyPubKey]
   | LinkedEvents [EventId]
   | ParentEventOfEvent EventId -- parent event meaning one which eventId is a response to
   | RepliesToEvent EventId
@@ -60,7 +62,6 @@ toPairs (ReactionsTo eids) =
     -- ("authors", toJSON xos)
     -- ("limit", Number 1)
   ]
-
 toPairs (RelayListMetadata xos) =
   [ ("kinds", toJSON [RelayList]),
     ("authors", toJSON xos)
@@ -77,9 +78,12 @@ toPairs (ContactsFilter xos) =
     -- ,("limit", Number 500)
   ]
 toPairs (TextNoteFilter xos) =
-  [ ("kinds", toJSON [TextNote, Delete]),
-    ("authors", toJSON xos),
-    ("limit", Number 100)
+  [ ("kinds", toJSON [TextNote]),
+    ("authors", toJSON xos)
+  ]
+toPairs (DeletesFilter xos) =
+  [ ("kinds", toJSON [Delete]),
+    ("authors", toJSON xos)
   ]
 toPairs (LinkedEvents eids) =
   [ ("kinds", toJSON [TextNote]),
@@ -94,24 +98,21 @@ toPairs AllMetadata =
   [ ("kinds", toJSON [Metadata]),
     ("limit", Number 500)
   ]
-
 toPairs (ParentEventOfEvent eid) =
   [("ids", toJSON [eid])]
-
 toPairs (RepliesToEvent eid) =
   [("#e", toJSON [eid])]
-
 toPairs CalendarTimeFilter =
   [("kinds", toJSON [CalendarTime])]
-
 toPairs CalendarDayFilter =
   [("kinds", toJSON [CalendarDay])]
 
 addTimeInterval :: DatedFilter -> [Item [Pair]]
-addTimeInterval (DatedFilter f since until) = catMaybes
-  [ ("since",) . toJSON . toSeconds <$> since,
-    ("until",) . toJSON . toSeconds <$> until
-  ]
+addTimeInterval (DatedFilter f since until) =
+  catMaybes
+    [ ("since",) . toJSON . toSeconds <$> since,
+      ("until",) . toJSON . toSeconds <$> until
+    ]
 
 isAnytime :: DatedFilter -> Bool
 isAnytime (DatedFilter f Nothing Nothing) = True
@@ -123,6 +124,13 @@ anytimeF f = DatedFilter f Nothing Nothing
 sinceF :: DateTime -> Filter -> DatedFilter
 sinceF when f = DatedFilter f (Just when) Nothing
 
+textNotesWithDeletes :: Maybe DateTime -> Maybe DateTime -> [XOnlyPubKey] -> [DatedFilter]
+textNotesWithDeletes since until xos =
+  [ DatedFilter (TextNoteFilter xos) since until,
+    -- you don't want to have "until" for Deletes,
+    -- but instead take all of them until present
+    DatedFilter (DeletesFilter xos) since Nothing
+  ]
 
 -- addTimeInterval :: DateTime -> [Item [Pair]]
 -- addTimeInterval interval =
@@ -131,4 +139,5 @@ sinceF when f = DatedFilter f (Just when) Nothing
 --   ]
 
 -- $(deriveFromJSON defaultOptions{constructorTagModifier = fmap toLower} ''Filter)
+
 -- $(deriveFromJSON defaultOptions{constructorTagModifier = fmap toLower} ''DatedFilter)
