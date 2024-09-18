@@ -65,7 +65,6 @@ connectRelays nn sendMsg sink = do
   where
     conRelay :: Relay -> JSM ()
     conRelay relay = do
-      -- TODO: maybe I need to store the socket reference somewhere or else it gets GCd?
       socket <- createWebSocket (relay ^. #uri) []
       socketState <- liftIO $ newMVar 0
 
@@ -90,15 +89,11 @@ connectRelays nn sendMsg sink = do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
             case Map.lookup subId subs of
               Just subscription -> do
-                -- normalize event's tags to latest NIP10
-                -- TODO: reintroduce this below if neccessarry
-                -- let normalizedEvent = normalizeTags event
-                let normalizedEvent = event
                 liftIO $
                   atomically $
                     writeTChan
                       (subscription ^. #responseCh)
-                      (EventReceived subId normalizedEvent, relay)
+                      (EventReceived subId event, relay)
               Nothing ->
                 liftIO
                   . logRelayError relay
