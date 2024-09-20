@@ -70,6 +70,7 @@ connectRelays nn sendMsg sink = do
 
       WS.addEventListener socket "open" $ \_ -> do
         liftIO $ do
+          print $ "branko-websocket-open" <> show relay
           modifyMVar_ (nn ^. #relays) $ \rels ->
             pure $ rels & at (relay ^. #uri) %~ fmap (\r -> r {connected = True})
           _ <- swapMVar socketState 1
@@ -84,6 +85,7 @@ connectRelays nn sendMsg sink = do
             . encodeUtf8
             . strToText
             $ msg
+        liftIO . print $ "branko-websocket-message" <> show resp
         case resp of
           Just (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
@@ -103,10 +105,11 @@ connectRelays nn sendMsg sink = do
                     <> " not found in responseChannels. Event received="
                     <> show event
           Just (Nostr.Response.EOSE subId) -> do
-            liftIO . runReaderT (changeState subId relay Nostr.Network.EOSE) $ nn
+            liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
           _ -> liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
 
       WS.addEventListener socket "close" $ \e -> do
+        liftIO . print $ "branko-websocket-closed" <> show relay
         code <- codeToCloseCode <$> WS.code e
         reason <- WS.reason e
         clean <- WS.wasClean e
@@ -146,15 +149,15 @@ connectRelays nn sendMsg sink = do
                 1 -> do
                   -- ready
                   request <- liftIO . atomically . readTChan $ rc
-                  case request of
-                    Subscribe (Subscription _ subId) ->
-                      liftIO . runReaderT (changeState subId relay Nostr.Network.Running) $ nn
-                    _ -> pure ()
                   sendJson' socket request
                   doLoop
-                _ -> do
-                  -- dead
-                  pure () -- quit
+                _ -> do 
+                  -- mark all Running subscriptions on this Relay as errored
+                  let changeRunning (Just st) 
+                        | st == Nostr.Network.Running = Just $ Nostr.Network.Error "Error" -- TODO: more descriptive error
+                        | otherwise = Just st
+                      changeRunning Nothing = Nothing
+                  liftIO . runReaderT (changeStateForAllSubs relay changeRunning) $ nn
       doLoop
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()

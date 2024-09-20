@@ -16,6 +16,7 @@ import GHC.Generics
 import Miso.String
 import MyCrypto
 import Nostr.Event
+import Nostr.Filter
 import Nostr.Network
 import Nostr.Profile
 import Nostr.Reaction
@@ -26,7 +27,7 @@ import Optics
 
 data Action
   = RelayConnected RelayURI
-  | TextNotesAndDeletes [(Event, Relay)]
+  | FeedNotesProcess [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -47,10 +48,13 @@ data Action
   | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
   | DisplayProfilePage XOnlyPubKey
   | LogReceived [(Event, Relay)]
-  | AddRelay 
+  | AddRelay
+  | ShowFeed
+  | ShowMore
+  | LoadMore
 
 data Page
-  = Home
+  = FeedPage
   | Following
   | ThreadPage Event
   | ProfilePage
@@ -58,27 +62,88 @@ data Page
   deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
-  { textNotes :: Set.Set Event,
+  { feed :: FeedPageModel,
+    fpm :: FindProfileModel,
+    relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
     err :: MisoString,
     contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
-    thread :: Map.Map RootEid Thread,
+    threads :: Map.Map RootEid Thread,
     history :: [Page],
-    fpm :: FindProfileModel,
-    subscriptions :: Map.Map Page [(SubscriptionId, Map.Map Relay RelaySubState)],
-    relays :: [Text],
-    relaysPage :: RelaysPageModel
+    subscriptions ::
+      Map.Map
+        Page
+        [(SubscriptionId, Map.Map Relay RelaySubState)],
+    relays :: [Text]
   }
   deriving (Eq, Generic)
 
+-- TODO: Declare your own Eq Model instance depending on
+--       *when* you want Miso update function to trigger!
+
+-- perhaps Eq instance is not appropriate for this
+-- TODO: modify Miso so that there is a typeclass
+-- class TriggerViewUpdate a where
+--      shouldTrigger :: a -> a -> Bool -- oldModel -> newModel -> Bool
+-- and Model must be instance of it
+
+-- instance Eq Model where
+--   m1 == m2 =
+--     case (m1 ^. #page) of
+--       Feed ->
+
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
-data RelaysPageModel = RelaysPageModel {
-  relay :: Text
-} deriving (Eq, Generic)
+newtype Since = Since DateTime
+  deriving (Eq)
+
+newtype Until = Until DateTime
+  deriving (Eq)
+
+type Threads = Map.Map RootEid Thread
+
+data FeedPageModel = FeedPageModel
+  { filter :: Since -> Until -> [DatedFilter],
+    since :: Since,
+    until :: Until,
+    step :: Maybe NominalDiffTime,
+    page :: Int,
+    pageSize :: Int,
+    notes :: [Event]
+  }
+  deriving (Generic)
+
+defaultFeedPageModel ::
+  Set.Set XOnlyPubKey ->
+  Since ->
+  Until ->
+  FeedPageModel
+defaultFeedPageModel xos since until =
+  FeedPageModel
+    { filter =
+        \(Since s) (Until u) ->
+          textNotesWithDeletes (Just s) (Just u) $ Set.toList xos,
+      since = since,
+      until = until,
+      step = Just $ nominalDay/2,
+      page = 0,
+      pageSize = 30,
+      notes = []
+    }
+
+-- TODO: don't really care about it
+instance Eq FeedPageModel where
+  f1 == f2 = True
+
+data RelayState = Connected | Disconnected | Error
+
+data RelaysPageModel = RelaysPageModel
+  { relay :: Text
+  }
+  deriving (Eq, Generic)
 
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
@@ -120,7 +185,7 @@ addToThread (e, rel) t =
           t
             & #events
             %~ addEvent (e, rel)
-            & #parents 
+            & #parents
             % at (e ^. #eventId)
             .~ Just eid
             & #replies

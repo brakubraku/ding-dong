@@ -104,8 +104,9 @@
 .left-panel-item button {
     background-color: white;
     color: black;
-    border: 2px solid #e7e7e7;
+    /* border: 2px solid #e7e7e7; */
     width: 100%;
+    text-align: left;
 }
 
 .left-panel-item button:hover {
@@ -272,4 +273,12 @@
 
 .follow-button {
     margin-top: 10px;
+}
+
+.invisible {
+    visibility: hidden;
+}
+
+.visible {
+
 }

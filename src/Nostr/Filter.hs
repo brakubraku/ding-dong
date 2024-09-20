@@ -124,7 +124,11 @@ anytimeF f = DatedFilter f Nothing Nothing
 sinceF :: DateTime -> Filter -> DatedFilter
 sinceF when f = DatedFilter f (Just when) Nothing
 
-textNotesWithDeletes :: Maybe DateTime -> Maybe DateTime -> [XOnlyPubKey] -> [DatedFilter]
+textNotesWithDeletes ::
+  Maybe DateTime ->
+  Maybe DateTime ->
+  [XOnlyPubKey] ->
+  [DatedFilter]
 textNotesWithDeletes since until xos =
   [ DatedFilter (TextNoteFilter xos) since until,
     -- you don't want to have "until" for Deletes,

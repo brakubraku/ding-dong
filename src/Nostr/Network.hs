@@ -1,79 +1,77 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 -- optics support
-{-# LANGUAGE OverloadedLabels     #-}
-{-# LANGUAGE DuplicateRecordFields     #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE RecordWildCards #-}
+
 module Nostr.Network where
 
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Reader
 import Data.Map
-import Nostr.Relay
-import Nostr.Keys
-import Nostr.Request
-import Nostr.Response
-import Data.Text hiding (zip)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Text hiding (zip)
+import Debug.Trace
 import GHC.Generics
+import Nostr.Keys
+import Nostr.Relay
+import Nostr.Request
+import Nostr.Response
 import Optics
 
-data SubscriptionState = SubscriptionState {
-  relaysState :: Map Relay RelaySubState,
-  responseCh :: TChan (Response, Relay)
-} deriving (Generic, Eq) 
+data SubscriptionState = SubscriptionState
+  { relaysState :: Map Relay RelaySubState,
+    responseCh :: TChan (Response, Relay)
+  }
+  deriving (Generic, Eq)
 
 data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
     requestCh :: TChan Request,
-    connEventCh :: TChan ConnectionEvent,
+    connEventCh :: TChan ConnectionEvent, -- TODO: get rid of this
     keys :: Keys
-  } deriving (Generic, Eq)
-  
+  }
+  deriving (Generic, Eq)
+
 runNostr :: NostrNetwork -> NostrNetworkT a -> IO a
 runNostr = flip runReaderT
 
 type NostrNetworkT = ReaderT NostrNetwork IO
 
-data RelaySubState = Running | EOSE | Error Text deriving (Eq, Show)
+data RelaySubState =  Running | EOSE | Error Text deriving (Eq, Show)
+
 data ConnectionEvent = RelaysUpdatedE [Relay] | SubscriptionStateUpdatedE (Map SubscriptionId (Map Relay RelaySubState))
   deriving (Show)
 
--- Subscription is considered finished when none of Relays is in a Running state 
+-- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
 isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
 isSubFinished subId subStates =
   fromMaybe False $ do
-    subState <- Map.lookup subId subStates
-    pure . notElem Running . elems $ subState ^. #relaysState
+    -- subState <- Map.lookup subId subStates
+    subState <- trace ("branko-isSubFinished:" <> (show . preview (_Just % #relaysState) . Map.lookup subId) subStates) Map.lookup subId subStates
+    let states = elems $ subState ^. #relaysState
+    pure $ notElem Running states 
 
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do
   relays <- newMVar . fromList . zip relays $ (newRelay <$> relays)
-  -- requestCh <- atomically $ do 
+  -- requestCh <- atomically $ do
   --   ch <- newBroadcastTChan
   --   dupTChan ch
   requestCh <- atomically newTChan
   connEventCh <- atomically newTChan
   subscriptions <- newMVar Map.empty
   pure NostrNetwork {..}
- 
- where 
-
-  newRelay :: RelayURI -> Relay 
-  newRelay ru = 
-    Relay {
-      uri = ru,
-      connected = False,
-      info = RelayInfo True True
-    }
-
-allConnected :: NostrNetwork -> IO Bool
-allConnected NostrNetwork {..} = do
-  rcs <- Map.elems <$> readMVar relays
-  pure . Prelude.all connected $ rcs
-  -- pure . all snd $ (elems rcs)
-
+  where
+    newRelay :: RelayURI -> Relay
+    newRelay ru =
+      Relay
+        { uri = ru,
+          connected = False,
+          info = RelayInfo True True
+        }

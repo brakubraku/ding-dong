@@ -1,11 +1,4 @@
 Sep 10
-* subscription architecture refactor
-    * load reactions and profiles in a way that state of their subscription can be tracked, i.e. not via PeriodicLoader
-
-* more robust websocket handling - all gets fucked when relays "misbehave" 
-    * investigating this it seems the javascript exceptions have a different source
-
-* after suspend wake up there is massive mem leak - likely a websocket code issue
 
 * partition events on profile page to original posts and replies. Display replies with their parent event.
 
@@ -13,6 +6,7 @@ Sep 10
 
 * optimize page transitions
     * possible to cache previous views in Miso? I suspect the lag is due to new view having to be computed every time
+    * on FindProfile page, when you click Follow it takes a long time to change to Following - this is due to I assume the model being too big. Hence it takes a long time to spit out new view.
 
 * display relays in profile 
     * it might be that you don't see reactions and replies because you are not taking them from profile's preffered relay

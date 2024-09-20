@@ -24,8 +24,8 @@ import Data.Bool (bool)
 import Data.DateTime (DateTime)
 import Data.Either (fromRight)
 import Data.List (singleton)
-import Data.Map as Map hiding (filter, foldr, singleton)
-import qualified Data.Map as M hiding (filter, foldr, singleton)
+import qualified Data.List as Prelude
+import qualified Data.Map as Map hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -56,16 +56,18 @@ import ReactionsLoader (createReactionsLoader)
 start :: JSM ()
 start = do
   keys <- loadKeys
-  savedContacts <- Set.fromList <$> loadContacts
-  actualTime <- liftIO getCurrentTime
+  contacts <- Set.fromList <$> loadContacts
+  now <- liftIO getCurrentTime
   let relaysList =
         [ "wss://relay.nostrdice.com",
           "wss://lunchbox.sandwich.farm",
           "wss://relay.nostr.net",
           "wss://polnostr.xyz",
           "wss://relay.damus.io",
-          "wss://nostr.at"
+          "wss://nostr.at",
+          "wss://ch.purplerelay.com"
         ]
+      oneDayAgo = (-nominalDay * 1) `addUTCTime` now
   nn <-
     liftIO $
       initNetwork
@@ -75,23 +77,24 @@ start = do
   profilesLoader <- liftIO createProfilesLoader
   let subs = [connectRelays nn HandleWebSocket]
       update = updateModel nn reactionsLoader profilesLoader
-  startApp App {initialAction = StartAction, model = initialModel savedContacts actualTime relaysList, ..}
+      initialModel =
+        Model
+          -- Set.empty
+          (defaultFeedPageModel contacts (Since now) (Until now))
+          (FindProfileModel "" Nothing Map.empty)
+          (RelaysPageModel "")
+          (Reactions Map.empty Map.empty)
+          "No error yet bioootch!"
+          contacts
+          Map.empty
+          FeedPage
+          now
+          Map.empty
+          [FeedPage]
+          Map.empty
+          relaysList
+  startApp App {initialAction = StartAction, model = initialModel, ..}
   where
-    initialModel contacts actualTime relaysList =
-      Model
-        Set.empty
-        (Reactions Map.empty Map.empty)
-        "No error yet bitch!"
-        contacts
-        Map.empty
-        Home
-        actualTime
-        Map.empty
-        [Home]
-        (FindProfileModel "" Nothing Map.empty)
-        Map.empty
-        relaysList
-        (RelaysPageModel "")
     events = defaultEvents
     view = appView
     mountPoint = Nothing
@@ -114,86 +117,98 @@ updateModel nn rl pl action model =
         pure NoAction
     -- HandleWebSocket WebSocketOpen ->
     StartAction ->
-      do
-        let twoDaysAgo = (-nominalDay * 2) `addUTCTime` (model ^. #now)
-            textNotes =
-              textNotesWithDeletes
-                (Just twoDaysAgo)
-                Nothing
-                . Set.toList
-                $ model ^. #contacts
-
-        effectSub
-          model
-          ( \sink ->
-              do
-                let runInNostr = liftIO . flip runReaderT nn
-                -- wait for connections to relays having been established
-                runInNostr $ RP.waitForActiveConnections (secs 2)
-                forkJSM $ startLoader nn rl ReceivedReactions sink
-                forkJSM $ startLoader nn pl ReceivedProfiles sink
-                forkJSM $
-                  subscribe
-                    nn
-                    AllAtEOS
-                    textNotes
-                    TextNotesAndDeletes
-                    (Just $ SubState Home)
-                    getEventRelayEither
-                    sink
-                forkJSM $ -- put actual time to model every 60 seconds
-                  ( \sink ->
-                      let loop = do
-                            now <- liftIO getCurrentTime
-                            liftIO . sink . ActualTime $ now
-                            liftIO . threadDelay . secs $ 60
-                            loop
-                       in loop
-                  )
-                    sink
-                forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
-          )
-    TextNotesAndDeletes rs ->
-      -- TODO: test this
-      -- TODO: do this using List partition
-      let notes = model ^. #textNotes
-          receivedEvents = fst <$> rs
-          receivedNotes =
-            Set.fromList $
-              Prelude.filter
-                (\e -> e ^. #kind == TextNote && not (isReply e))
-                receivedEvents
-          allNotes = notes `Set.union` receivedNotes
-          deletionEvents =
+      effectSub
+        model
+        $ \sink ->
+          do
+            let runInNostr = liftIO . flip runReaderT nn
+            -- wait for connections to relays having been established
+            runInNostr $ RP.waitForActiveConnections (secs 2)
+            forkJSM $ startLoader nn rl ReceivedReactions sink
+            forkJSM $ startLoader nn pl ReceivedProfiles sink
+            forkJSM $ -- put actual time to model every 60 seconds
+              let loop = do
+                    now <- liftIO getCurrentTime
+                    liftIO . sink . ActualTime $ now
+                    liftIO . threadDelay . secs $ 60
+                    loop
+               in loop
+            -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
+            liftIO . sink $ ShowFeed
+    ShowFeed ->
+      model <# pure LoadMore
+    FeedNotesProcess rs ->
+      -- Note: this only works correctly when subscription is AtEOS,
+      --       i.e. all events are returned at once, not periodically as they arrive
+      --       This allows to handle Delete events effectivelly.
+      let evts =
+            Set.toList . Set.fromList $ fst <$> rs -- fromList, toList, to eliminate duplicates
+          (noteEvts, deleteEvts) =
+            Prelude.partition
+              (\e -> e ^. #kind == TextNote)
+              evts
+          deletions =
             catMaybes $
-              Prelude.filter ((== Delete) . kind) receivedEvents
+              deleteEvts
                 & fmap
                   ( \e -> do
                       ETag eid _ _ <- getSingleETag e
                       pure (e ^. #pubKey, eid)
                   )
-          updatedNotes =
-            Set.filter
+          notes =
+            filter
               ( \e ->
                   not $
                     (e ^. #pubKey, e ^. #eventId)
-                      `elem` deletionEvents
+                      `elem` deletions
               )
-              allNotes
-
+              -- show original posts only (not replies)
+              (filter (not . isReply) noteEvts)
           newModel =
             model
-              & #textNotes
-              .~ updatedNotes
-
-          newNotes = Set.toList (updatedNotes `Set.difference` notes)
+              & #feed
+              % #notes
+              %~ \ns -> ns ++ orderByAgeAsc notes -- put new notes at the bottom; TODO: allow different ordering
        in newModel <# do
-            liftIO . print $ "branko-textnotes-udpated-size:" <> show (Set.size $ updatedNotes)
-            load rl $ eventId <$> newNotes
-            load pl $ pubKey <$> newNotes
-            pure $ SubscribeForReplies newNotes
+            load rl $ eventId <$> trace ("branko-notes count:" <> show (length notes)) notes
+            load pl $ pubKey <$> notes
+            pure $ SubscribeForReplies notes
+    ShowMore ->
+      let newModel = model & #feed % #page %~ (+) 1
+          f = newModel ^. #feed
+          needsSub =
+            f ^. #pageSize * f ^. #page
+              + f ^. #pageSize
+              > length (f ^. #notes)
+       in newModel <# do
+            pure $
+              bool NoAction LoadMore needsSub
+    LoadMore ->
+      let f = model ^. #feed
+          Since (newUntil) = f ^. #since
+          step = fromMaybe 0 $ f ^. #step
+          newSince = addUTCTime (-step) newUntil
+          nextFilter = (f ^. #filter) (Since newSince) (Until newUntil)
+          newModel =
+            model
+              & #feed
+              % #since
+              .~ Since newSince
+              & #feed
+              % #until
+              .~ Until newUntil
+       in effectSub newModel $ \sink -> do
+            scrollIntoView "top-top"
+            subscribe
+              nn
+              AllAtEOS
+              nextFilter
+              FeedNotesProcess
+              (Just $ SubState FeedPage)
+              getEventRelayEither
+              sink
     SubscribeForReplies es ->
-      effectSub model $ subscribeForEventsReplies nn es Home
+      effectSub model $ subscribeForEventsReplies nn es FeedPage
     ReceivedReactions rs ->
       let reactions = model ^. #reactions
        in noEff $
@@ -206,15 +221,18 @@ updateModel nn rl pl action model =
           updated =
             model
               & #profiles
-              %~ unionWith
+              %~ Map.unionWith
                 ( \p1@(_, d1) p2@(_, d2) ->
                     -- prefer most recent profile
                     if d1 > d2 then p1 else p2
                 )
-                (fromList profiles)
+                (Map.fromList profiles)
        in noEff $ updated
     GoPage page ->
-      noEff $ model & #page .~ page & #history %~ (page :)
+      let add p ps@(p1 : _) =
+            bool (p : ps) ps (p1 == p)
+          add p [] = [p]
+       in noEff $ model & #page .~ page & #history %~ add page
     GoBack ->
       let updated = do
             (_, xs) <- uncons $ model ^. #history
@@ -245,9 +263,9 @@ updateModel nn rl pl action model =
       let getReid e = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
           updateModel (e, rel) model =
             let reid = getReid e
-                thread = fromMaybe newThread $ model ^. #thread % at reid
+                thread = fromMaybe newThread $ model ^. #threads % at reid
                 updatedThread = addToThread (e, rel) thread
-             in model & #thread % at reid .~ (Just updatedThread)
+             in model & #threads % at reid .~ (Just updatedThread)
 
           updated = Prelude.foldr updateModel model es
       updated <# do
@@ -286,7 +304,7 @@ updateModel nn rl pl action model =
                   extractProfile
                   sink
                 forkJSM $
-                  subscribe -- TODO: need to take Deletes into account
+                  subscribe
                     nn
                     AllAtEOS
                     (textNotes [xo']) -- TODO: Time bounds
@@ -309,6 +327,7 @@ updateModel nn rl pl action model =
               . fmap (updateListWith st)
        in updatedModel <# pure NoAction
     ProfileEvents es ->
+      -- TODO: take deletes into account
       let add (e, r) toThese =
             toThese & at e %~ \er ->
               case er of
@@ -376,7 +395,7 @@ appView :: Model -> View Action
 appView m =
   div_ [] $
     [ div_
-        [class_ "main-container"]
+        [class_ "main-container", id_ "top-top"]
         [ leftPanel,
           middlePanel m,
           rightPanel
@@ -419,17 +438,30 @@ followingView m@Model {..} =
         ]
 
 notesView :: Model -> View Action
-notesView m@Model {..} =
+notesView m =
   div_
-    [class_ "notes-container"]
-    (displayNote m <$> (orderByAgeAsc $ Set.toList textNotes))
+    []
+    [ div_
+        [class_ "notes-container"]
+        (displayNote m <$> (orderByAgeAsc $ notes)), -- TODO: ordering can be different
+      div_
+        [class_ "load-more-container"]
+        [span_ [class_ "load-more", onClick (ShowMore)] [text "Load more"]]
+    ]
+  where
+    f = m ^. #feed
+    pageSize = f ^. #pageSize
+    page = f ^. #page
+    notes = take pageSize . drop (page * pageSize) $ f ^. #notes
+
+-- notes = take (pageSize * page + pageSize) $ f ^. #notes
 
 footerView :: Model -> View action
 footerView Model {..} =
   div_
     [class_ "footer"]
     [ p_
-        [style_ $ M.fromList [("font-weight", "bold")]]
+        [style_ $ Map.fromList [("font-weight", "bold")]]
         [text err | not . S.null $ err]
     ]
 
@@ -475,7 +507,7 @@ displayNoteShort m e =
     reactions = m ^. #reactions % #processed % at eid
     reid = RootEid $ fromMaybe eid $ findRootEid e
     replies = do
-      thread <- m ^. #thread % at reid
+      thread <- m ^. #threads % at reid
       Set.size <$> thread ^. #replies % at eid
     repliesCount c =
       [ div_
@@ -501,7 +533,10 @@ displayNote m e =
     profile = fromMaybe unknown $ getAuthorProfile m e
     unknown = Profile "" Nothing Nothing Nothing Nothing
     profileName = span_ [id_ "username"] [text $ profile ^. #username]
-    displayName = span_ [id_ "display-name"] [text . fromMaybe "" $ profile ^. #displayName]
+    displayName =
+      span_
+        [id_ "display-name"]
+        [text . fromMaybe "" $ profile ^. #displayName]
     noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
 
 middlePanel :: Model -> View Action
@@ -510,12 +545,19 @@ middlePanel m =
     [class_ "middle-panel"]
     [ div_
         []
-        [span_ [class_ "button-back", onClick (GoBack)] [text "←"]],
+        [ span_
+            [ class_ "button-back",
+              bool (class_ "invisible") (class_ "visible") showBack,
+              onClick (GoBack)
+            ]
+            [text "←"]
+        ],
       displayPage
     ]
   where
+    showBack = (> 1) . length $ m ^. #history
     displayPage = case m ^. #page of
-      Home -> notesView m
+      FeedPage -> notesView m
       Following -> followingView m
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
@@ -528,7 +570,7 @@ leftPanel :: View Action
 leftPanel =
   div_
     [class_ "left-panel"]
-    [ spItem "Feed" Home,
+    [ spItem "Feed" FeedPage,
       -- spItem "Notifications" Following,
       -- spItem "Followers"
       spItem "Following" Following,
@@ -610,7 +652,7 @@ displayThread m e =
       -- TODO: This does not work for direct replies to Root.
       -- I suspect they don't have Root set. Only Reply
       parentDisplay = do
-        thread <- m ^. #thread % at reid
+        thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
         parent <- thread ^. #events % at parentId
         pure $ div_ [class_ "parent"] [displayNote m (fst parent)]
@@ -625,13 +667,13 @@ displayThread m e =
             ]
             [displayNote m e]
       repliesDisplay = do
-        thread <- m ^. #thread % at reid
+        thread <- m ^. #threads % at reid
         let replies = getRepliesFor thread (e ^. #eventId)
         pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> replies
    in div_ [class_ "thread-container"] $
         catMaybes [parentDisplay, noteDisplay] ++ fromMaybe [] repliesDisplay
 
-reactionsView :: Maybe (Map Sentiment (Set.Set XOnlyPubKey)) -> View action
+reactionsView :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View action
 reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]
 reactionsView (Just reactions) =
   let howMany = S.pack . show . length . fromMaybe Set.empty
