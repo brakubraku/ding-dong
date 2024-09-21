@@ -50,7 +50,8 @@ data Action
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
-  | ShowMore
+  | ShowNext
+  | ShowPrevious
   | LoadMore
 
 data Page
@@ -128,15 +129,19 @@ defaultFeedPageModel xos since until =
           textNotesWithDeletes (Just s) (Just u) $ Set.toList xos,
       since = since,
       until = until,
-      step = Just $ nominalDay/2,
+      step = Just $ nominalDay / 2,
       page = 0,
       pageSize = 30,
       notes = []
     }
 
--- TODO: don't really care about it
+-- TODO: alter this
 instance Eq FeedPageModel where
-  f1 == f2 = True
+  f1 == f2 =
+    f1 ^. #page
+      == f2 ^. #page
+      && f1 ^. #pageSize == f2 ^. #pageSize
+      && f1 ^. #step == f2 ^. #step
 
 data RelayState = Connected | Disconnected | Error
 

@@ -170,10 +170,17 @@ updateModel nn rl pl action model =
               % #notes
               %~ \ns -> ns ++ orderByAgeAsc notes -- put new notes at the bottom; TODO: allow different ordering
        in newModel <# do
-            load rl $ eventId <$> trace ("branko-notes count:" <> show (length notes)) notes
+            load rl $ eventId <$> notes
             load pl $ pubKey <$> notes
             pure $ SubscribeForReplies notes
-    ShowMore ->
+    ShowPrevious ->
+      let newModel =
+            model
+              & #feed
+              % #page
+              %~ \pn -> if pn > 0 then pn - 1 else pn
+       in noEff newModel
+    ShowNext ->
       let newModel = model & #feed % #page %~ (+) 1
           f = newModel ^. #feed
           needsSub =
@@ -181,6 +188,7 @@ updateModel nn rl pl action model =
               + f ^. #pageSize
               > length (f ^. #notes)
        in newModel <# do
+            scrollIntoView "top-top"
             pure $
               bool NoAction LoadMore needsSub
     LoadMore ->
@@ -236,10 +244,8 @@ updateModel nn rl pl action model =
     GoBack ->
       let updated = do
             (_, xs) <- uncons $ model ^. #history
-            (togo, rest) <- trace ("branko-togo " <> show xs) $ uncons xs
-            pure $
-              trace ("branko-togo " <> show togo) $
-                model & #page .~ togo & #history .~ (togo : rest)
+            (togo, rest) <- uncons xs
+            pure $ model & #page .~ togo & #history .~ (togo : rest)
        in noEff $ fromMaybe model updated
     Unfollow xo ->
       let updated = model & #contacts % at xo .~ Nothing
@@ -257,6 +263,7 @@ updateModel nn rl pl action model =
       effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO . sink . GoPage $ ThreadPage e
+        scrollIntoView "top-top"
     ThreadEvents es -> do
       -- if there is no root eid in tags then this is a "top-level" note
       -- and so it's eid is the root of the thread
@@ -442,11 +449,24 @@ notesView m =
   div_
     []
     [ div_
+        [ class_ "load-previous-container",
+          bool
+            (class_ "remove-element")
+            (class_ "visible")
+            (page > 0)
+        ]
+        [ span_
+            [ class_ "load-previous",
+              onClick (ShowPrevious)
+            ]
+            [text "Load previous"]
+        ],
+      div_
         [class_ "notes-container"]
         (displayNote m <$> (orderByAgeAsc $ notes)), -- TODO: ordering can be different
       div_
-        [class_ "load-more-container"]
-        [span_ [class_ "load-more", onClick (ShowMore)] [text "Load more"]]
+        [class_ "load-next-container"]
+        [span_ [class_ "load-next", onClick (ShowNext)] [text "Load next"]]
     ]
   where
     f = m ^. #feed

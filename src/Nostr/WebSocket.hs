@@ -85,7 +85,6 @@ connectRelays nn sendMsg sink = do
             . encodeUtf8
             . strToText
             $ msg
-        liftIO . print $ "branko-websocket-message" <> show resp
         case resp of
           Just (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)

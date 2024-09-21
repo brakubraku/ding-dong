@@ -16,7 +16,7 @@
 }
 
 .note-content {
-    filter: blur(5px);
+    /* filter: blur(5px); */
     padding-top: 5px;
 }
 
@@ -275,10 +275,41 @@
     margin-top: 10px;
 }
 
+.remove-element {
+    display:none;
+}
+
 .invisible {
     visibility: hidden;
 }
 
-.visible {
+.visible {}
 
+.load-next-container {
+    text-align: center;
+    margin-top: 20px;
+    margin-bottom: 20px;
+
+}
+
+.load-next {
+    cursor: pointer;
+    border: none;
+    border-radius: 50%;
+    background: burlywood;
+    padding: 10px;
+}
+
+.load-previous-container {
+    text-align: center;
+    margin-bottom: 20px;
+
+}
+
+.load-previous {
+    cursor: pointer;
+    border: none;
+    border-radius: 50%;
+    background: burlywood;
+    padding: 10px;
 }
