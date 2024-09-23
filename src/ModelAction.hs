@@ -24,10 +24,11 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.WebSocket
 import Optics
+import ContentUtils
 
 data Action
   = RelayConnected RelayURI
-  | FeedNotesProcess [(Event, Relay)]
+  | PagedNotesProcess (Lens' Model PagedNotesModel)  [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -42,6 +43,8 @@ data Action
   | ThreadEvents [(Event, Relay)]
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [Event]
+  | SubscribeForEmbedded [EventId]
+  | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
   | UpdateField (Lens' Model Text) Text
   | FindProfile
@@ -50,9 +53,10 @@ data Action
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
-  | ShowNext
-  | ShowPrevious
-  | LoadMore
+  | ShowNext (Lens' Model PagedNotesModel) Page
+  | ShowPrevious (Lens' Model PagedNotesModel) 
+  | LoadMoreNotes (Lens' Model PagedNotesModel) Page
+  | LogConsole String
 
 data Page
   = FeedPage
@@ -63,7 +67,7 @@ data Page
   deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
-  { feed :: FeedPageModel,
+  { feed :: PagedNotesModel,
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
@@ -78,7 +82,8 @@ data Model = Model
       Map.Map
         Page
         [(SubscriptionId, Map.Map Relay RelaySubState)],
-    relays :: [Text]
+    relays :: [Text],
+    embedded :: Map EventId ((Event, [Content]), Set.Set Relay)
   }
   deriving (Eq, Generic)
 
@@ -106,37 +111,32 @@ newtype Until = Until DateTime
 
 type Threads = Map.Map RootEid Thread
 
-data FeedPageModel = FeedPageModel
-  { filter :: Since -> Until -> [DatedFilter],
-    since :: Since,
-    until :: Until,
-    step :: Maybe NominalDiffTime,
+data PagedNotesModel = PagedNotesModel
+  { 
+    filter :: Maybe (Since -> Until -> [DatedFilter]),
+    since :: Maybe Since,
+    step :: NominalDiffTime,
     page :: Int,
     pageSize :: Int,
-    notes :: [Event]
+    notes :: [(Event, [Content])]
   }
   deriving (Generic)
 
-defaultFeedPageModel ::
-  Set.Set XOnlyPubKey ->
-  Since ->
-  Until ->
-  FeedPageModel
-defaultFeedPageModel xos since until =
-  FeedPageModel
-    { filter =
-        \(Since s) (Until u) ->
-          textNotesWithDeletes (Just s) (Just u) $ Set.toList xos,
-      since = since,
-      until = until,
-      step = Just $ nominalDay / 2,
+defaultPagedModel ::
+  PagedNotesModel
+defaultPagedModel =
+  PagedNotesModel
+    { 
+      filter = Nothing,
+      since = Nothing,
+      step = nominalDay / 2,
       page = 0,
       pageSize = 30,
-      notes = []
+      notes = [] 
     }
-
+    
 -- TODO: alter this
-instance Eq FeedPageModel where
+instance Eq PagedNotesModel where
   f1 == f2 =
     f1 ^. #page
       == f2 ^. #page
@@ -153,7 +153,7 @@ data RelaysPageModel = RelaysPageModel
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
     lookingFor :: Maybe XOnlyPubKey,
-    events :: Map Event (Set.Set Relay)
+    events :: PagedNotesModel
   }
   deriving (Eq, Generic)
 
@@ -173,23 +173,23 @@ data Thread = Thread
 newThread :: Thread
 newThread = Thread Map.empty Map.empty Map.empty
 
-type EventsWithRelays = Map.Map EventId (Event, Set.Set Relay)
+type EventsWithRelays = Map.Map EventId ((Event, [Content]), Set.Set Relay)
 
-addEvent :: (Event, Relay) -> EventsWithRelays -> EventsWithRelays -- TODO: remove deleted events
-addEvent (evt, rel) ers =
+addEvent :: ((Event, [Content]), Relay) -> EventsWithRelays -> EventsWithRelays -- TODO: remove deleted events
+addEvent ((evt, c), rel) ers =
   ers & at (evt ^. #eventId) %~ \x -> Just $
     case x of
-      Just (e, rs) -> (e, Set.insert rel rs)
-      Nothing -> (evt, Set.singleton rel)
+      Just (ec, rs) -> (ec, Set.insert rel rs)
+      Nothing -> ((evt, processContent evt), Set.singleton rel)
 
-addToThread :: (Event, Relay) -> Thread -> Thread
-addToThread (e, rel) t =
+addToThread :: ((Event, [Content]), Relay) -> Thread -> Thread
+addToThread ((e,c), rel) t =
   let replyToEid = findIsReplyTo e
    in case replyToEid of
         Just eid ->
           t
             & #events
-            %~ addEvent (e, rel)
+            %~ addEvent ((e,c), rel)
             & #parents
             % at (e ^. #eventId)
             .~ Just eid
@@ -203,7 +203,7 @@ addToThread (e, rel) t =
                   Set.singleton (e ^. #eventId)
         Nothing -> t
 
-getRepliesFor :: Thread -> EventId -> [Event]
+getRepliesFor :: Thread -> EventId -> [(Event, [Content])]
 getRepliesFor t eid = fromMaybe [] $
   do
     replIds <- Set.toList <$> t ^. #replies % at eid

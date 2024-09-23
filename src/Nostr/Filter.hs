@@ -38,7 +38,7 @@ data Filter
   | TextNoteFilter [XOnlyPubKey]
   | DeletesFilter [XOnlyPubKey]
   | LinkedEvents [EventId]
-  | ParentEventOfEvent EventId -- parent event meaning one which eventId is a response to
+  | EventsWithId [EventId] -- parent event meaning one which eventId is a response to
   | RepliesToEvent EventId
   | CalendarTimeFilter
   | CalendarDayFilter
@@ -98,8 +98,8 @@ toPairs AllMetadata =
   [ ("kinds", toJSON [Metadata]),
     ("limit", Number 500)
   ]
-toPairs (ParentEventOfEvent eid) =
-  [("ids", toJSON [eid])]
+toPairs (EventsWithId eids) =
+  [("ids", toJSON eids)]
 toPairs (RepliesToEvent eid) =
   [("#e", toJSON [eid])]
 toPairs CalendarTimeFilter =

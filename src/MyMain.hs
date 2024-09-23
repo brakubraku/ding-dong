@@ -67,7 +67,6 @@ start = do
           "wss://nostr.at",
           "wss://ch.purplerelay.com"
         ]
-      oneDayAgo = (-nominalDay * 1) `addUTCTime` now
   nn <-
     liftIO $
       initNetwork
@@ -79,9 +78,8 @@ start = do
       update = updateModel nn reactionsLoader profilesLoader
       initialModel =
         Model
-          -- Set.empty
-          (defaultFeedPageModel contacts (Since now) (Until now))
-          (FindProfileModel "" Nothing Map.empty)
+          defaultPagedModel
+          (FindProfileModel "" Nothing $ defaultPagedModel)
           (RelaysPageModel "")
           (Reactions Map.empty Map.empty)
           "No error yet bioootch!"
@@ -93,6 +91,7 @@ start = do
           [FeedPage]
           Map.empty
           relaysList
+          Map.empty
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -136,53 +135,37 @@ updateModel nn rl pl action model =
             -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
             liftIO . sink $ ShowFeed
     ShowFeed ->
-      model <# pure LoadMore
-    FeedNotesProcess rs ->
-      -- Note: this only works correctly when subscription is AtEOS,
-      --       i.e. all events are returned at once, not periodically as they arrive
-      --       This allows to handle Delete events effectivelly.
-      let evts =
-            Set.toList . Set.fromList $ fst <$> rs -- fromList, toList, to eliminate duplicates
-          (noteEvts, deleteEvts) =
-            Prelude.partition
-              (\e -> e ^. #kind == TextNote)
-              evts
-          deletions =
-            catMaybes $
-              deleteEvts
-                & fmap
-                  ( \e -> do
-                      ETag eid _ _ <- getSingleETag e
-                      pure (e ^. #pubKey, eid)
-                  )
-          notes =
-            filter
-              ( \e ->
-                  not $
-                    (e ^. #pubKey, e ^. #eventId)
-                      `elem` deletions
-              )
-              -- show original posts only (not replies)
-              (filter (not . isReply) noteEvts)
+      let updated =
+            model
+              & #feed
+              % #filter
+              ?~ pagedFilter (Set.toList $ model ^. #contacts)
+       in updated <# pure (LoadMoreNotes #feed FeedPage)
+    PagedNotesProcess pmLens rs ->
+      let (notes, enotes, eprofs) = processReceivedNotes rs
           newModel =
             model
-              & #feed
+              & pmLens
               % #notes
-              %~ \ns -> ns ++ orderByAgeAsc notes -- put new notes at the bottom; TODO: allow different ordering
-       in newModel <# do
-            load rl $ eventId <$> notes
-            load pl $ pubKey <$> notes
-            pure $ SubscribeForReplies notes
-    ShowPrevious ->
+              -- put new notes at the bottom; TODO: allow different ordering
+              %~ \ns -> ns ++ notes
+          events = fst <$> notes
+       in effectSub newModel $ \sink -> do
+            load rl $ eventId <$> events
+            load pl $ (pubKey <$> events) ++ eprofs
+            liftIO $ do
+              sink $ SubscribeForReplies events
+              sink . SubscribeForEmbedded $ enotes
+    ShowPrevious pmLens ->
       let newModel =
             model
-              & #feed
+              & pmLens
               % #page
               %~ \pn -> if pn > 0 then pn - 1 else pn
        in noEff newModel
-    ShowNext ->
-      let newModel = model & #feed % #page %~ (+) 1
-          f = newModel ^. #feed
+    ShowNext pmLens page ->
+      let newModel = model & pmLens % #page %~ (+) 1
+          f = newModel ^. pmLens
           needsSub =
             f ^. #pageSize * f ^. #page
               + f ^. #pageSize
@@ -190,33 +173,58 @@ updateModel nn rl pl action model =
        in newModel <# do
             scrollIntoView "top-top"
             pure $
-              bool NoAction LoadMore needsSub
-    LoadMore ->
-      let f = model ^. #feed
-          Since (newUntil) = f ^. #since
-          step = fromMaybe 0 $ f ^. #step
-          newSince = addUTCTime (-step) newUntil
-          nextFilter = (f ^. #filter) (Since newSince) (Until newUntil)
+              bool NoAction (LoadMoreNotes pmLens page) needsSub
+    LoadMoreNotes pmLens page ->
+      let pm = model ^. pmLens
+          Since since = fromMaybe (Since $ model ^. #now) $ pm ^. #since
+          newSince = addUTCTime (-pm ^. #step) since
           newModel =
             model
-              & #feed
+              & pmLens
               % #since
-              .~ Since newSince
-              & #feed
-              % #until
-              .~ Until newUntil
+              ?~ Since newSince
        in effectSub newModel $ \sink -> do
             scrollIntoView "top-top"
-            subscribe
-              nn
-              AllAtEOS
-              nextFilter
-              FeedNotesProcess
-              (Just $ SubState FeedPage)
-              getEventRelayEither
-              sink
+            maybe
+              (liftIO . print $ "[ERROR] Empty filter in LoadMoreNotes")
+              ( \filter ->
+                  subscribe
+                    nn
+                    AllAtEOS
+                    (filter (Since newSince) (Until since))
+                    (PagedNotesProcess pmLens)
+                    (Just $ SubState page)
+                    getEventRelayEither
+                    sink
+              )
+              (pm ^. #filter)
     SubscribeForReplies es ->
       effectSub model $ subscribeForEventsReplies nn es FeedPage
+    SubscribeForEmbedded eids ->
+      effectSub model $
+        subscribe
+          nn
+          AllAtEOS
+          [anytimeF $ EventsWithId eids]
+          EmbeddedEventsProcess
+          (Just $ SubState FeedPage)
+          getEventRelayEither
+    EmbeddedEventsProcess es ->
+      let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
+          process (e, rel) (m, xos) =
+            ((m
+              & #embedded
+              % at (e ^. #eventId)
+              %~ Just
+              . maybe
+                ((e, processContent e), Set.singleton rel)
+                (\(ec, rels) -> (ec, Set.insert rel rels)))
+            , Set.insert (e ^. #pubKey) xos)
+          (updated, xos) =  Prelude.foldr process (model, Set.empty) es
+      in 
+        updated <# do 
+          load pl $ Set.toList xos
+          pure NoAction
     ReceivedReactions rs ->
       let reactions = model ^. #reactions
        in noEff $
@@ -268,40 +276,42 @@ updateModel nn rl pl action model =
       -- if there is no root eid in tags then this is a "top-level" note
       -- and so it's eid is the root of the thread
       let getReid e = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
-          updateModel (e, rel) model =
+          update (e, rel) (model, eids, xos) =
             let reid = getReid e
                 thread = fromMaybe newThread $ model ^. #threads % at reid
-                updatedThread = addToThread (e, rel) thread
-             in model & #threads % at reid .~ (Just updatedThread)
+                c = processContent e
+                bechs = filterBech c
+                (enotes, eprofs) = partitionBechs bechs
+                updatedThread = addToThread ((e, c), rel) thread
+             in (model & #threads % at reid .~ (Just updatedThread), enotes ++ eids, eprofs ++ xos)
 
-          updated = Prelude.foldr updateModel model es
+          (updated, enotes, eprofs) = Prelude.foldr update (model, [], []) es
       updated <# do
         load rl (eventId . fst <$> es)
-        load pl (pubKey . fst <$> es)
-        pure NoAction
+        load pl $ (pubKey . fst <$> es) ++ eprofs
+        pure $ SubscribeForEmbedded enotes
     UpdateField l v -> noEff $ model & l .~ v
     FindProfile ->
       let xo =
-            either (const Nothing) Just $
-              decodeNpub $
-                model ^. #fpm % #findWho
-          updatedModel =
+            decodeNpub $
+              model ^. #fpm % #findWho
+          updated =
             model
               & #fpm
               % #lookingFor
               .~ xo
               & #fpm
               % #events
-              .~ Map.empty
+              % #notes
+              .~ []
+              & #fpm
+              % #events
+              % #filter
+              .~ (xo >>= \xo' -> Just (pagedFilter [xo']))
           runSubscriptions = do
             xo' <- xo
-            let sevenDaysAgo = (-nominalDay * 7) `addUTCTime` (model ^. #now)
-                textNotes =
-                  textNotesWithDeletes
-                    (Just sevenDaysAgo)
-                    Nothing
             pure $
-              effectSub updatedModel $ \sink -> do
+              effectSub updated $ \sink -> do
                 subscribe
                   nn
                   PeriodicUntilEOS
@@ -310,17 +320,9 @@ updateModel nn rl pl action model =
                   (Just . SubState $ ProfilePage)
                   extractProfile
                   sink
-                forkJSM $
-                  subscribe
-                    nn
-                    AllAtEOS
-                    (textNotes [xo']) -- TODO: Time bounds
-                    ProfileEvents
-                    (Just . SubState $ ProfilePage)
-                    (\(res, rel) -> (,rel) <$> getEventOrError res)
-                    sink
+                liftIO . sink $ LoadMoreNotes (#fpm % #events) ProfilePage
        in fromMaybe
-            (noEff $ updatedModel)
+            (noEff $ updated)
             runSubscriptions
     SubState p st ->
       let updateListWith (sid, ss) list =
@@ -333,20 +335,8 @@ updateModel nn rl pl action model =
               . fromMaybe []
               . fmap (updateListWith st)
        in updatedModel <# pure NoAction
-    ProfileEvents es ->
-      -- TODO: take deletes into account
-      let add (e, r) toThese =
-            toThese & at e %~ \er ->
-              case er of
-                Nothing -> Just $ Set.singleton r
-                Just relays -> Just $ Set.insert r relays
-          addEvents toThese =
-            foldr add toThese es
-       in (model & #fpm % #events %~ addEvents) <# do
-            load rl (eventId . fst <$> es)
-            pure NoAction
     DisplayProfilePage xo ->
-      let fpm = FindProfileModel (fromMaybe "" $ bechNpub xo) (Just xo) Map.empty
+      let fpm = FindProfileModel (fromMaybe "" $ encodeBechXo xo) (Just xo) defaultPagedModel
        in effectSub
             (model & #fpm .~ fpm)
             ( \sink -> do
@@ -356,7 +346,49 @@ updateModel nn rl pl action model =
     LogReceived ers ->
       let unique = Set.toList . Set.fromList $ fst <$> ers
        in trace ("branko-log-kind10002:" <> show unique) $ noEff model
+    LogConsole what ->
+      model <# do
+        liftIO (print what) >> pure NoAction
     _ -> noEff model
+  where
+    -- Note: this only works correctly when subscription is AtEOS,
+    --       i.e. all events are returned at once, not periodically as they arrive
+    --       This allows to handle Delete events effectivelly.
+    processReceivedNotes rs =
+      let evts =
+            Set.toList . Set.fromList $ fst <$> rs -- fromList, toList, to eliminate duplicates
+          (noteEvts, deleteEvts) =
+            Prelude.partition
+              (\e -> e ^. #kind == TextNote)
+              evts
+          deletions =
+            catMaybes $
+              deleteEvts
+                & fmap
+                  ( \e -> do
+                      ETag eid _ _ <- getSingleETag e
+                      pure (e ^. #pubKey, eid)
+                  )
+          notes =
+            filter
+              ( \e ->
+                  not $
+                    (e ^. #pubKey, e ^. #eventId)
+                      `elem` deletions
+              )
+              -- show original posts only (not replies)
+              (filter (not . isReply) noteEvts)
+          -- content e = processContent e
+          notesAndContent = (\e -> (e, processContent e)) <$> orderByAgeAsc notes
+          embedded = filterBech . concat $ snd <$> notesAndContent
+          (eprofs, enotes) = partitionBechs embedded
+       in (notesAndContent, eprofs, enotes)
+    pagedFilter xos =
+      \(Since s) (Until u) ->
+        textNotesWithDeletes
+          (Just s)
+          (Just u)
+          xos
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
@@ -425,7 +457,7 @@ followingView m@Model {..} =
         <$> Set.toList contacts
       where
         -- in case profile was not found on any relay display pubKey in about
-        emptyP xo = Profile "" Nothing (bechNpub xo) Nothing Nothing
+        emptyP xo = Profile "" Nothing (encodeBechXo xo) Nothing Nothing
 
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
@@ -444,8 +476,13 @@ followingView m@Model {..} =
             ]
         ]
 
-notesView :: Model -> View Action
-notesView m =
+displayFeed ::
+  Model ->
+  View Action
+displayFeed m = displayPagedNotes m #feed FeedPage
+
+displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
+displayPagedNotes m pmLens screen =
   div_
     []
     [ div_
@@ -457,24 +494,23 @@ notesView m =
         ]
         [ span_
             [ class_ "load-previous",
-              onClick (ShowPrevious)
+              onClick (ShowPrevious pmLens)
             ]
             [text "Load previous"]
         ],
       div_
         [class_ "notes-container"]
-        (displayNote m <$> (orderByAgeAsc $ notes)), -- TODO: ordering can be different
+        (displayNote m <$> notes), -- TODO: ordering can be different
       div_
         [class_ "load-next-container"]
-        [span_ [class_ "load-next", onClick (ShowNext)] [text "Load next"]]
+        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text "Load next"]]
     ]
   where
-    f = m ^. #feed
+    f = m ^. pmLens
     pageSize = f ^. #pageSize
     page = f ^. #page
+    -- notes = take (pageSize * page + pageSize) $ f ^. #notes
     notes = take pageSize . drop (page * pageSize) $ f ^. #notes
-
--- notes = take (pageSize * page + pageSize) $ f ^. #notes
 
 footerView :: Model -> View action
 footerView Model {..} =
@@ -494,10 +530,9 @@ displayProfilePic xo (Just pic) =
     ]
 displayProfilePic _ _ = div_ [class_ "profile-pic"] []
 
-displayNoteContent :: T.Text -> View Action
-displayNoteContent t =
-  let content = processText t
-      displayContent (TextC textWords) =
+displayNoteContent :: Bool -> Model -> [Content] -> View Action
+displayNoteContent withEmbed m content =
+  let displayContent (TextC textWords) =
         text . T.unwords $ textWords
       displayContent (LinkC Image link) =
         div_
@@ -508,18 +543,43 @@ displayNoteContent t =
           ]
       displayContent (LinkC ContentUtils.Other link) =
         div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
+      displayContent (NostrC (NEvent eid)) =
+        case withEmbed of
+          True ->
+            let embdEvnt = fst <$> m ^. #embedded % at eid
+             in div_
+                  [class_ "embedded-event"]
+                  [ maybe
+                      (text "Loading...")
+                      (displayEmbeddedNote m)
+                      embdEvnt
+                  ]
+          False ->
+            text . ("smash:" <>) . fromMaybe "Failed encoding nevent" . encodeBechEvent $ eid
+      displayContent (NostrC (NPub xo)) =
+        case withEmbed of
+          True ->
+            div_
+              [class_ "embedded-profile"]
+              -- [displayProfileSmall]
+              [text "<embedded profile>"]
+          False ->
+            text . fromMaybe "Failed encoding npub" . encodeBechXo $ xo
    in div_ [class_ "note-content"] $
         displayContent <$> content
 
-displayNoteShort :: Model -> Event -> View Action
-displayNoteShort m e =
+displayEmbeddedNote :: Model -> (Event, [Content]) -> View Action
+displayEmbeddedNote m ec = displayNote' False m ec
+
+displayNoteShort :: Bool -> Model -> (Event, [Content]) -> View Action
+displayNoteShort withEmbed m (e, content) =
   div_
-    [class_ "text-note"]
-    [ displayNoteContent (e ^. #content),
+    [class_ "text-note", onClick . LogConsole $ show e]
+    [ displayNoteContent withEmbed m content,
       div_
         [class_ "text-note-properties"]
         ( maybe [] repliesCount replies
-            ++ [reactionsView reactions]
+            ++ [displayReactions reactions]
         )
     ]
   where
@@ -535,8 +595,10 @@ displayNoteShort m e =
           [text $ "▶ " <> (S.pack . show $ c)]
       ]
 
-displayNote :: Model -> Event -> View Action
-displayNote m e =
+displayNote = displayNote' True
+
+displayNote' :: Bool -> Model -> (Event, [Content]) -> View Action
+displayNote' withEmbed m ec@(e, _) =
   div_
     [class_ "note-container"]
     [ div_
@@ -545,7 +607,7 @@ displayNote m e =
       div_
         [class_ "text-note-container"]
         [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
-          displayNoteShort m e
+          displayNoteShort withEmbed m ec
         ],
       div_ [class_ "text-note-right-panel"] []
     ]
@@ -557,7 +619,7 @@ displayNote m e =
       span_
         [id_ "display-name"]
         [text . fromMaybe "" $ profile ^. #displayName]
-    noteAge = span_ [id_ "note-age"] [text . S.pack $ displayAge (m ^. #now) e]
+    noteAge = span_ [id_ "note-age"] [text . S.pack $ eventAge (m ^. #now) e]
 
 middlePanel :: Model -> View Action
 middlePanel m =
@@ -577,7 +639,7 @@ middlePanel m =
   where
     showBack = (> 1) . length $ m ^. #history
     displayPage = case m ^. #page of
-      FeedPage -> notesView m
+      FeedPage -> displayFeed m
       Following -> followingView m
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
@@ -630,9 +692,8 @@ displayProfile m xo =
               span_
                 [id_ "display-name"]
                 [text . fromMaybe "" $ p ^. #displayName]
-        let notes = Map.keys $ m ^. #fpm % #events
         let notesDisplay =
-              div_ [class_ "profile-notes"] $ displayNote m <$> notes
+              displayPagedNotes m (#fpm % #events) ProfilePage
         pure $
           div_
             []
@@ -685,7 +746,7 @@ displayThread m e =
                   then "note"
                   else "note-no-parent"
             ]
-            [displayNote m e]
+            [displayNote m (e, processContent e)]
       repliesDisplay = do
         thread <- m ^. #threads % at reid
         let replies = getRepliesFor thread (e ^. #eventId)
@@ -693,9 +754,9 @@ displayThread m e =
    in div_ [class_ "thread-container"] $
         catMaybes [parentDisplay, noteDisplay] ++ fromMaybe [] repliesDisplay
 
-reactionsView :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View action
-reactionsView Nothing = div_ [class_ "reactions-container"] [text ("")]
-reactionsView (Just reactions) =
+displayReactions :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View action
+displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
+displayReactions (Just reactions) =
   let howMany = S.pack . show . length . fromMaybe Set.empty
       likes = "♥ " <> howMany (reactions ^. at Like)
       dislikes = "🖓 " <> howMany (reactions ^. at Dislike)
@@ -771,8 +832,8 @@ loadKeys = do
       setLocalStorage identifier newKeys
       pure newKeys
 
-displayAge :: UTCTime -> Event -> String
-displayAge now e =
+eventAge :: UTCTime -> Event -> String
+eventAge now e =
   let ageSeconds =
         round $ diffUTCTime now (e ^. #created_at)
       format :: Integer -> String

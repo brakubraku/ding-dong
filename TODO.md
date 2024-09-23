@@ -1,4 +1,12 @@
-Sep 10
+
+* record relays behaviour 
+    * timeouts 
+    * disconnects
+    * errors
+
+* add timeout to *AtEOS subscriptions
+
+* have results from different types of subscriptions in different types
 
 * partition events on profile page to original posts and replies. Display replies with their parent event.
 
@@ -10,9 +18,6 @@ Sep 10
 
 * display relays in profile 
     * it might be that you don't see reactions and replies because you are not taking them from profile's preffered relay
-
-* display images/videos/links inside note (<video> <img> tags plus max-width:30% to preserve aspect ratio)
-* display quoted notes inside note
 
 * long running subscription on Home page and new arrivals displayed differently (as on Twitter for example)
 
@@ -27,7 +32,6 @@ Sep 10
     * you liked/...
 * verify signatures on all incoming events!
 * relay management
-* go forward/go back smoothely and with correct scroll (HistoryAPI)
 * more event reactions support
 * feed algorithm
 * groups of authors

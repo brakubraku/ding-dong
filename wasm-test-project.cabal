@@ -123,6 +123,7 @@ library
                       , intervals
                       , entropy
                       , bech32
+                      , extra
                       -- , hslogger
     -- Directories containing source files.
     hs-source-dirs:   src
