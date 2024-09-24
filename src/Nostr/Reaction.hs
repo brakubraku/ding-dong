@@ -10,7 +10,6 @@ module Nostr.Reaction where
 
 import Crypto.Secp256k1 (XOnlyPubKey)
 import Data.Map as M
-import Data.Maybe (isJust)
 import Data.Set as S
 import GHC.Generics
 import Nostr.Event

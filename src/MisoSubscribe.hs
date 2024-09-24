@@ -7,12 +7,10 @@ module MisoSubscribe where
 
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Either
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.Text hiding (length)
 import qualified Data.Text as T hiding (length)
 import Miso hiding (at)

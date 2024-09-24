@@ -31,9 +31,6 @@ data Profile = Profile {
 instance Default Profile where
   def = Profile "" Nothing Nothing Nothing Nothing
 
--- getPicUrl :: Profile -> Maybe Picture
--- getPicUrl (Profile _ _ _ pic) = pic
-
 instance ToJSON Profile where
   toJSON (Profile username displayName about picture banner) = object
     [ "name" .= toJSON username

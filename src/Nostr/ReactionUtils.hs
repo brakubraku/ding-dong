@@ -1,8 +1,6 @@
 module Nostr.ReactionUtils where
 
 import Nostr.Event
-import Nostr.Relay
-import Nostr.Response
 import Data.List (unsnoc)
 
 reactionToEvent :: Event -> Maybe EventId
