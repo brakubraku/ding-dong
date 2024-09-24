@@ -8,7 +8,6 @@ import qualified Data.ByteString as BS
 import Data.Either.Extra
 import Data.Maybe
 import Data.Text
-import Data.Word
 import MyCrypto
 import Nostr.Event
 
@@ -71,7 +70,6 @@ decodeBech t = do
     "note" -> NEvent <$> (EventId <$> dataPartToBytes dp)
     "nevent" -> NEvent . EventId <$> (get 0 =<< parseTLVs <$> dataPartToBytes dp)
     _ -> Nothing
-
 
 decodeNpub :: Text -> Maybe XOnlyPubKey
 decodeNpub bech = case decodeBech bech of

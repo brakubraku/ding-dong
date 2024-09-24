@@ -7,7 +7,6 @@ module Nostr.RelayPool where
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
--- import Nostr.Utils
 
 import Control.Monad (unless)
 import Control.Monad.Reader
@@ -16,11 +15,8 @@ import Data.Aeson (encode)
 import qualified Data.Base16.Types as B16
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Lazy as LazyBytes
-import Data.List (sort)
 import qualified Data.Map as Map
 import Data.Text (pack)
-import Debug.Trace (trace)
-import Nostr.API (informSubStateUpdated)
 import Nostr.Filter
 import Nostr.Log
 import Nostr.Network
@@ -49,7 +45,6 @@ changeState subId relay change = do
             % #relaysState
             % at relay
             %~ change
-    informSubStateUpdated (network ^. #connEventCh) . Map.map (^. #relaysState) $ updated
     pure updated
 
 addRelay :: Relay -> NostrNetworkT [Relay]

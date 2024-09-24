@@ -32,7 +32,6 @@ data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
     requestCh :: TChan Request,
-    connEventCh :: TChan ConnectionEvent, -- TODO: get rid of this
     keys :: Keys
   }
   deriving (Generic, Eq)
@@ -43,9 +42,6 @@ runNostr = flip runReaderT
 type NostrNetworkT = ReaderT NostrNetwork IO
 
 data RelaySubState =  Running | EOSE | Error Text deriving (Eq, Show)
-
-data ConnectionEvent = RelaysUpdatedE [Relay] | SubscriptionStateUpdatedE (Map SubscriptionId (Map Relay RelaySubState))
-  deriving (Show)
 
 -- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
@@ -60,11 +56,7 @@ isSubFinished subId subStates =
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do
   relays <- newMVar . fromList . zip relays $ (newRelay <$> relays)
-  -- requestCh <- atomically $ do
-  --   ch <- newBroadcastTChan
-  --   dupTChan ch
   requestCh <- atomically newTChan
-  connEventCh <- atomically newTChan
   subscriptions <- newMVar Map.empty
   pure NostrNetwork {..}
   where
