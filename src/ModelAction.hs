@@ -28,7 +28,7 @@ import ContentUtils
 
 data Action
   = RelayConnected RelayURI
-  | PagedNotesProcess (Lens' Model PagedNotesModel)  [(Event, Relay)]
+  | PagedNotesProcess (Lens' Model PagedNotesModel) Page [(Event, Relay)] 
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -40,9 +40,9 @@ data Action
   | WriteModel Model
   | ActualTime UTCTime
   | DisplayThread Event
-  | ThreadEvents [(Event, Relay)]
+  | ThreadEvents [(Event, Relay)] Page
   | ProfileEvents [(Event, Relay)]
-  | SubscribeForReplies [Event]
+  | SubscribeForReplies [EventId]
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
@@ -53,10 +53,13 @@ data Action
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
-  | ShowNext (Lens' Model PagedNotesModel) Page
+  | ShowNext (Lens' Model PagedNotesModel) Page 
   | ShowPrevious (Lens' Model PagedNotesModel) 
-  | LoadMoreNotes (Lens' Model PagedNotesModel) Page
+  | LoadMoreNotes (Lens' Model PagedNotesModel) Page 
   | LogConsole String
+  | ScrollTo Text
+  | SubscribeForEmbeddedReplies [EventId] Page
+  | EmbeddedRepliesRecv [(Event, Relay)]
 
 data Page
   = FeedPage
@@ -71,7 +74,6 @@ data Model = Model
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
-    err :: MisoString,
     contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
     page :: Page,
@@ -116,6 +118,7 @@ data PagedNotesModel = PagedNotesModel
     filter :: Maybe (Since -> Until -> [DatedFilter]),
     since :: Maybe Since,
     step :: NominalDiffTime,
+    factor :: Integer,
     page :: Int,
     pageSize :: Int,
     notes :: [(Event, [Content])]
@@ -130,8 +133,9 @@ defaultPagedModel =
       filter = Nothing,
       since = Nothing,
       step = nominalDay / 2,
+      factor = 1,
       page = 0,
-      pageSize = 30,
+      pageSize = 15,
       notes = [] 
     }
     

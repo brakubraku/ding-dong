@@ -59,8 +59,6 @@ library
 
     -- Modules exported by the library.
     exposed-modules: 
-                      -- Nostr.JSM
-                      -- Nostr.Relay
                       Nostr.Request
                       Nostr.Response
                       Nostr.Relay
@@ -72,7 +70,6 @@ library
                       Nostr.WebSocket
                       Nostr.Network
                       Nostr.RelayPool
-                      Nostr.API
                       Nostr.Log
                       Nostr.Reaction
                       Nostr.ReactionUtils
@@ -87,7 +84,6 @@ library
                       BechUtils
                       ContentUtils
                       Tabs
-                      -- ProfileLoader
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -106,9 +102,7 @@ library
                       , bytestring
                       , vector
                       , cryptohash-sha256
-                      -- , base16-bytestring
-                      ,base16
-                    -- dependencies for the nostr part
+                      , base16
                       , data-default
                       , text
                       , modern-uri

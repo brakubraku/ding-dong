@@ -108,7 +108,7 @@ connectRelays nn sendMsg sink = do
           _ -> liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
 
       WS.addEventListener socket "close" $ \e -> do
-        liftIO . print $ "branko-websocket-closed" <> show relay
+        liftIO . print $ "  " <> show relay
         code <- codeToCloseCode <$> WS.code e
         reason <- WS.reason e
         clean <- WS.wasClean e
@@ -117,11 +117,11 @@ connectRelays nn sendMsg sink = do
         _ <- liftIO . swapMVar socketState $ status
         when (status == 3) $
           unless (code == CLOSE_NORMAL) $ do
-            liftIO . threadDelay $ 10 ^ 6 * 3
+            liftIO . threadDelay $ 10 ^ 6 * 2
             conRelay relay
 
       WS.addEventListener socket "error" $ \v -> do
-        _ <- liftIO . swapMVar socketState $ 4 -- TODO: 4 means error, whatever
+        _ <- liftIO . swapMVar socketState $ 4 -- TODO: 4 means error 
         d' <- WS.data' v
 #ifndef ghcjs_HOST_OS
         undef <- ghcjsPure (isUndefined d')
@@ -151,12 +151,11 @@ connectRelays nn sendMsg sink = do
                   sendJson' socket request
                   doLoop
                 _ -> do 
-                  -- mark all Running subscriptions on this Relay as errored
-                  let changeRunning (Just st) 
-                        | st == Nostr.Network.Running = Just $ Nostr.Network.Error "Error" -- TODO: more descriptive error
-                        | otherwise = Just st
-                      changeRunning Nothing = Nothing
-                  liftIO . runReaderT (changeStateForAllSubs relay changeRunning) $ nn
+                  -- mark all non-EOSE subscriptions on this Relay as errored
+                  let changeToError st
+                        | st /= Nostr.Network.EOSE = Nostr.Network.Error "Error" -- TODO: more descriptive error
+                        | otherwise = st
+                  liftIO . runReaderT (changeStateForAllSubs relay (fmap changeToError)) $ nn
       doLoop
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()

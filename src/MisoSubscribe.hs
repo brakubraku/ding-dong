@@ -51,6 +51,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
+  liftIO . print $ "branko-subId=" <> show subId <> " filter=" <> show subFilter
 
   let collectResponses collectedSoFar stats = do
         subStates <- readMVar (nn ^. #subscriptions)

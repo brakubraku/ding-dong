@@ -65,6 +65,18 @@
     cursor: pointer;
 }
 
+.profile-page .note-container .embedded-event .profile-pic {
+    height: 50px;
+    width: 50px;
+    border-radius: 70%;
+    margin-right: 20px;
+    margin-top: 15px;
+    cursor: pointer;
+    display :initial;
+    position :initial;
+    background-color:grey;
+}
+
 .main-container {
     display: flex
 }

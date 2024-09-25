@@ -49,7 +49,7 @@ isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
 isSubFinished subId subStates =
   fromMaybe False $ do
     -- subState <- Map.lookup subId subStates
-    subState <- trace ("branko-isSubFinished:" <> (show . preview (_Just % #relaysState) . Map.lookup subId) subStates) Map.lookup subId subStates
+    subState <- trace ("branko-subId-isSubFinished:subId=" <> show subId <> " " <> (show . preview (_Just % #relaysState) . Map.lookup subId) subStates) Map.lookup subId subStates
     let states = elems $ subState ^. #relaysState
     pure $ notElem Running states 
 

@@ -7,8 +7,8 @@ module Nostr.RelayPool where
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
-
 import Control.Monad (unless)
+import Control.Monad.Extra (when)
 import Control.Monad.Reader
 import Control.Monad.STM (atomically)
 import Data.Aeson (encode)
@@ -26,13 +26,11 @@ import Nostr.Response
 import Optics
 import System.Entropy
 
--- TODO: implement this using changeState function
 changeStateForAllSubs :: Relay -> (Maybe RelaySubState -> Maybe RelaySubState) -> NostrNetworkT ()
 changeStateForAllSubs relay change = do
   network <- ask
   allSubs <- Map.keys <$> (liftIO . readMVar) (network ^. #subscriptions)
   mapM_ (\sid -> changeState sid relay change) allSubs
-
 
 changeState :: SubscriptionId -> Relay -> (Maybe RelaySubState -> Maybe RelaySubState) -> NostrNetworkT ()
 changeState subId relay change = do
@@ -80,7 +78,7 @@ subscribe responseChannel filters = do
     registerResponseChannel subId responseChannel = do
       network <- ask
       -- set subscription state to Running for all relays
-      rels <- filter (\r -> r ^. #connected) .  Map.elems <$> (liftIO . readMVar) (network ^. #relays)
+      rels <- filter (\r -> r ^. #connected) . Map.elems <$> (liftIO . readMVar) (network ^. #relays)
       let subsRunning = Map.fromList . zip rels $ (repeat Running)
       lift . modifyMVar_ (network ^. #subscriptions) $
         pure . Map.insert subId (SubscriptionState subsRunning responseChannel)
@@ -102,11 +100,10 @@ unsubscribe subId = do
     \subs -> pure $ Map.delete subId subs
 
 send :: Request -> NostrNetworkT ()
-send request@(Subscribe sub)
-  | isUnbounded sub = do
+send request@(Subscribe sub) =
+  when (isUnbounded sub) $
+    do
       lift . logWarning $ "Unbounded subscription:" <> show sub
-      send' request
-  | otherwise =
       send' request
   where
     isUnbounded sub = not (any isAnytime (filters sub))
