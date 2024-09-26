@@ -79,11 +79,11 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           AllAtEOS ->
             if finished
               then do
-                print $ "branko-finished"
+                print $ "branko-sub-finished " <> subId
                 processMsgs $ collectedSoFar ++ rrs
                 pure $ addStats (length rrs) stats
               else do
-                print $ "branko-not-finished" <> subId
+                print $ "branko-sub-not-finished " <> subId
 
                 continueCollecting (collectedSoFar ++ rrs) $ addStats (length rrs) stats
           PeriodicUntilEOS -> do

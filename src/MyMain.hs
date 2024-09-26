@@ -844,7 +844,7 @@ displayProfilePage m =
           ]
       searchButton =
         button_
-          [class_ "search-profile-button", onClick FindProfile]
+          [class_ "search-box-button", onClick FindProfile]
           [text "Find"]
       ppage =
         singleton
