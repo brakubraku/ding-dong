@@ -100,11 +100,10 @@ unsubscribe subId = do
     \subs -> pure $ Map.delete subId subs
 
 send :: Request -> NostrNetworkT ()
-send request@(Subscribe sub) =
+send request@(Subscribe sub) = do
   when (isUnbounded sub) $
-    do
       lift . logWarning $ "Unbounded subscription:" <> show sub
-      send' request
+  send' request
   where
     isUnbounded sub = not (any isAnytime (filters sub))
     logWarning text = putStrLn $ "Warning: " <> text
