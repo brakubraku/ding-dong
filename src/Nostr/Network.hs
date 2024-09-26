@@ -3,7 +3,9 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 -- optics support
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Nostr.Network where
 
@@ -28,6 +30,12 @@ data SubscriptionState = SubscriptionState
   }
   deriving (Generic, Eq)
 
+printState :: SubscriptionState -> Text
+printState ss = 
+  let printRel (r,s) = r ^. #uri <> ":" <> pack (show s)
+  in 
+    intercalate "\n" $ printRel <$> Map.toList (ss ^. #relaysState)
+
 data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
@@ -48,8 +56,7 @@ data RelaySubState =  Running | EOSE | Error Text deriving (Eq, Show)
 isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
 isSubFinished subId subStates =
   fromMaybe False $ do
-    -- subState <- Map.lookup subId subStates
-    subState <- trace ("branko-subId-isSubFinished:subId=" <> show subId <> " " <> (show . preview (_Just % #relaysState) . Map.lookup subId) subStates) Map.lookup subId subStates
+    subState <- Map.lookup subId subStates
     let states = elems $ subState ^. #relaysState
     pure $ notElem Running states 
 

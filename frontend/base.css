@@ -271,6 +271,11 @@
     /* text-align: center; */
     margin-bottom: 20px;
     font-size: 20px;
+    display: flex;
+}
+
+.search-box-button {
+    margin-left:10px;
 }
 
 .input-xo {

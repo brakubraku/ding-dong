@@ -49,7 +49,7 @@ data Action
   | UpdateField (Lens' Model Text) Text
   | FindProfile
   | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
-  | DisplayProfilePage XOnlyPubKey
+  | DisplayProfilePage (Maybe XOnlyPubKey)
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed

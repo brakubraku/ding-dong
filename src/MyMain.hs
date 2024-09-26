@@ -132,6 +132,17 @@ updateModel nn rl pl action model =
                     liftIO . threadDelay . secs $ 60
                     loop
                in loop
+
+            forkJSM $ 
+              let loop = do
+                    liftIO $ do 
+                      let isRunning (_, s) = any (==Running) $ Map.elems (s ^. #relaysState)
+                      let showme (id,ss) = "subId=" <> T.pack (show id) <> ": " <> printState ss
+                      subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
+                      print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
+                    liftIO . threadDelay . secs $ 5
+                    loop
+               in loop
             -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
             liftIO . sink $ ShowFeed
     ShowFeed ->
@@ -145,7 +156,9 @@ updateModel nn rl pl action model =
       let (notes, enotes, eprofs) = processReceivedNotes rs
           plm = flip O.view model . (%) pmLens
           updatedNotes = plm #notes ++ notes
-          loadMore = length updatedNotes < plm #pageSize * plm #page + plm #pageSize
+          loadMore =
+            length updatedNotes < plm #pageSize * plm #page + plm #pageSize
+              && plm #factor < 100 -- TODO: put the number somewhere
           updated = model & pmLens % #notes .~ updatedNotes & 
            case loadMore of
             True ->
@@ -378,14 +391,15 @@ updateModel nn rl pl action model =
               . fromMaybe []
               . fmap (updateListWith st)
        in updatedModel <# pure NoAction
-    DisplayProfilePage xo ->
-      let fpm = FindProfileModel (fromMaybe "" $ encodeBechXo xo) (Just xo) defaultPagedModel
-       in effectSub
+    DisplayProfilePage mxo ->
+      let fpm =
+            FindProfileModel
+              (fromMaybe "" $ encodeBechXo =<< mxo)
+              mxo
+              defaultPagedModel
+       in batchEff
             (model & #fpm .~ fpm)
-            ( \sink -> liftIO $ do
-                sink $ FindProfile
-                sink $ GoPage ProfilePage
-            )
+            [pure FindProfile, pure $ GoPage ProfilePage]
     LogReceived ers ->
       let unique = Set.toList . Set.fromList $ fst <$> ers
        in trace ("branko-log-kind10002:" <> show unique) $ noEff model
@@ -573,7 +587,7 @@ displayProfilePic xo (Just pic) =
   img_
     [ class_ "profile-pic",
       prop "src" $ pic,
-      onClick $ DisplayProfilePage xo
+      onClick $ DisplayProfilePage (Just xo)
     ]
 displayProfilePic _ _ = div_ [class_ "profile-pic"] []
 
@@ -699,18 +713,23 @@ leftPanel :: View Action
 leftPanel =
   div_
     [class_ "left-panel"]
-    [ spItem "Feed" FeedPage,
-      -- spItem "Notifications" Following,
-      -- spItem "Followers"
-      spItem "Following" Following,
-      spItem "Relays" RelaysPage
-      -- spItem "Bookmarks" Following
+    [ pItem "Feed" FeedPage,
+      -- pItem "Notifications" Following,
+      -- pItem "Followers"
+      pItem "Following" Following,
+      aItem "Find Profile" (DisplayProfilePage Nothing),
+      pItem "Relays" RelaysPage
+      -- pItem "Bookmarks" Following
     ]
   where
-    spItem label page =
+    pItem label page =
       div_
         [class_ "left-panel-item"]
         [button_ [onClick (GoPage page)] [text label]]
+    aItem label action =
+      div_
+        [class_ "left-panel-item"]
+        [button_ [onClick action] [text label]]
 
 displayProfile :: Model -> XOnlyPubKey -> View Action
 displayProfile m xo =
@@ -823,12 +842,16 @@ displayProfilePage m =
             onInput $ UpdateField (#fpm % #findWho),
             onEnter $ FindProfile
           ]
+      searchButton =
+        button_
+          [class_ "search-profile-button", onClick FindProfile]
+          [text "Find"]
       ppage =
         singleton
           . displayProfile m
           <$> (m ^. #fpm % #lookingFor)
    in div_ [class_ "find-profile"] $
-        [div_ [class_ "search-box"] [search]] ++ fromMaybe [] ppage
+        [div_ [class_ "search-box"] [search, searchButton]] ++ fromMaybe [] ppage
   where
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
