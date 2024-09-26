@@ -97,10 +97,10 @@ instance FromJSON ReadWrite where
       "write"-> pure Write
       _ -> fail "invalid ReadWrite"
 
--- TODO: check this extractBase is correct
+eventIdToText :: ByteString -> Text
+eventIdToText =  B16.extractBase16 . B16.encodeBase16
 instance ToJSON EventId where
-  -- toJSON e = String $ B16.encodeBase16 $ getEventId e
-  toJSON e = String . B16.extractBase16 . B16.encodeBase16 . getEventId $ e
+  toJSON e = String . eventIdToText . getEventId $ e
 
 instance FromJSON Event where
   parseJSON = withObject "event data" $ \e ->

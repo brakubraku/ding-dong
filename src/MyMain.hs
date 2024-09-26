@@ -79,8 +79,8 @@ start = do
       update = updateModel nn reactionsLoader profilesLoader
       initialModel =
         Model
-          defaultPagedModel
-          (FindProfileModel "" Nothing $ defaultPagedModel)
+          defaultPagedModel 
+          (FindProfileModel "" Nothing $ defaultPagedModel {factor = 2, step = 5*nominalDay})
           (RelaysPageModel "")
           (Reactions Map.empty Map.empty)
           contacts
@@ -611,7 +611,7 @@ displayNoteContent withEmbed m content =
              in div_
                   [class_ "embedded-event"]
                   [ maybe
-                      (text "Loading...")
+                      (text "Loading embedded event...")
                       (displayEmbeddedNote m)
                       embdEvnt
                   ]
@@ -622,11 +622,29 @@ displayNoteContent withEmbed m content =
           True ->
             div_
               [class_ "embedded-profile"]
-              [text "<embedded profile>"]
+              [ maybe
+                  (text "Loading embedded profile...")
+                  (displayProfile xo)
+                  (fst <$> m ^. #profiles % at xo)
+              ]
           False ->
             text . fromMaybe "Failed encoding npub" . encodeBechXo $ xo
    in div_ [class_ "note-content"] $
         displayContent <$> content
+   where 
+    displayProfile :: XOnlyPubKey -> Profile -> View Action
+    displayProfile xo p =
+      div_
+        [class_ "embedded-profile"]
+        [ div_
+            [class_ "pic-container"]
+            [displayProfilePic xo $ p ^. #picture],
+          div_
+            [class_ "info-container"]
+            [ div_ [class_ "name"] [text $ p ^. #username],
+              div_ [class_ "about"] [text . fromMaybe "" $ p ^. #about]
+            ]
+        ]
 
 displayEmbeddedNote :: Model -> (Event, [Content]) -> View Action
 displayEmbeddedNote m ec = displayNote' False m ec
@@ -661,7 +679,10 @@ displayNote = displayNote' True
 displayNote' :: Bool -> Model -> (Event, [Content]) -> View Action
 displayNote' withEmbed m ec@(e, _) =
   div_
-    [class_ "note-container"]
+    [ class_ "note-container",
+      -- TODO: is 10 enough son?
+      id_ (T.take 10 . eventIdToText . getEventId $ e ^. #eventId)
+    ]
     [ div_
         [class_ "profile-pic-container"]
         [displayProfilePic (e ^. #pubKey) $ picUrl m e],

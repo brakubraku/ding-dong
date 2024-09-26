@@ -332,3 +332,18 @@
     background: burlywood;
     padding: 10px;
 }
+
+.embedded-profile {
+    display:flex;
+    margin-top:5px;
+}
+
+.embedded-profile .profile-pic {
+    display:flex; 
+    margin-top:0px;
+    margin-right:10px;
+}
+
+.embedded-profile .info-container .name {
+    font-weight:bold;    
+}
