@@ -1,20 +1,24 @@
 packages:
  .
- ./jsaddle-wasm
- ./secp256k1-haskell/secp256k1-haskell
+ -- ./jsaddle-wasm
+ -- ./secp256k1-haskell/secp256k1-haskell
  ./datetime-0.3.1
 
--- remove TemplateHaskell
 source-repository-package
     type: git
     location: https://github.com/amesgen/miso
     tag: 27dd5fc80be9d0a3b80a9ecc81ee3401bc610e01
 
+source-repository-package
+    type: git
+    location: https://github.com/brakubraku/secp256k1-haskell
+    tag: 66cfa9e612e84c76b8e642dbfb13a613e0074b7a
+    subdir:secp256k1-haskell
 
---source-repository-package
- --   type: git
- --   location: https://github.com/amesgen/jsaddle-wasm
- --   tag: be129c788f8ca1ea2e9cc1515397c1a46d02bb41
+source-repository-package
+    type: git
+    location: https://github.com/brakubraku/jsaddle-wasm
+    tag: 2eb9a75e303ee1b6d1e7d407ae5ec8774b230623
 
 source-repository-package
     type: git
