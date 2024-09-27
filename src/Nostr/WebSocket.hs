@@ -49,7 +49,6 @@ import Nostr.Log
 import Nostr.Network
 import Nostr.Relay
 import Nostr.RelayPool
-import Nostr.Request
 import Nostr.Response
 import Optics
 import Prelude hiding (map)

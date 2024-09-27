@@ -63,7 +63,7 @@
     margin-right: 20px;
     margin-top: 15px;
     cursor: pointer;
-    background-color:grey;
+    background-color: grey;
 
 }
 
@@ -74,9 +74,9 @@
     margin-right: 20px;
     margin-top: 15px;
     cursor: pointer;
-    display :initial;
-    position :initial;
-    background-color:grey;
+    display: initial;
+    position: initial;
+    background-color: grey;
 }
 
 .main-container {
@@ -277,7 +277,7 @@
 }
 
 .search-box-button {
-    margin-left:10px;
+    margin-left: 10px;
 }
 
 .input-xo {
@@ -295,7 +295,7 @@
 }
 
 .remove-element {
-    display:none;
+    display: none;
 }
 
 .invisible {
@@ -316,7 +316,7 @@
     border: none;
     border-radius: 50%;
     background: burlywood;
-    padding: 10px;
+    padding: 5px;
 }
 
 .load-previous-container {
@@ -330,20 +330,36 @@
     border: none;
     border-radius: 50%;
     background: burlywood;
-    padding: 10px;
+    padding: 5px;
 }
 
 .embedded-profile {
-    display:flex;
-    margin-top:5px;
+    display: flex;
+    padding: 10px;
+    background-color: #fbfbe9;
 }
 
 .embedded-profile .profile-pic {
-    display:flex; 
-    margin-top:0px;
-    margin-right:10px;
+    display: flex;
+    margin-top: 0px;
+    margin-right: 10px;
 }
 
 .embedded-profile .info-container .name {
-    font-weight:bold;    
+    font-weight: bold;
+}
+
+.embedded-event {
+    background-color: beige;
+}
+
+.profile-page .note-container .embedded-profile .profile-pic {
+    height: 50px;
+    width: 50px;
+    border-radius: 70%;
+    margin-right: 20px;
+    cursor: pointer;
+    display: initial;
+    position: initial;
+    background-color: grey;
 }

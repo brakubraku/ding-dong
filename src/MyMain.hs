@@ -554,14 +554,14 @@ displayPagedNotes m pmLens screen =
             [ class_ "load-previous",
               onClick (ShowPrevious pmLens)
             ]
-            [text "Load previous"]
+            [text "<< prev"]
         ],
       div_
         [class_ "notes-container"]
         (displayNote m <$> notes), -- TODO: ordering can be different
       div_
         [class_ "load-next-container"]
-        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text "Load next"]],
+        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text "next >>"]],
       div_ [id_ "notes-container-bottom"] []
     ]
   
@@ -622,20 +622,18 @@ displayNoteContent withEmbed m content =
           True ->
             div_
               [class_ "embedded-profile"]
-              [ maybe
-                  (text "Loading embedded profile...")
-                  (displayProfile xo)
+              $ maybe
+                  [text "Loading embedded profile..."]
+                  (displayEmbeddedProfile xo)
                   (fst <$> m ^. #profiles % at xo)
-              ]
+              
           False ->
             text . fromMaybe "Failed encoding npub" . encodeBechXo $ xo
    in div_ [class_ "note-content"] $
         displayContent <$> content
    where 
-    displayProfile :: XOnlyPubKey -> Profile -> View Action
-    displayProfile xo p =
-      div_
-        [class_ "embedded-profile"]
+    displayEmbeddedProfile :: XOnlyPubKey -> Profile -> [View Action]
+    displayEmbeddedProfile xo p =
         [ div_
             [class_ "pic-container"]
             [displayProfilePic xo $ p ^. #picture],
@@ -858,6 +856,7 @@ displayProfilePage m =
       search =
         input_
           [ class_ "input-xo",
+            placeholder_ "Enter npub",
             value_ npub,
             type_ "text",
             onInput $ UpdateField (#fpm % #findWho),
