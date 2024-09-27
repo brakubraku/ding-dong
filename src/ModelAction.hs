@@ -7,6 +7,7 @@
 
 module ModelAction where
 
+import ContentUtils
 import Data.DateTime (DateTime)
 import Data.Map as Map
 import Data.Maybe
@@ -24,11 +25,10 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.WebSocket
 import Optics
-import ContentUtils
 
 data Action
   = RelayConnected RelayURI
-  | PagedNotesProcess (Lens' Model PagedNotesModel) Page [(Event, Relay)] 
+  | PagedNotesProcess (Lens' Model PagedNotesModel) Page [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -53,9 +53,9 @@ data Action
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
-  | ShowNext (Lens' Model PagedNotesModel) Page 
-  | ShowPrevious (Lens' Model PagedNotesModel) 
-  | LoadMoreNotes (Lens' Model PagedNotesModel) Page 
+  | ShowNext (Lens' Model PagedNotesModel) Page
+  | ShowPrevious (Lens' Model PagedNotesModel)
+  | LoadMoreNotes (Lens' Model PagedNotesModel) Page
   | LogConsole String
   | ScrollTo Text
   | SubscribeForEmbeddedReplies [EventId] Page
@@ -114,14 +114,14 @@ newtype Until = Until DateTime
 type Threads = Map.Map RootEid Thread
 
 data PagedNotesModel = PagedNotesModel
-  { 
-    filter :: Maybe (Since -> Until -> [DatedFilter]),
+  { filter :: Maybe (Since -> Until -> [DatedFilter]),
     since :: Maybe Since,
     step :: NominalDiffTime,
     factor :: Integer,
     page :: Int,
     pageSize :: Int,
-    notes :: [(Event, [Content])]
+    notes :: [(Event, [Content])],
+    fromRelays :: Map.Map EventId (Set.Set Relay) -- TODO:
   }
   deriving (Generic)
 
@@ -129,16 +129,16 @@ defaultPagedModel ::
   PagedNotesModel
 defaultPagedModel =
   PagedNotesModel
-    { 
-      filter = Nothing,
+    { filter = Nothing,
       since = Nothing,
       step = nominalDay / 2,
       factor = 1,
       page = 0,
       pageSize = 15,
-      notes = [] 
+      notes = [],
+      fromRelays = Map.empty
     }
-    
+
 -- TODO: alter this
 instance Eq PagedNotesModel where
   f1 == f2 =
@@ -170,30 +170,27 @@ data Thread = Thread
     -- (as opposed mapping directly to Event-s) because those
     -- events may not be loaded yet.
     -- Loaded events are stored in 'events' below
-    events :: EventsWithRelays
+    events :: ProcessedEvents,
+    -- keep track of what events you already proccessed
+    -- and where are they all from
+    fromRelays :: Map.Map EventId (Set.Set Relay)
   }
   deriving (Eq, Generic)
 
 newThread :: Thread
-newThread = Thread Map.empty Map.empty Map.empty
+newThread = Thread Map.empty Map.empty Map.empty Map.empty
 
-type EventsWithRelays = Map.Map EventId ((Event, [Content]), Set.Set Relay)
+type ProcessedEvents = Map.Map EventId (Event, [Content])
 
-addEvent :: ((Event, [Content]), Relay) -> EventsWithRelays -> EventsWithRelays -- TODO: remove deleted events
-addEvent ((evt, c), rel) ers =
-  ers & at (evt ^. #eventId) %~ \x -> Just $
-    case x of
-      Just (ec, rs) -> (ec, Set.insert rel rs)
-      Nothing -> ((evt, processContent evt), Set.singleton rel)
-
-addToThread :: ((Event, [Content]), Relay) -> Thread -> Thread
-addToThread ((e,c), rel) t =
+addToThread :: (Event, [Content]) -> Thread -> Thread
+addToThread ec@(e, _) t =
   let replyToEid = findIsReplyTo e
    in case replyToEid of
         Just eid ->
           t
             & #events
-            %~ addEvent ((e,c), rel)
+            % at (e ^. #eventId)
+            ?~ ec
             & #parents
             % at (e ^. #eventId)
             .~ Just eid
@@ -205,11 +202,15 @@ addToThread ((e,c), rel) t =
                   Set.insert (e ^. #eventId) set
                 Nothing ->
                   Set.singleton (e ^. #eventId)
-        Nothing -> t
+        Nothing -> -- it's a root event if it's not a reply to anything.
+          t
+            & #events
+            % at (e ^. #eventId)
+            ?~ ec
 
 getRepliesFor :: Thread -> EventId -> [(Event, [Content])]
 getRepliesFor t eid = fromMaybe [] $
   do
     replIds <- Set.toList <$> t ^. #replies % at eid
     let replies = catMaybes $ (\r -> Map.lookup r (t ^. #events)) <$> replIds
-    pure $ fst <$> replies
+    pure replies

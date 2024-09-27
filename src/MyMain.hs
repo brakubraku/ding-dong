@@ -239,16 +239,16 @@ updateModel nn rl pl action model =
             evt <- getEvent resp
             pure (evt, rel)
     EmbeddedRepliesRecv es -> 
-      let getReid e = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
-          update (e, rel) model =
-            let reid = getReid e
-                thread = fromMaybe newThread $ model ^. #threads % at reid
-                c = processContent e
-                updatedThread = addToThread ((e, c), rel) thread
-              in model & #threads % at reid .~ (Just updatedThread)
-          updated = Prelude.foldr update model es
+      let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
+      -- let update (e, rel) =
+      --       let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+      --           thread = fromMaybe newThread $ model ^. #threads % at reid
+      --           cnt = processContent e
+      --           updatedThread = addToThread ((e, cnt), rel) thread
+      --         in model & #threads % at reid .~ (Just updatedThread)
+      --     updated = Prelude.foldr update model es
       in 
-        noEff updated
+        noEff $ model & #threads .~ updated
     SubscribeForEmbedded [] ->
       noEff model
     SubscribeForEmbedded eids ->
@@ -326,26 +326,15 @@ updateModel nn rl pl action model =
            sink . GoPage $ ThreadPage e
            sink . ScrollTo $ "top-top"
     ThreadEvents [] _ -> noEff $ model
-    ThreadEvents es screen -> do
-      -- if there is no root eid in tags then this is a "top-level" note
-      -- and so it's eid is the root of the thread
-      let getReid e = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
-          update (e, rel) (model, eids, xos) =
-            let reid = getReid e
-                thread = fromMaybe newThread $ model ^. #threads % at reid
-                c = processContent e
-                bechs = filterBech c
-                (enotes, eprofs) = partitionBechs bechs
-                updatedThread = addToThread ((e, c), rel) thread
-             in (model & #threads % at reid .~ (Just updatedThread), enotes ++ eids, eprofs ++ xos)
-
-          (updated, enotes, eprofs) = Prelude.foldr update (model, [], []) es
-      effectSub updated $ \sink -> do
-        load rl $ (eventId . fst <$> es) ++ enotes
-        load pl $ (pubKey . fst <$> es) ++ eprofs
-        liftIO $ do 
-           sink . SubscribeForEmbedded $ enotes
-           sink $ SubscribeForEmbeddedReplies enotes screen
+    ThreadEvents es screen -> 
+      let (updated, enotes, eprofs) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
+      in 
+        effectSub (model & #threads .~ updated) $ \sink -> do
+          load rl $ (eventId . fst <$> es) ++ enotes
+          load pl $ (pubKey . fst <$> es) ++ eprofs
+          liftIO $ do
+            sink . SubscribeForEmbedded $ enotes
+            sink $ SubscribeForEmbeddedReplies enotes screen
     UpdateField l v -> noEff $ model & l .~ v
     FindProfile ->
       let xo =
@@ -447,32 +436,65 @@ updateModel nn rl pl action model =
           (Just u)
           xos
 
+    updateThreads :: (Event, Relay) -> (Threads, [EventId], [XOnlyPubKey]) -> (Threads, [EventId], [XOnlyPubKey])
+    updateThreads (e, rel) (ts, eids, xos) =
+      -- if there is no root eid in tags then this is a "top-level" note
+      -- and so it's eid is the root of the thread
+      let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+          thread = fromMaybe newThread $ ts ^. at reid
+          updatedWithRelay =
+            thread & #fromRelays % at (e ^. #eventId) %~ \mrels ->
+              Just $ case mrels of
+                Just rels -> Set.insert rel rels
+                Nothing -> Set.singleton rel
+          updatedWithRelayAndEvent =
+            addToThread (e, cnt) updatedWithRelay
+          cnt = processContent e
+          (enotes, eprofs) = partitionBechs . filterBech $ cnt
+       in case thread ^. #fromRelays % at (e ^. #eventId) of
+            Just _ ->
+              (ts & at reid ?~ updatedWithRelay, eids, xos)
+            Nothing ->
+              (ts & at reid ?~ updatedWithRelayAndEvent, enotes ++ eids, eprofs ++ xos)
+
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
 -- of those subscriptions
 subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
 subscribeForWholeThread nn e page sink = do
-  subscribeForLinkedEvents nn [(e ^. #eventId)] page sink
+    let eids = [(e ^. #eventId)]
+    subscribe
+      nn
+      PeriodicUntilEOS
+      [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId eids]
+      (flip ThreadEvents page)
+      (Just $ SubState page)
+      process
+      sink
+    where
+      process (resp, rel) =
+        maybe (Left "could not extract Event") Right $ do
+          evt <- getEvent resp
+          pure (evt, rel)
 
 subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Sub Action
-subscribeForEventsReplies nn eids page sink = do
-  subscribeForLinkedEvents nn eids page sink
-
-subscribeForLinkedEvents :: NostrNetwork -> [EventId] -> Page -> Sub Action
-subscribeForLinkedEvents nn eids page sink = do
-  subscribe
-    nn
-    PeriodicUntilEOS
-    [anytimeF $ LinkedEvents eids]
-    (flip ThreadEvents page)
-    (Just $ SubState page)
-    process
-    sink
-  where
-    process (resp, rel) =
-      maybe (Left "could not extract Event") Right $ do
-        evt <- getEvent resp
-        pure (evt, rel)
+subscribeForEventsReplies nn eids page sink = 
+  -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
+  --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
+  --  this makes queries which only want replies (and not root replies) to a single event possibly very inefficient
+   subscribe
+      nn
+      PeriodicUntilEOS
+      [anytimeF $ LinkedEvents eids]
+      (flip ThreadEvents page)
+      (Just $ SubState page)
+      process
+      sink
+    where
+      process (resp, rel) =
+        maybe (Left "could not extract Event") Right $ do
+          evt <- getEvent resp
+          pure (evt, rel)
 
 writeModelToStorage :: Model -> JSM ()
 writeModelToStorage m = pure ()
@@ -554,14 +576,14 @@ displayPagedNotes m pmLens screen =
             [ class_ "load-previous",
               onClick (ShowPrevious pmLens)
             ]
-            [text "<< prev"]
+            [text "=<<"]
         ],
       div_
         [class_ "notes-container"]
         (displayNote m <$> notes), -- TODO: ordering can be different
       div_
         [class_ "load-next-container"]
-        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text "next >>"]],
+        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text ">>="]],
       div_ [id_ "notes-container-bottom"] []
     ]
   
@@ -821,7 +843,7 @@ displayThread m e =
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
         parent <- thread ^. #events % at parentId
-        pure $ div_ [class_ "parent"] [displayNote m (fst parent)]
+        pure $ div_ [class_ "parent"] [displayNote m parent]
 
       noteDisplay =
         Just $
