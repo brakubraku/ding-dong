@@ -84,7 +84,7 @@ executable nostr-wasm
   else 
     ghc-options: -main-is App.main 
   build-depends: 
-    wasm-test-project
+      ding-dong
     , aeson
     , miso
     , containers
