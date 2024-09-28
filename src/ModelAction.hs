@@ -8,7 +8,7 @@
 module ModelAction where
 
 import ContentUtils
-import Data.DateTime (DateTime)
+import Data.Time.Clock (UTCTime)
 import Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
@@ -30,7 +30,7 @@ data Action
   = RelayConnected RelayURI
   | PagedNotesProcess (Lens' Model PagedNotesModel) Page [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
-  | ReceivedProfiles [(XOnlyPubKey, Profile, DateTime, Relay)]
+  | ReceivedProfiles [(XOnlyPubKey, Profile, UTCTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction
@@ -75,7 +75,7 @@ data Model = Model
     relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
     contacts :: Set.Set XOnlyPubKey,
-    profiles :: Map.Map XOnlyPubKey (Profile, DateTime),
+    profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,
@@ -105,10 +105,10 @@ data Model = Model
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
-newtype Since = Since DateTime
+newtype Since = Since UTCTime
   deriving (Eq)
 
-newtype Until = Until DateTime
+newtype Until = Until UTCTime
   deriving (Eq)
 
 type Threads = Map.Map RootEid Thread

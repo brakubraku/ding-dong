@@ -2,7 +2,7 @@
 
 module Nostr.Log where
 
-import Data.DateTime
+import Data.Time.Clock
 import Data.Text
 
 import Nostr.Relay

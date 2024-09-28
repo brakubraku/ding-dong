@@ -17,6 +17,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.Time.Clock
 import Data.DateTime
 import Data.List
 import Data.Maybe (catMaybes, fromJust, fromMaybe)
@@ -56,7 +57,7 @@ data Tag
 data Event = Event
   { eventId :: EventId,
     pubKey :: XOnlyPubKey,
-    created_at :: DateTime,
+    created_at :: UTCTime,
     kind :: Kind,
     tags :: [Tag],
     content :: Text,
@@ -72,7 +73,7 @@ instance Ord Event where
 
 data UnsignedEvent = UnsignedEvent
   { pubKey' :: XOnlyPubKey,
-    created_at' :: DateTime,
+    created_at' :: UTCTime,
     kind' :: Kind,
     tags' :: [Tag],
     content' :: Text
@@ -266,7 +267,7 @@ verifySignature e =
     Just m -> verifyBip340 (pubKey e) m (sig e)
     Nothing -> False
 
-textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+textNote :: Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -276,7 +277,7 @@ textNote note xo t =
       content' = note
     }
 
-setMetadata :: Profile -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setMetadata :: Profile -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setMetadata profile xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -293,7 +294,7 @@ readProfile event = case kind event of
   _ ->
     Nothing
 
-replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+replyNote :: Event -> Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -303,7 +304,7 @@ replyNote event note xo t =
       content' = note
     }
 
-setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -313,7 +314,7 @@ setContacts contacts xo t =
       content' = ""
     }
 
-deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     { pubKey' = xo,

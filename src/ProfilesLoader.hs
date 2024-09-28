@@ -13,10 +13,10 @@ import Nostr.Relay
 import Nostr.Response
 import MyCrypto
 import Nostr.Profile
-import Data.DateTime
+import Data.Time.Clock
 import qualified Data.Set as S
 
-createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, DateTime, Relay))
+createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, UTCTime, Relay))
 createProfilesLoader = do
   buffers <- newMVar $ LoaderData S.empty S.empty
   let createFilter = \xos -> [DatedFilter (MetadataFilter xos) Nothing Nothing] -- TODO: Nothing Nothing
@@ -24,7 +24,7 @@ createProfilesLoader = do
       period = 300 -- every 300 miliseconds
   pure $ PeriodicLoader {..}
 
-extractProfile :: (Response, Relay) -> Either Text (XOnlyPubKey, Profile, DateTime, Relay)
+extractProfile :: (Response, Relay) -> Either Text (XOnlyPubKey, Profile, UTCTime, Relay)
 extractProfile (resp, rel) = do
   event <- getEventOrError resp
   re <- maybe (Left "Event is not a profile!") Right $ extractProfileFromResp (event, rel)
@@ -32,7 +32,7 @@ extractProfile (resp, rel) = do
 
 extractProfileFromResp ::
   (Event, Relay) ->
-  Maybe (XOnlyPubKey, Profile, DateTime, Relay)
+  Maybe (XOnlyPubKey, Profile, UTCTime, Relay)
 extractProfileFromResp (event, relay) = parseProfiles event
   where
     parseProfiles e =

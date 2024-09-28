@@ -16,6 +16,7 @@ where
 
 import Data.Aeson
 import Data.Aeson.Types (Pair)
+import Data.Time.Clock
 import Data.DateTime
 import Data.Maybe (catMaybes)
 import GHC.Exts (Item, fromList)
@@ -27,8 +28,8 @@ import Prelude hiding (until)
 -- TODO: check that these are toJSON/fromJSON properly
 data DatedFilter = DatedFilter
   { eventfilter :: Filter,
-    since :: Maybe DateTime,
-    until :: Maybe DateTime
+    since :: Maybe UTCTime,
+    until :: Maybe UTCTime
   }
   deriving (Eq, Show)
 
@@ -121,12 +122,12 @@ isAnytime (DatedFilter f _ _) = False
 anytimeF :: Filter -> DatedFilter
 anytimeF f = DatedFilter f Nothing Nothing
 
-sinceF :: DateTime -> Filter -> DatedFilter
+sinceF :: UTCTime -> Filter -> DatedFilter
 sinceF when f = DatedFilter f (Just when) Nothing
 
 textNotesWithDeletes ::
-  Maybe DateTime ->
-  Maybe DateTime ->
+  Maybe UTCTime ->
+  Maybe UTCTime ->
   [XOnlyPubKey] ->
   [DatedFilter]
 textNotesWithDeletes since until xos =
@@ -136,7 +137,7 @@ textNotesWithDeletes since until xos =
     DatedFilter (DeletesFilter xos) since Nothing
   ]
 
--- addTimeInterval :: DateTime -> [Item [Pair]]
+-- addTimeInterval :: UTCTime -> [Item [Pair]]
 -- addTimeInterval interval =
 --   [ ("since", toJSON $ toSeconds (inf interval)),
 --     ("until", toJSON $ toSeconds (sup interval) + 60)

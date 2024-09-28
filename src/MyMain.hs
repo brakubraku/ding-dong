@@ -21,7 +21,7 @@ import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Bool (bool)
-import Data.DateTime (DateTime)
+import Data.Time.Clock (UTCTime)
 import Data.Either (fromRight)
 import Data.List (singleton)
 import qualified Data.List as Prelude
@@ -102,7 +102,7 @@ start = do
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
-  PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, DateTime, Relay) ->
+  PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, UTCTime, Relay) ->
   Action ->
   Model ->
   Effect Action Model
