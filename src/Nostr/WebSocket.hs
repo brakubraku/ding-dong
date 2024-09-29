@@ -107,11 +107,11 @@ connectRelays nn sendMsg sink = do
           _ -> liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
 
       WS.addEventListener socket "close" $ \e -> do
-        liftIO . print $ "  " <> show relay
         code <- codeToCloseCode <$> WS.code e
         reason <- WS.reason e
         clean <- WS.wasClean e
         liftIO . sink . sendMsg $ (WebSocketClose code clean reason)
+        liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
         status <- WS.socketState socket
         _ <- liftIO . swapMVar socketState $ status
         when (status == 3) $
@@ -130,8 +130,10 @@ connectRelays nn sendMsg sink = do
         if undef
           then do
             liftIO . sink . sendMsg $ (WebSocketError mempty)
+            liftIO . print $ "branko-subId-websocket-error"
           else do
             Just d <- fromJSVal d'
+            liftIO . print $ "branko-subId-websocket-error:" <> show d
             liftIO . sink . sendMsg $ (WebSocketError d)
 
       rc <- liftIO . atomically . cloneTChan $ (nn ^. #requestCh)

@@ -53,7 +53,6 @@ import Optics as O
 import PeriodicLoader
 import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
-
 import Utils
 
 start :: JSM ()
@@ -230,6 +229,7 @@ updateModel nn rl pl action model =
     SubscribeForReplies [] -> noEff model
     SubscribeForReplies eids ->
       effectSub model $ subscribeForEventsReplies nn eids FeedPage
+    SubscribeForEmbeddedReplies [] _ -> noEff $ model
     SubscribeForEmbeddedReplies eids page ->
       effectSub model $
         subscribe
@@ -367,14 +367,16 @@ updateModel nn rl pl action model =
             (noEff $ updated)
             runSubscriptions
     SubState p st ->
-      let updateListWith (sid, ss) list =
-            (sid, ss) : filter (\(sid2, _) -> sid2 /= sid) list
+      let isRunning rs = any (== Running) . Map.elems $ rs
+          updateListWith (sid, ss) list =
+            -- update "sub state" for sid and remove all finished "sub states"
+            (sid, ss) : filter (\(sid2, rs) -> sid2 /= sid && isRunning rs) list
           updatedModel =
             model
               & #subscriptions
               % at p
               %~ Just
-              . fromMaybe []
+              . fromMaybe [st]
               . fmap (updateListWith st)
        in updatedModel <# pure NoAction
     DisplayProfilePage mxo ->
@@ -475,6 +477,7 @@ subscribeForWholeThread nn e page sink = do
         pure (evt, rel)
 
 subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Sub Action
+subscribeForEventsReplies _ [] _ _ = pure ()
 subscribeForEventsReplies nn eids page sink =
   -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
   --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
@@ -509,7 +512,9 @@ secs = (* 1000000)
 appView :: Model -> View Action
 appView m =
   div_ [] $
-    [ div_
+    [ 
+      div_ [bool (class_ "remove-element") (class_ "visible") $ areSubsRunning m (m ^. #page)] [loadingBar],
+      div_
         [class_ "main-container", id_ "top-top"]
         [ leftPanel m,
           middlePanel m,
@@ -559,36 +564,43 @@ displayFeed m = displayPagedNotes m #feed FeedPage
 
 displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
 displayPagedNotes m pmLens screen =
-  div_
-    []
-    [ div_ [id_ "notes-container-top"] [],
       div_
-        [ class_ "load-previous-container",
-          bool
-            (class_ "remove-element")
-            (class_ "visible")
-            (page > 0)
-        ]
-        [ span_
-            [ class_ "load-previous",
-              onClick (ShowPrevious pmLens)
-            ]
-            [text "=<<"]
-        ],
-      div_
-        [class_ "notes-container"]
-        (displayNote m <$> notes), -- TODO: ordering can be different
-      div_
-        [class_ "load-next-container"]
-        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text ">>="]],
-      div_ [id_ "notes-container-bottom"] []
-    ]
+      []
+      [ div_ [id_ "notes-container-top"] [],
+        div_
+          [ class_ "load-previous-container",
+            bool
+              (class_ "remove-element")
+              (class_ "visible")
+              (page > 0)
+          ]
+          [ span_
+              [ class_ "load-previous",
+                onClick (ShowPrevious pmLens)
+              ]
+              [text "=<<"]
+          ],
+        div_
+          [class_ "notes-container"]
+          (displayNote m <$> notes), -- TODO: ordering can be different
+        div_
+          [class_ "load-next-container"]
+          [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text ">>="]],
+        div_ [id_ "notes-container-bottom"] []
+      ]
   where
     f = m ^. pmLens
     pageSize = f ^. #pageSize
     page = f ^. #page
     -- notes = take (pageSize * page + pageSize) $ f ^. #notes
     notes = take pageSize . drop (page * pageSize) $ f ^. #notes
+
+areSubsRunning :: Model -> Page -> Bool
+areSubsRunning m p =
+  fromMaybe False $ do
+    subs <- m ^. #subscriptions % at p
+    let isRunning (_, s) = any (== Running) $ Map.elems s
+    pure . (>0) . length . filter isRunning $ subs
 
 footerView :: Model -> View action
 footerView Model {..} =
@@ -748,7 +760,7 @@ leftPanel m =
           pItem "Following" Following,
           aItem "Find Profile" (DisplayProfilePage Nothing),
           pItem "Relays" RelaysPage
-          -- pItem "Bookmarks" 
+          -- pItem "Bookmarks"
         ],
       -- div_
       --   []
@@ -760,7 +772,7 @@ leftPanel m =
       --       [text "←"]
       --   ],
       div_
-        [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)] 
+        [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
         [backArrow]
     ]
   where
@@ -868,12 +880,12 @@ displayReactions :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View acti
 displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
 displayReactions (Just reactions) =
   let howMany = S.pack . show . length . fromMaybe Set.empty
-      likes = [span_ [class_ "like-reaction"][text "♥ "], span_ [][text $ howMany (reactions ^. at Like)]]
+      likes = [span_ [class_ "like-reaction"] [text "♥ "], span_ [] [text $ howMany (reactions ^. at Like)]]
       dislikes = "🖓 " <> howMany (reactions ^. at Dislike)
       others = "Others: " <> howMany (reactions ^. at Nostr.Reaction.Other)
    in div_
-        [class_ "reactions-container"] $
-        likes ++ [text (" " <> dislikes <> " " <> others)]
+        [class_ "reactions-container"]
+        $ likes ++ [text (" " <> dislikes <> " " <> others)]
 
 displayProfilePage :: Model -> View Action
 displayProfilePage m =
