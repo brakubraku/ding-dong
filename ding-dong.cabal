@@ -94,6 +94,5 @@ executable nostr-wasm
     , ghc-experimental
     , base
     , mtl
-    , lens
     , optics
     -- , jsaddle-warp
