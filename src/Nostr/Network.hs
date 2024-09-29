@@ -16,7 +16,6 @@ import Data.Map
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Text hiding (zip)
-import Debug.Trace
 import GHC.Generics
 import Nostr.Keys
 import Nostr.Relay
@@ -55,10 +54,9 @@ data RelaySubState =  Running | EOSE | Error Text deriving (Eq, Show)
 -- for that particular subscription Id.
 isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
 isSubFinished subId subStates =
-  fromMaybe False $ do
+  fromMaybe True $ do
     subState <- Map.lookup subId subStates
-    let states = elems $ subState ^. #relaysState
-    pure $ notElem Running states 
+    pure . notElem Running . elems $ subState ^. #relaysState 
 
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do
