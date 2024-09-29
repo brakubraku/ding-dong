@@ -30,7 +30,6 @@ import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
-import Data.Time.Clock (UTCTime)
 import Debug.Trace (trace)
 import Miso hiding (at, now, send)
 import Miso.String (MisoString)
@@ -261,16 +260,14 @@ updateModel nn rl pl action model =
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
           process (e, rel) (m, xos) =
-            ( ( m
-                  & #embedded
-                  % at (e ^. #eventId)
-                  %~ Just
-                  . maybe
-                    ((e, processContent e), Set.singleton rel)
-                    (\(ec, rels) -> (ec, Set.insert rel rels))
-              ),
-              Set.insert (e ^. #pubKey) xos
-            )
+            (,Set.insert (e ^. #pubKey) xos) $
+              m
+                & #embedded
+                % at (e ^. #eventId)
+                %~ Just
+                . maybe
+                  ((e, processContent e), Set.singleton rel)
+                  (\(ec, rels) -> (ec, Set.insert rel rels))
           (updated, xos) = Prelude.foldr process (model, Set.empty) es
        in updated <# do
             load pl $ Set.toList xos
@@ -512,8 +509,13 @@ secs = (* 1000000)
 appView :: Model -> View Action
 appView m =
   div_ [] $
-    [ 
-      div_ [bool (class_ "remove-element") (class_ "visible") $ areSubsRunning m (m ^. #page)] [loadingBar],
+    [ div_
+        [ bool
+            (class_ "remove-element")
+            (class_ "visible")
+            $ areSubsRunning m (m ^. #page)
+        ]
+        [loadingBar],
       div_
         [class_ "main-container", id_ "top-top"]
         [ leftPanel m,
@@ -564,30 +566,30 @@ displayFeed m = displayPagedNotes m #feed FeedPage
 
 displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
 displayPagedNotes m pmLens screen =
+  div_
+    []
+    [ div_ [id_ "notes-container-top"] [],
       div_
-      []
-      [ div_ [id_ "notes-container-top"] [],
-        div_
-          [ class_ "load-previous-container",
-            bool
-              (class_ "remove-element")
-              (class_ "visible")
-              (page > 0)
-          ]
-          [ span_
-              [ class_ "load-previous",
-                onClick (ShowPrevious pmLens)
-              ]
-              [text "=<<"]
-          ],
-        div_
-          [class_ "notes-container"]
-          (displayNote m <$> notes), -- TODO: ordering can be different
-        div_
-          [class_ "load-next-container"]
-          [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text ">>="]],
-        div_ [id_ "notes-container-bottom"] []
-      ]
+        [ class_ "load-previous-container",
+          bool
+            (class_ "remove-element")
+            (class_ "visible")
+            (page > 0)
+        ]
+        [ span_
+            [ class_ "load-previous",
+              onClick (ShowPrevious pmLens)
+            ]
+            [text "=<<"]
+        ],
+      div_
+        [class_ "notes-container"]
+        (displayNote m <$> notes), -- TODO: ordering can be different
+      div_
+        [class_ "load-next-container"]
+        [span_ [class_ "load-next", onClick (ShowNext pmLens screen)] [text ">>="]],
+      div_ [id_ "notes-container-bottom"] []
+    ]
   where
     f = m ^. pmLens
     pageSize = f ^. #pageSize
@@ -600,18 +602,13 @@ areSubsRunning m p =
   fromMaybe False $ do
     subs <- m ^. #subscriptions % at p
     let isRunning (_, s) = any (== Running) $ Map.elems s
-    pure . (>0) . length . filter isRunning $ subs
+    pure . (> 0) . length . filter isRunning $ subs
 
 footerView :: Model -> View action
 footerView Model {..} =
   div_
     [class_ "footer"]
     []
-
--- [ p_
---     [style_ $ Map.fromList [("font-weight", "bold")]]
---     [text err | not . S.null $ err]
--- ]
 
 displayProfilePic :: XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic xo (Just pic) =
@@ -762,15 +759,6 @@ leftPanel m =
           pItem "Relays" RelaysPage
           -- pItem "Bookmarks"
         ],
-      -- div_
-      --   []
-      --   [ span_
-      --       [ class_ "button-back",
-      --         bool (class_ "invisible") (class_ "visible") showBack,
-      --         onClick (GoBack)
-      --       ]
-      --       [text "←"]
-      --   ],
       div_
         [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
         [backArrow]
@@ -852,8 +840,6 @@ displayProfile m xo =
 displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
-      -- TODO: This does not work for direct replies to Root.
-      -- I suspect they don't have Root set. Only Reply
       parentDisplay = do
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
