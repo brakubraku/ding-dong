@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
 module MisoSubscribe where
@@ -9,10 +11,12 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Monad.State (MonadState (get, put), StateT (StateT, runStateT))
 import Data.Either
 import qualified Data.Map as Map
 import Data.Text hiding (length)
 import qualified Data.Text as T hiding (length)
+import GHC.Generics (Generic)
 import Miso hiding (at)
 import Nostr.Filter
 import Nostr.Log (logError)
@@ -22,6 +26,7 @@ import Nostr.RelayPool as RP
 import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
+import Control.Monad (unless)
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -34,9 +39,11 @@ import Optics
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
   deriving (Eq)
 
-data Stats = Stats
-  { msgsRecvd :: Int
+data SubData = SubData
+  { msgsRecvd :: Int,
+    msgs :: [(Response, Relay)]
   }
+  deriving (Eq, Generic)
 
 -- TODO: add timeout to *AtEOS subscriptions
 subscribe ::
@@ -51,55 +58,39 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
-  liftIO . print $ "branko-subId=" <> show subId <> " filter=" <> show subFilter
-
-  let collectResponses collectedSoFar stats = do
-        subStates <- readMVar (nn ^. #subscriptions)
-        reportSubState actOnSubState subId subStates
+  let collectResponses = do
+        subStates <- liftIO . readMVar $ (nn ^. #subscriptions)
+        liftIO $ reportSubState actOnSubState subId subStates
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-
-        -- rrs <-
-        --   catMaybes
-        --     . Prelude.takeWhile (isJust)
-        --     <$> ( sequence
-        --             . repeat
-        --             . liftIO
-        --             . atomically
-        --             . tryReadTChan
-        --             $ respChan
-        --         )
-
         let finished = isSubFinished subId $ subStates
-        let continueCollecting csf stats = do
-              threadDelay $ 10 ^ 5 -- TODO
-              collectResponses csf stats
+        let continueCollecting = do
+              liftIO . threadDelay $ 10 ^ 5 -- TODO
+              collectResponses
         case subType of
-          AllAtEOS ->
+          AllAtEOS -> do
+            addMessages rrs
+            addStats (length rrs)
             if finished
               then do
-                print $ "branko-sub-finished " <> subId
-                processMsgs $ collectedSoFar ++ rrs
-                pure $ addStats (length rrs) stats
+                SubData {..} <- get
+                liftIO . processMsgs $ msgs
+                pure ()
               else do
-                print $ "branko-sub-not-finished " <> subId
-
-                continueCollecting (collectedSoFar ++ rrs) $ addStats (length rrs) stats
+                continueCollecting
           PeriodicUntilEOS -> do
-            processMsgs rrs
-            if finished
-              then
-                pure $ addStats (length rrs) stats
-              else
-                continueCollecting [] $ addStats (length rrs) stats
+            addStats (length rrs)
+            liftIO . processMsgs $ rrs
+            unless finished continueCollecting
           PeriodicForever -> do
-            processMsgs rrs
-            continueCollecting [] stats
+            addStats (length rrs)
+            liftIO . processMsgs $ rrs
+            continueCollecting
 
   liftIO $ do
-    Stats howMany <- collectResponses [] (Stats 0)
-    print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show howMany
+    (_, SubData {..}) <- runStateT collectResponses (SubData 0 [])
+    print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
     flip runReaderT nn $ RP.unsubscribe subId
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
@@ -130,5 +121,12 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         (sink . act)
         state
 
-    addStats :: Int -> Stats -> Stats
-    addStats n (Stats howMany) = Stats $ howMany + n
+    addStats :: Monad a => Int -> StateT SubData a ()
+    addStats n = do
+      sd <- get
+      put $ sd & #msgsRecvd %~ (+ n)   
+      
+    addMessages :: Monad a => [(Response, Relay)] -> StateT SubData a ()
+    addMessages ms = do
+      sd <- get
+      put $ sd & #msgs %~ (<> ms)
