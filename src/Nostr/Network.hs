@@ -1,27 +1,29 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 -- optics support
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Nostr.Network where
 
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Reader
-import Data.Map
-import qualified Data.Map as Map
+import Data.Map hiding (partition)
+import qualified Data.Map as Map hiding (partition)
 import Data.Maybe
-import Data.Text hiding (zip)
+import Data.Text hiding (partition, zip)
 import GHC.Generics
 import Nostr.Keys
 import Nostr.Relay
 import Nostr.Request
-import Nostr.Response
+import Nostr.Response hiding (EOSE)
 import Optics
+import Data.List (partition)
+import GHC.Float
 
 data SubscriptionState = SubscriptionState
   { relaysState :: Map Relay RelaySubState,
@@ -30,10 +32,9 @@ data SubscriptionState = SubscriptionState
   deriving (Generic, Eq)
 
 printState :: SubscriptionState -> Text
-printState ss = 
-  let printRel (r,s) = r ^. #uri <> ":" <> pack (show s)
-  in 
-    intercalate "\n" $ printRel <$> Map.toList (ss ^. #relaysState)
+printState ss =
+  let printRel (r, s) = r ^. #uri <> ":" <> pack (show s)
+   in intercalate "\n" $ printRel <$> Map.toList (ss ^. #relaysState)
 
 data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
@@ -48,15 +49,24 @@ runNostr = flip runReaderT
 
 type NostrNetworkT = ReaderT NostrNetwork IO
 
-data RelaySubState =  Running | EOSE | Error Text deriving (Eq, Show)
+data RelaySubState = Running | EOSE | Error Text deriving (Eq, Show)
 
 -- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
 isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
-isSubFinished subId subStates =
+isSubFinished sid ss =
   fromMaybe True $ do
-    subState <- Map.lookup subId subStates
-    pure . notElem Running . elems $ subState ^. #relaysState 
+    subState <- Map.lookup sid ss
+    pure . notElem Running . elems $ subState ^. #relaysState
+
+ratioOfFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Float
+ratioOfFinished sid ss = fromMaybe 1 $ do
+  rs <- Map.elems . view #relaysState <$> Map.lookup sid ss
+  let (running, other) = partition (== Running) rs
+      (eose, _) = partition (== EOSE) other
+      length = toInteger . Prelude.length 
+  pure $
+    int2Float (fromInteger . length $ eose) / int2Float (fromInteger . length $ running) --TODO: wtf
 
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do

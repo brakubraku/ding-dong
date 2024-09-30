@@ -4,6 +4,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module MisoSubscribe where
 
@@ -27,6 +29,7 @@ import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
 import Control.Monad (unless)
+import GHC.Float
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -39,9 +42,32 @@ import Control.Monad (unless)
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
   deriving (Eq)
 
+newtype Seconds = Seconds {
+  getSeconds :: Float
+} 
+ deriving (Eq, Generic)
+ deriving newtype (Num, Ord)
+
+-- how often to poll for responses
+period :: Seconds
+period = Seconds 0.1 
+
+-- the ratio of EOSE/Running relays
+-- this is to prevent the *AtEOS subscriptions from hanging
+-- when some relays stop responding/are slow
+
+acceptableRatio :: Float
+acceptableRatio = 7/10
+
+toMicro :: Seconds -> Int 
+toMicro (Seconds s) = float2Int $ s * fromInteger (10 ^ 6)
+
 data SubData = SubData
   { msgsRecvd :: Int,
-    msgs :: [(Response, Relay)]
+    msgs :: [(Response, Relay)],
+    -- how much time longer to wait for relays to EOS,
+    -- after acceptableRatio has been achieved
+    timeout :: Seconds 
   }
   deriving (Eq, Generic)
 
@@ -64,21 +90,25 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let finished = isSubFinished subId $ subStates
+        let finished = isSubFinished subId subStates
+        let ratio = ratioOfFinished subId subStates 
         let continueCollecting = do
-              liftIO . threadDelay $ 10 ^ 5 -- TODO
+              liftIO . threadDelay . toMicro $ period
               collectResponses
         case subType of
           AllAtEOS -> do
             addMessages rrs
             addStats (length rrs)
-            if finished
-              then do
-                SubData {..} <- get
+            sd@SubData {..} <- get
+            case (finished, ratio >= acceptableRatio, getSeconds timeout > 0) of 
+              (True,_,_) -> do
                 liftIO . processMsgs $ msgs
                 pure ()
-              else do
-                continueCollecting
+              (False, True, False) -> do
+                put $ sd & #timeout %~ (-) period
+                liftIO . processMsgs $ msgs
+                pure ()
+              (_,_,_) -> continueCollecting
           PeriodicUntilEOS -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
@@ -89,7 +119,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             continueCollecting
 
   liftIO $ do
-    (_, SubData {..}) <- runStateT collectResponses (SubData 0 [])
+    (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] (Seconds 2))
     print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
     flip runReaderT nn $ RP.unsubscribe subId
   where

@@ -16,13 +16,11 @@
 }
 
 .note-content {
-    /* filter: blur(5px); */
     padding-top: 5px;
 }
 
 .text-note-container {
     flex: 10 0 0;
-    /* border: 1px solid magenta; */
     text-align: left;
     border-bottom: 1px solid #e1e1e1;
     overflow: scroll;
@@ -39,7 +37,6 @@
 
 .text-note-right-panel {
     flex: 1;
-    /* border: 1px solid magenta; */
     text-align: left
 }
 
@@ -52,8 +49,6 @@
 .reactions-container {
     margin-top: auto;
     animation: blink 1s linear 2;
-    /* position: absolute;
-    bottom: 0px; */
 }
 
 .profile-pic {
@@ -85,12 +80,10 @@
 
 .left-panel {
     flex: 2 0 0;
-    /* background-color: black; */
     display: flex;
     flex-direction: column;
 
     align-items: center;
-    /* justify-content: center; */
     padding-top: 40px;
 }
 
@@ -110,16 +103,9 @@
     flex: 2 0 0;
 }
 
-.notes-container {
-    /* flex: 6 0 0;
-    overflow: scroll;
-    margin-left: 15px; */
-}
-
 .left-panel-item button {
     background-color: white;
     color: black;
-    /* border: 2px solid #e7e7e7; */
     width: 100%;
     text-align: left;
 }
@@ -303,8 +289,6 @@
     visibility: hidden;
 }
 
-.visible {}
-
 .load-next-container {
     text-align: center;
     margin-top: 20px;
@@ -373,4 +357,14 @@
 
 .like-reaction {
     color: purple;
+}
+
+.hide-after-period {
+    animation: hide 5s linear 10s 1 forwards;
+}
+
+@keyframes hide {
+    100% {
+        opacity: 0;
+    }
 }

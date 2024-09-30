@@ -92,6 +92,7 @@ start = do
           Map.empty
           relaysList
           Map.empty
+          []
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -108,13 +109,11 @@ updateModel ::
   Effect Action Model
 updateModel nn rl pl action model =
   case action of
-    -- HandleWebSocket (WebSocketClose _ _ _) ->
-    -- noEff $ model & #err .~ "Connection closed"
-    -- HandleWebSocket (WebSocketError er) ->
-    -- (model & #err .~ er) <# do
-    -- liftIO . print $ "branko-got-websocket-error"
-    -- pure NoAction
-    -- HandleWebSocket WebSocketOpen ->
+    RelayError e -> noEff $ model -- TODO
+    RelayTimeOut r ->
+     let addError e es = e : take 20 es -- TODO: 20
+     in noEff $ 
+       model & #errors %~ addError ("Relay " <> T.pack (show $ r ^. #uri) <> " timeouted")
     StartAction ->
       effectSub
         model
@@ -129,7 +128,8 @@ updateModel nn rl pl action model =
               let loop = do
                     now <- liftIO getCurrentTime
                     liftIO . sink . ActualTime $ now
-                    liftIO . threadDelay . secs $ 60
+                    liftIO . threadDelay . secs $ 2
+                    -- liftIO . sink . RelayTimeOut $ ((Relay $ "smash.com" <> T.pack (show now)) (RelayInfo False False) False)
                     loop
                in loop
 
@@ -520,7 +520,7 @@ appView m =
         [class_ "main-container", id_ "top-top"]
         [ leftPanel m,
           middlePanel m,
-          rightPanel
+          rightPanel m
         ],
       footerView m
     ]
@@ -742,9 +742,17 @@ middlePanel m =
       ProfilePage -> displayProfilePage m
       RelaysPage -> displayRelaysPage m
 
-rightPanel :: View Action
-rightPanel = div_ [class_ "right-panel"] []
-
+rightPanel :: Model -> View Action
+rightPanel m = ul_ [class_ "right-panel"] errors
+  where 
+    errors = 
+       -- TODO: putting long string as key is probably fine 
+       -- if you only have a buch of errors
+       (\e -> liKeyed_ (Key e)
+         [class_ "error"
+           , class_ "hide-after-period"]
+         [text e]) <$> m ^. #errors 
+       
 leftPanel :: Model -> View Action
 leftPanel m =
   div_
@@ -902,11 +910,13 @@ displayProfilePage m =
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =
   div_ [class_ "relays-page"] $
+    [info] <> 
     ( displayRelay
         <$> m ^. #relays
     )
       ++ [inputRelay]
   where
+    info = div_ [class_ "relay-info"] [text $ "Remove relays which time out to improve loading speed"]
     displayRelay r =
       div_ [class_ "relay"] [text r]
     inputRelay =

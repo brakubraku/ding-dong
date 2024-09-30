@@ -60,6 +60,8 @@ data Action
   | ScrollTo Text
   | SubscribeForEmbeddedReplies [EventId] Page
   | EmbeddedRepliesRecv [(Event, Relay)]
+  | RelayTimeOut Relay
+  | RelayError Text
 
 data Page
   = FeedPage
@@ -85,7 +87,8 @@ data Model = Model
         Page
         [(SubscriptionId, Map.Map Relay RelaySubState)],
     relays :: [Text],
-    embedded :: Map EventId ((Event, [Content]), Set.Set Relay)
+    embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
+    errors :: [Text]
   }
   deriving (Eq, Generic)
 

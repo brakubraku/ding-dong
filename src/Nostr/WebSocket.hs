@@ -69,10 +69,10 @@ connectRelays nn sendMsg sink = do
 
       WS.addEventListener socket "open" $ \_ -> do
         liftIO $ do
-          print $ "branko-websocket-open" <> show relay
           modifyMVar_ (nn ^. #relays) $ \rels ->
             pure $ rels & at (relay ^. #uri) %~ fmap (\r -> r {connected = True})
           _ <- swapMVar socketState 1
+          print $ "branko-websocket-open" <> show relay
           sink . sendMsg $ WebSocketOpen
 
       WS.addEventListener socket "message" $ \v -> do
