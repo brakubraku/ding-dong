@@ -1,16 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module MisoSubscribe where
 
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.Monad (unless)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State (MonadState (get, put), StateT (StateT, runStateT))
@@ -18,6 +19,7 @@ import Data.Either
 import qualified Data.Map as Map
 import Data.Text hiding (length)
 import qualified Data.Text as T hiding (length)
+import GHC.Float
 import GHC.Generics (Generic)
 import Miso hiding (at)
 import Nostr.Filter
@@ -28,8 +30,6 @@ import Nostr.RelayPool as RP
 import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
-import Control.Monad (unless)
-import GHC.Float
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -42,24 +42,24 @@ import GHC.Float
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
   deriving (Eq)
 
-newtype Seconds = Seconds {
-  getSeconds :: Float
-} 
- deriving (Eq, Generic)
- deriving newtype (Num, Ord)
+newtype Seconds = Seconds
+  { getSeconds :: Float
+  }
+  deriving (Eq, Generic)
+  deriving newtype (Num, Ord)
 
 -- how often to poll for responses
 period :: Seconds
-period = Seconds 0.1 
+period = Seconds 0.1
 
 -- the ratio of EOSE/Running relays
 -- this is to prevent the *AtEOS subscriptions from hanging
 -- when some relays stop responding/are slow
 
 acceptableRatio :: Float
-acceptableRatio = 7/10
+acceptableRatio = 7 / 10
 
-toMicro :: Seconds -> Int 
+toMicro :: Seconds -> Int
 toMicro (Seconds s) = float2Int $ s * fromInteger (10 ^ 6)
 
 data SubData = SubData
@@ -67,7 +67,7 @@ data SubData = SubData
     msgs :: [(Response, Relay)],
     -- how much time longer to wait for relays to EOS,
     -- after acceptableRatio has been achieved
-    timeout :: Seconds 
+    timeout :: Seconds
   }
   deriving (Eq, Generic)
 
@@ -91,8 +91,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
         let finished = isSubFinished subId subStates
-        let ratio = ratioOfFinished subId subStates 
-        let continueCollecting = do
+        let ratio = ratioOfFinished subId subStates
+        let continue = do
               liftIO . threadDelay . toMicro $ period
               collectResponses
         case subType of
@@ -100,23 +100,27 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             addMessages rrs
             addStats (length rrs)
             sd@SubData {..} <- get
-            case (finished, ratio >= acceptableRatio, getSeconds timeout > 0) of 
-              (True,_,_) -> do
-                liftIO . processMsgs $ msgs
-                pure ()
-              (False, True, False) -> do
+            case (finished, ratio >= acceptableRatio, getSeconds timeout < 0) of
+              (True, _, _) -> liftIO . processMsgs $ msgs
+              (_, True, True) -> liftIO . processMsgs $ msgs
+              (_, True, False) -> do
                 put $ sd & #timeout %~ (-) period
-                liftIO . processMsgs $ msgs
-                pure ()
-              (_,_,_) -> continueCollecting
+                continue
+              (_, _, _) -> continue
           PeriodicUntilEOS -> do
             addStats (length rrs)
+            sd@SubData {..} <- get
             liftIO . processMsgs $ rrs
-            unless finished continueCollecting
+            case (finished, ratio >= acceptableRatio, getSeconds timeout < 0) of
+              (True, _, _) -> pure ()
+              (_, True, True) -> pure ()
+              (_, True, False) -> put $ sd & #timeout %~ (-) period
+              (_, _, _) -> continue
+            unless finished continue
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
-            continueCollecting
+            continue
 
   liftIO $ do
     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] (Seconds 2))
@@ -151,12 +155,12 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         (sink . act)
         state
 
-    addStats :: Monad a => Int -> StateT SubData a ()
+    addStats :: (Monad a) => Int -> StateT SubData a ()
     addStats n = do
       sd <- get
-      put $ sd & #msgsRecvd %~ (+ n)   
-      
-    addMessages :: Monad a => [(Response, Relay)] -> StateT SubData a ()
+      put $ sd & #msgsRecvd %~ (+ n)
+
+    addMessages :: (Monad a) => [(Response, Relay)] -> StateT SubData a ()
     addMessages ms = do
       sd <- get
       put $ sd & #msgs %~ (<> ms)
