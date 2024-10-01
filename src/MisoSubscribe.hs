@@ -100,7 +100,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             addMessages rrs
             addStats (length rrs)
             sd@SubData {..} <- get
-            case (finished, ratio >= acceptableRatio, getSeconds timeout < 0) of
+            case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
               (True, _, _) -> liftIO . processMsgs $ msgs
               (_, True, True) -> liftIO . processMsgs $ msgs
               (_, True, False) -> do
@@ -111,12 +111,11 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             addStats (length rrs)
             sd@SubData {..} <- get
             liftIO . processMsgs $ rrs
-            case (finished, ratio >= acceptableRatio, getSeconds timeout < 0) of
+            case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
               (True, _, _) -> pure ()
               (_, True, True) -> pure ()
               (_, True, False) -> put $ sd & #timeout %~ (-) period
               (_, _, _) -> continue
-            unless finished continue
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
