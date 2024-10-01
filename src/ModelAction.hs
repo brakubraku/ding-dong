@@ -60,8 +60,7 @@ data Action
   | ScrollTo Text
   | SubscribeForEmbeddedReplies [EventId] Page
   | EmbeddedRepliesRecv [(Event, Relay)]
-  | RelayTimeOut Relay
-  | RelayError Text
+  | ReportError Text
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq

@@ -21,6 +21,7 @@ import Control.Concurrent
 import Control.Monad (when)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Bifunctor (second)
 import Data.Bool (bool)
 import Data.Either (fromRight)
 import Data.List (singleton)
@@ -42,6 +43,7 @@ import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Network
+import qualified Nostr.Network as Network
 import Nostr.Profile
 import Nostr.Reaction
 import Nostr.Relay
@@ -109,11 +111,10 @@ updateModel ::
   Effect Action Model
 updateModel nn rl pl action model =
   case action of
-    RelayError e -> noEff $ model -- TODO
-    RelayTimeOut r ->
-     let addError e es = e : take 20 es -- TODO: 20
-     in noEff $ 
-       model & #errors %~ addError ("Relay " <> T.pack (show $ r ^. #uri) <> " timeouted")
+    ReportError er ->
+      let addError e es = e : take 20 es -- TODO: 20
+       in noEff $
+            model & #errors %~ addError er
     StartAction ->
       effectSub
         model
@@ -364,9 +365,21 @@ updateModel nn rl pl action model =
             (noEff $ updated)
             runSubscriptions
     SubState p st ->
-      let isRunning (SubRunning _) = True 
-          isRunning _ = False 
-          -- toRelays = 
+      let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
+          isRunning _ = False
+          isError (Network.Error _) = True
+          isError _ = False
+          extract (Network.Error e) = Just e
+          extract _ = Nothing
+          -- timeouted relays, errored relays
+          (toRels, erRels) =
+            case st of
+              (_, SubFinished rs) ->
+                -- find timeouted relays
+                let trs = fst <$> filter ((== Running) . snd) (Map.toList rs)
+                    ers = filter (isError . snd) (Map.toList rs)
+                 in (trs, second extract <$> ers)
+              _ -> ([], [])
           updateListWith (sid, ss) list =
             -- update "sub state" for sid and remove all finished "sub states"
             (sid, ss) : filter (\(sid2, ss1) -> sid2 /= sid && isRunning ss1) list
@@ -377,7 +390,17 @@ updateModel nn rl pl action model =
               %~ Just
               . fromMaybe [st]
               . fmap (updateListWith st)
-       in updatedModel <# pure NoAction
+       in batchEff updatedModel $
+            pure . ReportError
+              <$> ((\r -> "Relay " <> T.pack (show $ r ^. #uri) <> " timeouted") <$> toRels)
+                ++ ( ( \(r, er) ->
+                         "Relay "
+                           <> T.pack (show $ r ^. #uri)
+                           <> " returned error: "
+                           <> (fromMaybe "" er)
+                     )
+                       <$> erRels
+                   )
     DisplayProfilePage mxo ->
       let fpm =
             FindProfileModel
@@ -747,15 +770,18 @@ middlePanel m =
 
 rightPanel :: Model -> View Action
 rightPanel m = ul_ [class_ "right-panel"] errors
-  where 
-    errors = 
-       -- TODO: putting long string as key is probably fine 
-       -- if you only have a buch of errors
-       (\e -> liKeyed_ (Key e)
-         [class_ "error"
-           , class_ "hide-after-period"]
-         [text e]) <$> m ^. #errors 
-       
+  where
+    errors =
+      ( \(i, e) ->
+          liKeyed_
+            (Key . T.pack $ show i) -- so that Miso diff algoritm displays it in the correct order
+            [ class_ "error",
+              class_ "hide-after-period"
+            ]
+            [text e]
+      )
+        <$> zip [1..] (m ^. #errors)
+
 leftPanel :: Model -> View Action
 leftPanel m =
   div_
@@ -913,10 +939,10 @@ displayProfilePage m =
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =
   div_ [class_ "relays-page"] $
-    [info] <> 
-    ( displayRelay
-        <$> m ^. #relays
-    )
+    [info]
+      <> ( displayRelay
+             <$> m ^. #relays
+         )
       ++ [inputRelay]
   where
     info = div_ [class_ "relay-info"] [text $ "Remove relays which time out to improve loading speed"]

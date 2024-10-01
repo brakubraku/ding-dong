@@ -30,6 +30,7 @@ import Nostr.Response
 import Optics
 import ModelAction (SubState (..))
 import Data.Bool (bool)
+import Debug.Trace
 
 
 -- 3 types of subscribes:
@@ -53,6 +54,10 @@ newtype Seconds = Seconds
 period :: Seconds
 period = Seconds 0.1
 
+-- how long to wait for slower relays
+defaultTimeout :: Seconds
+defaultTimeout = Seconds 5
+
 -- the ratio of EOSE/Running relays
 -- this is to prevent the *AtEOS subscriptions from hanging
 -- when some relays stop responding/are slow
@@ -62,6 +67,7 @@ acceptableRatio = 7 / 10
 
 toMicro :: Seconds -> Int
 toMicro (Seconds s) = float2Int $ s * fromInteger (10 ^ 6)
+
 
 data SubData = SubData
   { msgsRecvd :: Int,
@@ -108,7 +114,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
               (True, _, _) -> (liftIO . processMsgs $ msgs) >> reportFinished
               (_, True, True) -> (liftIO . processMsgs $ msgs) >> reportFinished
               (_, True, False) -> do
-                put $ sd & #timeout %~ (-) period
+                put $ sd & #timeout %~ subtract period
                 continue
               (_, _, _) -> continue
           PeriodicUntilEOS -> do
@@ -119,7 +125,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
               (True, _, _) -> reportFinished
               (_, True, True) -> reportFinished
               (_, True, False) -> do
-                put $ sd & #timeout %~ (-) period
+                put $ sd & #timeout %~ subtract period
                 continue
               (_, _, _) -> continue
           PeriodicForever -> do
@@ -128,7 +134,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             continue
 
   liftIO $ do 
-     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] (Seconds 2))
+     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout)
      print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
      flip runReaderT nn $ RP.unsubscribe subId
 

@@ -12,18 +12,18 @@ module Nostr.Network where
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Reader
+import Data.List (partition)
 import Data.Map hiding (partition)
 import qualified Data.Map as Map hiding (partition)
 import Data.Maybe
 import Data.Text hiding (partition, zip)
+import GHC.Float
 import GHC.Generics
 import Nostr.Keys
 import Nostr.Relay
 import Nostr.Request
 import Nostr.Response hiding (EOSE)
 import Optics
-import Data.List (partition)
-import GHC.Float
 
 data SubscriptionState = SubscriptionState
   { relaysState :: Map Relay RelaySubState,
@@ -64,9 +64,11 @@ ratioOfFinished sid ss = fromMaybe 1 $ do
   rs <- Map.elems . view #relaysState <$> Map.lookup sid ss
   let (running, other) = partition (== Running) rs
       (eose, _) = partition (== EOSE) other
-      length = toInteger . Prelude.length 
-  pure $
-    int2Float (fromInteger . length $ eose) / int2Float (fromInteger . length $ running) --TODO: wtf
+      length = toInteger . Prelude.length
+      ratio =
+        int2Float (fromInteger . length $ eose)
+          / int2Float (fromInteger . length $ running ++ eose) -- TODO: wtf
+  pure ratio
 
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do
