@@ -364,10 +364,12 @@ updateModel nn rl pl action model =
             (noEff $ updated)
             runSubscriptions
     SubState p st ->
-      let isRunning rs = any (== Running) . Map.elems $ rs
+      let isRunning (SubRunning _) = True 
+          isRunning _ = False 
+          -- toRelays = 
           updateListWith (sid, ss) list =
             -- update "sub state" for sid and remove all finished "sub states"
-            (sid, ss) : filter (\(sid2, rs) -> sid2 /= sid && isRunning rs) list
+            (sid, ss) : filter (\(sid2, ss1) -> sid2 /= sid && isRunning ss1) list
           updatedModel =
             model
               & #subscriptions
@@ -601,7 +603,8 @@ areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =
   fromMaybe False $ do
     subs <- m ^. #subscriptions % at p
-    let isRunning (_, s) = any (== Running) $ Map.elems s
+    let isRunning (_, SubRunning _) = True
+        isRunning (_, _) = False
     pure . (> 0) . length . filter isRunning $ subs
 
 footerView :: Model -> View action

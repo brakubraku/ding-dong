@@ -48,7 +48,7 @@ data Action
   | GoBack
   | UpdateField (Lens' Model Text) Text
   | FindProfile
-  | SubState Page (SubscriptionId, Map.Map Relay RelaySubState)
+  | SubState Page (SubscriptionId, SubState)
   | DisplayProfilePage (Maybe XOnlyPubKey)
   | LogReceived [(Event, Relay)]
   | AddRelay
@@ -62,6 +62,9 @@ data Action
   | EmbeddedRepliesRecv [(Event, Relay)]
   | RelayTimeOut Relay
   | RelayError Text
+
+data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
+ deriving Eq
 
 data Page
   = FeedPage
@@ -85,7 +88,7 @@ data Model = Model
     subscriptions ::
       Map.Map
         Page
-        [(SubscriptionId, Map.Map Relay RelaySubState)],
+        [(SubscriptionId, SubState)],
     relays :: [Text],
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text]

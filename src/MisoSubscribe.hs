@@ -11,12 +11,10 @@ module MisoSubscribe where
 
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Monad (unless)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Control.Monad.State (MonadState (get, put), StateT (StateT, runStateT))
+import Control.Monad.State (MonadState (get, put), StateT (runStateT))
 import Data.Either
-import qualified Data.Map as Map
 import Data.Text hiding (length)
 import qualified Data.Text as T hiding (length)
 import GHC.Float
@@ -30,6 +28,9 @@ import Nostr.RelayPool as RP
 import Nostr.Request (SubscriptionId)
 import Nostr.Response
 import Optics
+import ModelAction (SubState (..))
+import Data.Bool (bool)
+
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -77,22 +78,25 @@ subscribe ::
   SubType ->
   [DatedFilter] ->
   ([e] -> action) ->
-  Maybe ((SubscriptionId, Map.Map Relay RelaySubState) -> action) ->
+  Maybe ((SubscriptionId, SubState) -> action) ->
   ((Response, Relay) -> Either Text e) ->
   Sub action
 subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
+
   let collectResponses = do
         subStates <- liftIO . readMVar $ (nn ^. #subscriptions)
-        liftIO $ reportSubState actOnSubState subId subStates
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
         let finished = isSubFinished subId subStates
         let ratio = ratioOfFinished subId subStates
+        let reportRunning = liftIO $ reportSubState False actOnSubState subId subStates
+        let reportFinished = liftIO $ reportSubState True actOnSubState subId subStates
         let continue = do
+              reportRunning 
               liftIO . threadDelay . toMicro $ period
               collectResponses
         case subType of
@@ -101,8 +105,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             addStats (length rrs)
             sd@SubData {..} <- get
             case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
-              (True, _, _) -> liftIO . processMsgs $ msgs
-              (_, True, True) -> liftIO . processMsgs $ msgs
+              (True, _, _) -> (liftIO . processMsgs $ msgs) >> reportFinished
+              (_, True, True) -> (liftIO . processMsgs $ msgs) >> reportFinished
               (_, True, False) -> do
                 put $ sd & #timeout %~ (-) period
                 continue
@@ -112,19 +116,22 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             sd@SubData {..} <- get
             liftIO . processMsgs $ rrs
             case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
-              (True, _, _) -> pure ()
-              (_, True, True) -> pure ()
-              (_, True, False) -> put $ sd & #timeout %~ (-) period
+              (True, _, _) -> reportFinished
+              (_, True, True) -> reportFinished
+              (_, True, False) -> do
+                put $ sd & #timeout %~ (-) period
+                continue
               (_, _, _) -> continue
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
             continue
 
-  liftIO $ do
-    (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] (Seconds 2))
-    print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
-    flip runReaderT nn $ RP.unsubscribe subId
+  liftIO $ do 
+     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] (Seconds 2))
+     print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
+     flip runReaderT nn $ RP.unsubscribe subId
+
   where
     collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
     collectJustM action = do
@@ -143,9 +150,11 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
 
     -- inform about subscription state changes if
     -- function actOnSubState is provided
-    reportSubState Nothing _ _ = pure ()
-    reportSubState (Just act) subId subStates = do
-      let state = (subId,) <$> subStates ^? at subId % _Just % #relaysState
+    -- reportSubState :: Bool -> Maybe ((SubscriptionId, SubState) -> action) -> SubscriptionId -> Map.Map SubscriptionId SubscriptionState -> IO ()
+    reportSubState _ Nothing _ _ = pure ()
+    reportSubState isFinished (Just act) subId subStates = do
+      let relState = subStates ^? at subId % _Just % #relaysState
+          state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
       maybe
         ( logError $
             "Could not find relays state for subId="
