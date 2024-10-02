@@ -35,7 +35,7 @@ import Debug.Trace (trace)
 import Miso hiding (at, now, send)
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (SubType (AllAtEOS, PeriodicUntilEOS), subscribe)
+import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe)
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -81,8 +81,9 @@ start = do
       update = updateModel nn reactionsLoader profilesLoader
       initialModel =
         Model
-          defaultPagedModel
-          (FindProfileModel "" Nothing $ defaultPagedModel {factor = 2, step = 5 * nominalDay})
+          (defaultPagedModel (Since now))
+          []
+          (FindProfileModel "" Nothing $ (defaultPagedModel (Since now)) {factor = 2, step = 5 * nominalDay})
           (RelaysPageModel "")
           (Reactions Map.empty Map.empty)
           contacts
@@ -95,6 +96,7 @@ start = do
           relaysList
           Map.empty
           []
+          Map.empty
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -130,7 +132,6 @@ updateModel nn rl pl action model =
                     now <- liftIO getCurrentTime
                     liftIO . sink . ActualTime $ now
                     liftIO . threadDelay . secs $ 2
-                    -- liftIO . sink . RelayTimeOut $ ((Relay $ "smash.com" <> T.pack (show now)) (RelayInfo False False) False)
                     loop
                in loop
 
@@ -140,23 +141,65 @@ updateModel nn rl pl action model =
                       let isRunning (_, s) = any (== Running) $ Map.elems (s ^. #relaysState)
                       let showme (id, ss) = "subId=" <> T.pack (show id) <> ": " <> printState ss
                       subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
-                      print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
+                      -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
+                      print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
                     liftIO . threadDelay . secs $ 5
                     loop
                in loop
             -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
             liftIO . sink $ ShowFeed
     ShowFeed ->
-      let updated =
+      let contacts = (Set.toList $ model ^. #contacts)
+          Since since = model ^. #feed % #since
+          pagedFilter xos =
+            \(Since s) (Until u) ->
+              textNotesWithDeletes
+                (Just s)
+                (Just u)
+                xos
+          updated =
             model
               & #feed
               % #filter
-              ?~ pagedFilter (Set.toList $ model ^. #contacts)
-       in updated <# pure (LoadMoreNotes #feed FeedPage)
-    PagedNotesProcess pmLens screen rs ->
+              ?~ pagedFilter contacts
+       in batchEff
+            updated
+            [ pure $ LoadMoreNotes #feed FeedPage,
+              pure $
+                StartFeedLongRunning
+                  (textNotesWithDeletes (Just since) Nothing contacts)
+            ]
+    StartFeedLongRunning f ->
+      effectSub model $
+        subscribe
+          nn
+          PeriodicForever
+          f
+          FeedLongRunningProcess
+          Nothing
+          getEventRelayEither
+    FeedLongRunningProcess rs ->
+      let filterOutReplies = filter (not . isReply . fst) -- TODO: ignoring deletes
+          update er@(e, r) m =
+            case (e `elem` (fst <$> (model ^. #feedNew)), 
+                  e ^. #kind, 
+                  isJust $ model ^. #fromRelays % at e) of
+              (False, TextNote, False) ->
+                m & #feedNew %~ (\ers -> ers ++ [er]) 
+                  & #fromRelays % at e ?~ Set.singleton r
+              (False, TextNote, True) ->
+                m & #fromRelays % at e %~ fmap (Set.insert r)
+              (_, _, _) -> m
+          updated = Prelude.foldr update model (filterOutReplies rs)
+       in noEff updated
+    ShowNewNotes ->
+      let updated = model & #feed % #page .~ 0 & #feedNew .~ []
+       in trace ("branko-new-notes:" <> show (model ^. #feedNew)) $
+            batchEff updated [pure $ PagedNotesProcess True #feed FeedPage (model ^. #feedNew)]
+    PagedNotesProcess putAtStart pmLens screen rs ->
       let (notes, enotes, eprofs) = processReceivedNotes rs
           plm = flip O.view model . (%) pmLens
-          updatedNotes = plm #notes ++ notes
+          updatedNotes = bool (plm #notes ++ notes) (notes ++ plm #notes) putAtStart
           loadMore =
             length updatedNotes < plm #pageSize * plm #page + plm #pageSize
               && plm #factor < 100 -- TODO: put the number somewhere
@@ -205,13 +248,13 @@ updateModel nn rl pl action model =
             ]
     LoadMoreNotes pmLens page ->
       let pm = model ^. pmLens
-          Since since = fromMaybe (Since $ model ^. #now) $ pm ^. #since
-          newSince = trace ("brankoLoading with factor=" <> show (pm ^. #factor)) $ addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) since
+          Since since = pm ^. #since
+          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) since
           newModel =
             model
               & pmLens
               % #since
-              ?~ Since newSince
+              .~ Since newSince
        in effectSub newModel $ \sink -> do
             maybe
               (liftIO . print $ "[ERROR] Empty filter in LoadMoreNotes")
@@ -220,7 +263,7 @@ updateModel nn rl pl action model =
                     nn
                     AllAtEOS
                     (filter (Since newSince) (Until since))
-                    (PagedNotesProcess pmLens page)
+                    (PagedNotesProcess False pmLens page)
                     (Just $ SubState page)
                     getEventRelayEither
                     sink
@@ -332,7 +375,13 @@ updateModel nn rl pl action model =
               sink $ SubscribeForEmbeddedReplies enotes screen
     UpdateField l v -> noEff $ model & l .~ v
     FindProfile ->
-      let xo =
+      let pagedFilter xos =
+            \(Since s) (Until u) ->
+              textNotesWithDeletes
+                (Just s)
+                (Just u)
+                xos
+          xo =
             decodeNpub $
               model ^. #fpm % #findWho
           updated =
@@ -406,7 +455,7 @@ updateModel nn rl pl action model =
             FindProfileModel
               (fromMaybe "" $ encodeBechXo =<< mxo)
               mxo
-              defaultPagedModel
+              (defaultPagedModel (Since $ model ^. #now))
        in batchEff
             (model & #fpm .~ fpm)
             [pure FindProfile, pure $ GoPage ProfilePage]
@@ -445,17 +494,10 @@ updateModel nn rl pl action model =
               )
               -- show original posts only (not replies)
               (filter (not . isReply) noteEvts) -- TODO:
-              -- content e = processContent e
           notesAndContent = (\e -> (e, processContent e)) <$> orderByAgeAsc notes
           embedded = filterBech . concat $ snd <$> notesAndContent
           (eprofs, enotes) = partitionBechs embedded
        in (notesAndContent, eprofs, enotes)
-    pagedFilter xos =
-      \(Since s) (Until u) ->
-        textNotesWithDeletes
-          (Just s)
-          (Just u)
-          xos
 
     updateThreads :: (Event, Relay) -> (Threads, [EventId], [XOnlyPubKey]) -> (Threads, [EventId], [XOnlyPubKey])
     updateThreads (e, rel) (ts, eids, xos) =
@@ -587,7 +629,29 @@ followingView m@Model {..} =
 displayFeed ::
   Model ->
   View Action
-displayFeed m = displayPagedNotes m #feed FeedPage
+displayFeed m =
+  div_
+    [class_ "feed"]
+    [ newNotes,
+      displayPagedNotes m #feed FeedPage
+    ]
+  where
+    howMany = length $ m ^. #feedNew
+    newNotes =
+      div_
+        [ class_ "new-notes",
+          onClick ShowNewNotes,
+          bool
+            (class_ "remove-element")
+            (class_ "visible")
+            (howMany > 0)
+        ]
+        [ span_
+            [class_ "new-notes-count"]
+            [ text . T.pack $
+                "Display " <> show howMany <> " new " <> bool "note" "notes" (howMany > 1)
+            ]
+        ]
 
 displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
 displayPagedNotes m pmLens screen =
@@ -780,7 +844,7 @@ rightPanel m = ul_ [class_ "right-panel"] errors
             ]
             [text e]
       )
-        <$> zip [1..] (m ^. #errors)
+        <$> zip [1 ..] (m ^. #errors)
 
 leftPanel :: Model -> View Action
 leftPanel m =

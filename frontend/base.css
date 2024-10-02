@@ -372,3 +372,16 @@
 .error {
     color: red
 }
+
+.new-notes {
+    text-align: center
+}
+
+.new-notes-count {
+    cursor: pointer;
+    border: none;
+    border-radius: 40%;
+    background: burlywood;
+    padding: 10px;
+    font-size: 14px;
+}

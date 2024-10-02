@@ -8,7 +8,6 @@
 module ModelAction where
 
 import ContentUtils
-import Data.Time.Clock (UTCTime)
 import Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
@@ -28,7 +27,7 @@ import Optics
 
 data Action
   = RelayConnected RelayURI
-  | PagedNotesProcess (Lens' Model PagedNotesModel) Page [(Event, Relay)]
+  | PagedNotesProcess Bool (Lens' Model PagedNotesModel) Page [(Event, Relay)]
   | HandleWebSocket (WebSocket ())
   | ReceivedProfiles [(XOnlyPubKey, Profile, UTCTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -61,6 +60,9 @@ data Action
   | SubscribeForEmbeddedReplies [EventId] Page
   | EmbeddedRepliesRecv [(Event, Relay)]
   | ReportError Text
+  | StartFeedLongRunning [DatedFilter]
+  | FeedLongRunningProcess [(Event, Relay)]
+  | ShowNewNotes
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -75,6 +77,7 @@ data Page
 
 data Model = Model
   { feed :: PagedNotesModel,
+    feedNew :: [(Event, Relay)],
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
@@ -90,7 +93,8 @@ data Model = Model
         [(SubscriptionId, SubState)],
     relays :: [Text],
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
-    errors :: [Text]
+    errors :: [Text],
+    fromRelays :: Map Event (Set.Set Relay)
   }
   deriving (Eq, Generic)
 
@@ -120,7 +124,7 @@ type Threads = Map.Map RootEid Thread
 
 data PagedNotesModel = PagedNotesModel
   { filter :: Maybe (Since -> Until -> [DatedFilter]),
-    since :: Maybe Since,
+    since :: Since,
     step :: NominalDiffTime,
     factor :: Integer,
     page :: Int,
@@ -130,12 +134,12 @@ data PagedNotesModel = PagedNotesModel
   }
   deriving (Generic)
 
-defaultPagedModel ::
+defaultPagedModel :: Since ->
   PagedNotesModel
-defaultPagedModel =
+defaultPagedModel since =
   PagedNotesModel
     { filter = Nothing,
-      since = Nothing,
+      since = since,
       step = nominalDay / 2,
       factor = 1,
       page = 0,
