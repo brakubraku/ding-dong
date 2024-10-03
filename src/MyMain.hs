@@ -576,7 +576,7 @@ appView m =
           bool
             (class_ "remove-element")
             (class_ "visible")
-            (howMany > 0)
+            (howMany > 0 && m ^. #page == FeedPage)
         ]
         [ span_
             [class_ "new-notes-count"]
