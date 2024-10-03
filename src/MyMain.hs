@@ -178,9 +178,9 @@ updateModel nn rl pl action model =
     FeedLongRunningProcess rs ->
       let filterOutReplies = filter (not . isReply . fst) -- TODO: ignoring deletes
           update er@(e, r) m =
-            case ( e `elem` (fst <$> (model ^. #feedNew)),
+            case ( e `elem` (fst <$> (m ^. #feedNew)),
                    e ^. #kind,
-                   isJust $ model ^. #fromRelays % at e
+                   isJust $ m ^. #fromRelays % at e
                  ) of
               (False, TextNote, False) ->
                 m & #feedNew %~ (\ers -> ers ++ [er])
@@ -785,12 +785,12 @@ displayNote' withEmbed m ec@(e, _) =
   where
     profile = fromMaybe unknown $ getAuthorProfile m e
     unknown = Profile "" Nothing Nothing Nothing Nothing
-    profileName = span_ [id_ "username"] [text $ profile ^. #username]
+    profileName = span_ [class_ "username"] [text $ profile ^. #username]
     displayName =
       span_
-        [id_ "display-name"]
+        [class_ "display-name"]
         [text . fromMaybe "" $ profile ^. #displayName]
-    noteAge = span_ [id_ "note-age"] [text . S.pack $ eventAge (m ^. #now) e]
+    noteAge = span_ [class_ "note-age"] [text . S.pack $ eventAge (m ^. #now) e]
 
 middlePanel :: Model -> View Action
 middlePanel m =
@@ -872,10 +872,10 @@ displayProfile m xo =
                 pure $
                   img_ [class_ "profile-pic", prop "src" pic]
         let profilepicDef = div_ [class_ "profile-pic-default"] []
-        let profileName = span_ [id_ "username"] [text $ p ^. #username]
+        let profileName = span_ [class_ "username"] [text $ p ^. #username]
         let displayName =
               span_
-                [id_ "display-name"]
+                [class_ "display-name"]
                 [text . fromMaybe "" $ p ^. #displayName]
         let notesDisplay =
               displayPagedNotes m (#fpm % #events) ProfilePage
