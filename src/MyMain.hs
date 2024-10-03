@@ -158,10 +158,7 @@ updateModel nn rl pl action model =
                 (Just u)
                 xos
           updated =
-            model
-              & #feed
-              % #filter
-              ?~ pagedFilter contacts
+            model & #feed % #filter ?~ pagedFilter contacts
        in batchEff
             updated
             [ pure $ LoadMoreNotes #feed FeedPage,
@@ -181,11 +178,12 @@ updateModel nn rl pl action model =
     FeedLongRunningProcess rs ->
       let filterOutReplies = filter (not . isReply . fst) -- TODO: ignoring deletes
           update er@(e, r) m =
-            case (e `elem` (fst <$> (model ^. #feedNew)), 
-                  e ^. #kind, 
-                  isJust $ model ^. #fromRelays % at e) of
+            case ( e `elem` (fst <$> (model ^. #feedNew)),
+                   e ^. #kind,
+                   isJust $ model ^. #fromRelays % at e
+                 ) of
               (False, TextNote, False) ->
-                m & #feedNew %~ (\ers -> ers ++ [er]) 
+                m & #feedNew %~ (\ers -> ers ++ [er])
                   & #fromRelays % at e ?~ Set.singleton r
               (False, TextNote, True) ->
                 m & #fromRelays % at e %~ fmap (Set.insert r)
@@ -204,15 +202,13 @@ updateModel nn rl pl action model =
             length updatedNotes < plm #pageSize * plm #page + plm #pageSize
               && plm #factor < 100 -- TODO: put the number somewhere
           updated =
-            model
-              & pmLens
-              % #notes
-              .~ updatedNotes
+            model 
+              & pmLens % #notes .~ updatedNotes
               & case loadMore of
-                True ->
-                  pmLens % #factor %~ (* 2)
-                False ->
-                  pmLens % #factor .~ 1
+                  True ->
+                    pmLens % #factor %~ (* 2)
+                  False ->
+                    pmLens % #factor .~ 1
           events = fst <$> notes
        in effectSub updated $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
@@ -226,10 +222,7 @@ updateModel nn rl pl action model =
                   screen
     ShowPrevious pmLens ->
       let newModel =
-            model
-              & pmLens
-              % #page
-              %~ \pn -> if pn > 0 then pn - 1 else pn
+            model & pmLens % #page %~ \pn -> if pn > 0 then pn - 1 else pn
        in newModel <# do
             pure . ScrollTo $ "notes-container-bottom"
     ScrollTo here ->
@@ -251,10 +244,7 @@ updateModel nn rl pl action model =
           Since since = pm ^. #since
           newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) since
           newModel =
-            model
-              & pmLens
-              % #since
-              .~ Since newSince
+            model & pmLens % #since .~ Since newSince
        in effectSub newModel $ \sink -> do
             maybe
               (liftIO . print $ "[ERROR] Empty filter in LoadMoreNotes")
@@ -305,9 +295,7 @@ updateModel nn rl pl action model =
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
           process (e, rel) (m, xos) =
             (,Set.insert (e ^. #pubKey) xos) $
-              m
-                & #embedded
-                % at (e ^. #eventId)
+              m & #embedded % at (e ^. #eventId) 
                 %~ Just
                 . maybe
                   ((e, processContent e), Set.singleton rel)
@@ -319,15 +307,12 @@ updateModel nn rl pl action model =
     ReceivedReactions rs ->
       let reactions = model ^. #reactions
        in noEff $
-            model
-              & #reactions
-              .~ Prelude.foldl processReceived reactions rs
+            model & #reactions .~ Prelude.foldl processReceived reactions rs
     ReceivedProfiles rs ->
       let profiles =
             (\(xo, pro, when, rel) -> (xo, (pro, when))) <$> rs
           updated =
-            model
-              & #profiles
+            model & #profiles
               %~ Map.unionWith
                 ( \p1@(_, d1) p2@(_, d2) ->
                     -- prefer most recent profile
@@ -385,18 +370,10 @@ updateModel nn rl pl action model =
             decodeNpub $
               model ^. #fpm % #findWho
           updated =
-            model
-              & #fpm
-              % #lookingFor
-              .~ xo
-              & #fpm
-              % #events
-              % #notes
-              .~ []
-              & #fpm
-              % #events
-              % #filter
-              .~ (xo >>= \xo' -> Just (pagedFilter [xo']))
+            model 
+              & #fpm % #lookingFor .~ xo
+              & #fpm % #events % #notes .~ []
+              & #fpm % #events % #filter .~ (xo >>= \xo' -> Just (pagedFilter [xo']))
           runSubscriptions = do
             xo' <- xo
             pure $
@@ -433,9 +410,7 @@ updateModel nn rl pl action model =
             -- update "sub state" for sid and remove all finished "sub states"
             (sid, ss) : filter (\(sid2, ss1) -> sid2 /= sid && isRunning ss1) list
           updatedModel =
-            model
-              & #subscriptions
-              % at p
+            model & #subscriptions % at p
               %~ Just
               . fromMaybe [st]
               . fmap (updateListWith st)
@@ -583,6 +558,7 @@ appView m =
             $ areSubsRunning m (m ^. #page)
         ]
         [loadingBar],
+      newNotesIndicator,
       div_
         [class_ "main-container", id_ "top-top"]
         [ leftPanel m,
@@ -591,6 +567,23 @@ appView m =
         ],
       footerView m
     ]
+  where
+    howMany = length $ m ^. #feedNew
+    newNotesIndicator =
+      div_
+        [ class_ "new-notes",
+          onClick ShowNewNotes,
+          bool
+            (class_ "remove-element")
+            (class_ "visible")
+            (howMany > 0)
+        ]
+        [ span_
+            [class_ "new-notes-count"]
+            [ text . T.pack $
+                "Display " <> show howMany <> " new " <> bool "note" "notes" (howMany > 1)
+            ]
+        ]
 
 followingView :: Model -> View Action
 followingView m@Model {..} =
@@ -632,26 +625,7 @@ displayFeed ::
 displayFeed m =
   div_
     [class_ "feed"]
-    [ newNotes,
-      displayPagedNotes m #feed FeedPage
-    ]
-  where
-    howMany = length $ m ^. #feedNew
-    newNotes =
-      div_
-        [ class_ "new-notes",
-          onClick ShowNewNotes,
-          bool
-            (class_ "remove-element")
-            (class_ "visible")
-            (howMany > 0)
-        ]
-        [ span_
-            [class_ "new-notes-count"]
-            [ text . T.pack $
-                "Display " <> show howMany <> " new " <> bool "note" "notes" (howMany > 1)
-            ]
-        ]
+    [displayPagedNotes m #feed FeedPage]
 
 displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
 displayPagedNotes m pmLens screen =
