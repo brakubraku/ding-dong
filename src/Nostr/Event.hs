@@ -419,11 +419,11 @@ findRootEid e = fst <$> (uncons . catMaybes $ findRoot <$> tags e)
       ETag eid _ (Just Root) -> Just eid
       _ -> Nothing
 
-orderByAgeAsc :: [Event] -> [Event]
+orderByAgeAsc :: [(Event, b)] -> [(Event,b)]
 orderByAgeAsc es =
   reverse $
     sortBy
-      ( \e1 e2 ->
+      ( \(e1,_) (e2,_) ->
           (e1 ^. #created_at) `compare` (e2 ^. #created_at)
       )
       es

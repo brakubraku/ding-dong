@@ -42,6 +42,8 @@ data Action
   | ThreadEvents [(Event, Relay)] Page
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
+  | SubscribeForParentsOf (Lens' Model PagedNotesModel) Page [Event]
+  | FeedEventParentsProcess (Map.Map EventId EventId) (Lens' Model PagedNotesModel) Page [(Event, Relay)]
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
@@ -130,7 +132,8 @@ data PagedNotesModel = PagedNotesModel
     page :: Int,
     pageSize :: Int,
     notes :: [(Event, [Content])],
-    fromRelays :: Map.Map EventId (Set.Set Relay) -- TODO:
+    fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
+    parents :: Map.Map EventId (Event, [Content])
   }
   deriving (Generic)
 
@@ -145,7 +148,8 @@ defaultPagedModel since =
       page = 0,
       pageSize = 15,
       notes = [],
-      fromRelays = Map.empty
+      fromRelays = Map.empty,
+      parents = Map.empty
     }
 
 -- TODO: alter this
