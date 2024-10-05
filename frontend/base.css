@@ -202,6 +202,21 @@
     display: none;
 }
 
+.profile-page .child .note-container .profile-pic {
+    display: none;
+}
+
+.profile-page .parent .note-container .profile-pic {
+    height: 50px;
+    width: 50px;
+    border-radius: 70%;
+    margin-right: 20px;
+    cursor: pointer;
+    display: initial;
+    position: initial;
+    background-color: grey;
+}
+
 .profile-page .banner {
     text-align: center;
 }
