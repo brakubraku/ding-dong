@@ -52,6 +52,7 @@ import Nostr.RelayPool
 import Nostr.Response
 import Optics
 import Prelude hiding (map)
+import Data.Time
 
 connectRelays ::
   NostrNetwork ->
@@ -60,10 +61,11 @@ connectRelays ::
 connectRelays nn sendMsg sink = do
   -- connect a relay
   relays <- liftIO $ readMVar (nn ^. #relays)
-  mapM_ (forkJSM . conRelay) relays
+  now <- liftIO getCurrentTime
+  mapM_ (forkJSM . conRelay (0, now)) relays
   where
-    conRelay :: Relay -> JSM ()
-    conRelay relay = do
+    conRelay :: (Int, UTCTime) -> Relay -> JSM ()
+    conRelay (recnt, lastReconnect) relay = do
       socket <- createWebSocket (relay ^. #uri) []
       socketState <- liftIO $ newMVar 0
 
@@ -114,10 +116,17 @@ connectRelays nn sendMsg sink = do
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
         status <- WS.socketState socket
         _ <- liftIO . swapMVar socketState $ status
+        now <- liftIO getCurrentTime
         when (status == 3) $
           unless (code == CLOSE_NORMAL) $ do
-            liftIO . threadDelay $ 10 ^ 6 * 2
-            conRelay relay
+            let diff = (round $ diffUTCTime now lastReconnect)
+            case (recnt > 3, diff > 1) of -- TODO: take time into account?
+              (True,_) -> do 
+                liftIO . threadDelay $ 10 ^ 6 * 5 -- wait 5 secs to reconnect 
+                conRelay (0,now) relay 
+              (False, _) -> do 
+                liftIO . threadDelay $ (10 ^ 5) * 5  -- wait 1/2 sec to reconnect 
+                conRelay (recnt+1,now) relay 
 
       WS.addEventListener socket "error" $ \v -> do
         _ <- liftIO . swapMVar socketState $ 4 -- TODO: 4 means error 
@@ -141,6 +150,7 @@ connectRelays nn sendMsg sink = do
       let doLoop =
             do
               status <- liftIO $ readMVar socketState
+              liftIO . print $ "branko-puppy:" <> show relay <> " running" <> " status=" <> show status 
               case status of
                 0 -> do
                   -- not ready yet
@@ -149,8 +159,10 @@ connectRelays nn sendMsg sink = do
                 1 -> do
                   -- ready
                   request <- liftIO . atomically . readTChan $ rc
-                  sendJson' socket request
+                  sendJson' socket request -- TODO: if the socket is porked at this point this will pork up
                   doLoop
+                2 -> pure () -- exit but don't change subscription status, in case reconnect happens
+                3 -> pure () 
                 _ -> do 
                   -- mark all non-EOSE subscriptions on this Relay as errored
                   let changeToError st
