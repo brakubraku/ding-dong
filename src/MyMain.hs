@@ -806,12 +806,14 @@ displayPagedNote m pml ec@(e,_)
         let mp = m ^. pml % #parents % at (e ^. #eventId)
         in 
           div_ [class_ "parent-reply-complex"] 
-           [div_ [class_ "parent"] [maybe emptyParent (\p -> displayNote m p) mp]
+           [div_ [class_ "parent"] [responseToIco, maybe emptyParent (\p -> displayNote m p) mp]
            ,div_ [class_ "child"] [displayNote m ec]]
     | otherwise = 
         displayNote m ec
   where 
     emptyParent = div_ [] [text "Loading parent event"]
+    responseToIco = div_ [class_ "responseto-icon"] 
+      []
 
 displayNote :: Model -> (Event, [Content]) -> View Action
 displayNote = displayNote' True 

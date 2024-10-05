@@ -389,5 +389,27 @@
 }
 
 .parent-reply-complex {
-    border: 1px solid red;
+    /* border: 1px solid red; */
+}
+
+.parent {
+    /* background-color: #baf1a6; */
+    display:flex
+}
+
+/* .responseto-icon {
+  display: flex;
+  justify-content: flex-end;
+  flex-direction: column;
+} */
+
+.responseto-icon {
+    width: 18px;
+    top: 40px;
+    position: relative;
+    border-left: 2px solid grey;
+    left: 24px;
+    border-top: 2px solid grey;
+    margin-right: 30px;
+    margin-bottom: 28px;
 }
