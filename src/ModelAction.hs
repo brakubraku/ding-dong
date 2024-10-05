@@ -88,6 +88,7 @@ data Model = Model
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,
+    threadOf :: Maybe Event, 
     history :: [Page],
     subscriptions ::
       Map.Map

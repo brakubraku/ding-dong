@@ -92,6 +92,7 @@ start = do
           FeedPage
           now
           Map.empty
+          Nothing
           [FeedPage]
           Map.empty
           relaysList
@@ -379,7 +380,9 @@ updateModel nn rl pl action model =
     ActualTime t -> do
       noEff $ model & #now .~ t
     DisplayThread e -> do
-      effectSub model $ \sink -> do
+      let updated = model & #threadOf ?~ e
+       in 
+       effectSub updated $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO $ do
           sink . GoPage $ ThreadPage e
@@ -789,6 +792,7 @@ displayNoteShort withEmbed m (e, content) =
     ]
   where
     eid = e ^. #eventId
+    isThreadOf = m ^. #threadOf == Just e
     reactions = m ^. #reactions % #processed % at eid
     reid = RootEid $ fromMaybe eid $ findRootEid e
     replies = do
@@ -797,7 +801,11 @@ displayNoteShort withEmbed m (e, content) =
     repliesCount c =
       [ div_
           [class_ "replies-count", onClick $ DisplayThread e]
-          [text $ "▶ " <> (S.pack . show $ c)]
+          [ bool
+              (text $ "▶ " <> (S.pack . show $ c))
+              (text $ "▽ " <> (S.pack . show $ c))
+              isThreadOf
+          ]
       ]
 
 displayPagedNote :: Model -> (Lens' Model PagedNotesModel) -> (Event, [Content]) -> View Action
