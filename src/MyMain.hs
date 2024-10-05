@@ -189,7 +189,7 @@ updateModel nn rl pl action model =
               (False, TextNote, True) ->
                 m & #fromRelays % at e %~ fmap (Set.insert r)
               (_, _, _) -> m
-          updated = Prelude.foldr update model (filterOutReplies rs)
+          updated = Prelude.foldr update model rs
        in noEff updated
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
@@ -290,7 +290,7 @@ updateModel nn rl pl action model =
               parentEid <- findIsReplyTo e
               pure $ 
                (pmap & at parentEid .~ Just (e ^. #eventId), parentEid : pids)
-          -- have a record of what goes with what child
+          -- have a record of which parent goes with which child
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
       in 
         effectSub model $
@@ -535,10 +535,11 @@ updateModel nn rl pl action model =
 subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
 subscribeForWholeThread nn e page sink = do
   let eids = [(e ^. #eventId)]
+      replyTo = maybe [] singleton $ findIsReplyTo e 
   subscribe
     nn
     PeriodicUntilEOS
-    [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId eids]
+    [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
     (flip ThreadEvents page)
     (Just $ SubState page)
     process
