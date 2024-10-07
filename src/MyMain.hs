@@ -99,6 +99,7 @@ start = do
           Map.empty
           []
           Map.empty
+          ""
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -120,7 +121,9 @@ updateModel nn rl pl action model =
     HandleWebSocket (WebSocketError r e) -> 
       noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1
     HandleWebSocket (WebSocketClose r e) -> 
-      noEff $ model & #relays % at  (r ^. #uri) % _Just % _3 %~ (+) 1
+      noEff $ 
+        model & #relays % at  (r ^. #uri) % _Just % _3 %~ (+) 1
+              & #relays % at  (r ^. #uri) % _Just % _1 .~ False
 
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
@@ -489,6 +492,22 @@ updateModel nn rl pl action model =
     LogConsole what ->
       model <# do
         liftIO (print what) >> pure NoAction
+    SendReplyTo e -> 
+        model <# do
+          let Keys _ xo _ = keys $ nn
+          now <- liftIO getCurrentTime
+          key <- liftIO $ getSecKey xo
+          let reply = createReplyEvent e now xo $ model ^. #noteDraft
+              signed = signEvent reply key xo
+          maybe
+            (pure $ ReportError "Failed sending response: Signing event failed")
+            ( \signedEvt -> do
+                liftIO . runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
+                pure NoAction
+            )
+            signed
+      where 
+        getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
     _ -> noEff model
   where
     -- Note: this only works correctly when subscription is AtEOS,
@@ -804,7 +823,7 @@ displayNoteShort withEmbed m (e, content) =
     ]
   where
     eid = e ^. #eventId
-    isThreadOf = m ^. #threadOf % _1 == Just e
+    isThreadOf = m ^. #page == ThreadPage e
     reactions = m ^. #reactions % #processed % at eid
     reid = RootEid $ fromMaybe eid $ findRootEid e
     replies = do
@@ -1010,10 +1029,11 @@ displayThread m e =
             []
             [ textarea_
                 [ class_ "reply-text-area",
+                  onInput $ UpdateField #noteDraft,
                   prop "content" $ replMsg
                 ]
                 [],
-              button_ [] [text "Send"]
+              button_ [onClick $ SendReplyTo e] [text "Send"]
             ]
       repliesDisplay = do
         thread <- m ^. #threads % at reid

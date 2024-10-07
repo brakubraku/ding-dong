@@ -11,7 +11,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import GHC.Exts (fromList)
-import JSDOM.Generated.SVGMatrix (skewX)
 import MyCrypto
   ( Bip340Sig,
     SecKey (SecKey),
@@ -25,8 +24,6 @@ import MyCrypto
   )
 import System.Entropy 
 import Data.Maybe (fromJust)
-import Data.ByteString.Base16 (encodeBase16)
-import Data.Base16.Types (extractBase16)
 import Crypto.Secp256k1.Internal.Base (Rand32(..))
 
 type ProfileName = Text

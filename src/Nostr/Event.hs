@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Nostr.Event where
 
@@ -78,7 +79,7 @@ data UnsignedEvent = UnsignedEvent
     tags' :: [Tag],
     content' :: Text
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 type ReceivedEvent = (Event, [Relay])
 
@@ -293,17 +294,6 @@ readProfile event = case kind event of
     decode $ fromStrict $ encodeUtf8 $ content event
   _ ->
     Nothing
-
-replyNote :: Event -> Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
-replyNote event note xo t =
-  UnsignedEvent
-    { pubKey' = xo,
-      created_at' = t,
-      kind' = TextNote,
-      tags' = [ETag (eventId event) Nothing (Just Reply)],
-      content' = note
-    }
-
 setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
@@ -384,40 +374,45 @@ event `isReplyTo` parent = any checkTag . tags $ event
 -- If event has Etag with Reply marker then choose that
 -- otherwise if it has Etag with Root marker then choose that
 -- otherwise the event is not a response to anything
-findIsReplyTo :: Event -> Maybe EventId
-findIsReplyTo event =
-  let find [] (replyEid, rootEid) = (replyEid, rootEid)
-      find _ (replyEid@(Just _), rootEid@(Just _)) = (replyEid, rootEid)
-      find (e : tags) (replyEid, rootEid) =
+findReplyTags :: Event -> (Maybe EventId, Maybe EventId)
+findReplyTags event =
+  let find' [] (replyEid, rootEid) = (replyEid, rootEid)
+      find' _ (replyEid@(Just _), rootEid@(Just _)) = (replyEid, rootEid)
+      find' (e : tags) (replyEid, rootEid) =
         case e of
-          ETag eid _ (Just Reply) -> find tags (Just eid, rootEid)
-          ETag eid _ (Just Root) -> find tags (replyEid, Just eid)
-          _ -> find tags (replyEid, rootEid)
-   in case find (tags event) (Nothing, Nothing) of
-        (replyEid@(Just _), _) -> replyEid
-        (Nothing, rootEid@(Just _)) -> rootEid
-        _ -> Nothing
+          ETag eid _ (Just Reply) -> find' tags (Just eid, rootEid)
+          ETag eid _ (Just Root) -> find' tags (replyEid, Just eid)
+          _ -> find' tags (replyEid, rootEid)
+   in find' (tags event) (Nothing, Nothing)
+
+findIsReplyTo :: Event -> Maybe EventId
+findIsReplyTo e =
+  case findReplyTags e of
+    (replyEid@(Just _), _) -> replyEid
+    (Nothing, rootEid@(Just _)) -> rootEid
+    _ -> Nothing
 
 isEtag :: Tag -> Bool
 isEtag ETag {} = True
 isEtag _ = False
 
-findETags :: Event -> [Tag]
-findETags e = filter isEtag . tags $ e
+getETags :: Event -> [Tag]
+getETags e = filter isEtag . tags $ e
 
 getSingleETag :: Event -> Maybe Tag
 getSingleETag e =
-  let etags = findETags e
+  let etags = getETags e
    in case length etags of
         1 -> fst <$> Data.List.uncons etags
         _ -> Nothing
 
 findRootEid :: Event -> Maybe EventId
-findRootEid e = fst <$> (uncons . catMaybes $ findRoot <$> tags e)
+findRootEid e =
+  find' (getETags e)
   where
-    findRoot = \tag -> case tag of
-      ETag eid _ (Just Root) -> Just eid
-      _ -> Nothing
+    find' (ETag eid _ (Just Root) : _) = Just eid
+    find' (_ : tags) = find' tags
+    find' [] = Nothing
 
 orderByAgeAsc :: [(Event, b)] -> [(Event,b)]
 orderByAgeAsc es =
@@ -427,3 +422,16 @@ orderByAgeAsc es =
           (e1 ^. #created_at) `compare` (e2 ^. #created_at)
       )
       es
+
+createReplyEvent :: Event -> UTCTime -> XOnlyPubKey -> Text -> UnsignedEvent
+createReplyEvent replyTo now xo replyMsg =
+  let reply = textNote replyMsg xo now
+      rootEid = findRootEid replyTo
+      addTag e tag = e & #tags' %~ \ts -> tag : ts
+      addReplyToEidTag eid e = 
+        addTag e $ ETag eid Nothing (Just Reply)
+      addRootTag mrid e = 
+        maybe e (\rid -> addTag e $ ETag rid Nothing (Just Root)) mrid
+   in addReplyToEidTag (replyTo ^. #eventId)
+        . addRootTag rootEid
+        $ reply

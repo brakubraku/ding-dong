@@ -25,6 +25,7 @@ import Nostr.Request hiding (subId)
 import Nostr.Response
 import Optics
 import System.Entropy
+import Nostr.Event
 
 changeStateForAllSubs :: Relay -> (Maybe RelaySubState -> Maybe RelaySubState) -> NostrNetworkT ()
 changeStateForAllSubs relay change = do
@@ -113,6 +114,10 @@ send' :: Request -> NostrNetworkT ()
 send' request = do
   network <- ask
   lift . atomically . writeTChan (network ^. #requestCh) $ request
+
+sendEvent :: Event -> NostrNetworkT ()
+sendEvent e = 
+  send . SendEvent $ e
 
 waitForActiveConnections :: Int -> NostrNetworkT ()
 waitForActiveConnections timeout = do

@@ -66,6 +66,7 @@ data Action
   | StartFeedLongRunning [DatedFilter]
   | FeedLongRunningProcess [(Event, Relay)]
   | ShowNewNotes
+  | SendReplyTo Event
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -98,7 +99,8 @@ data Model = Model
     relays :: Map.Map Text (Bool, Int, Int), 
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text],
-    fromRelays :: Map Event (Set.Set Relay)
+    fromRelays :: Map Event (Set.Set Relay),
+    noteDraft :: Text
   }
   deriving (Eq, Generic)
 
