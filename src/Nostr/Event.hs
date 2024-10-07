@@ -374,23 +374,17 @@ event `isReplyTo` parent = any checkTag . tags $ event
 -- If event has Etag with Reply marker then choose that
 -- otherwise if it has Etag with Root marker then choose that
 -- otherwise the event is not a response to anything
-findReplyTags :: Event -> (Maybe EventId, Maybe EventId)
-findReplyTags event =
-  let find' [] (replyEid, rootEid) = (replyEid, rootEid)
-      find' _ (replyEid@(Just _), rootEid@(Just _)) = (replyEid, rootEid)
-      find' (e : tags) (replyEid, rootEid) =
-        case e of
-          ETag eid _ (Just Reply) -> find' tags (Just eid, rootEid)
-          ETag eid _ (Just Root) -> find' tags (replyEid, Just eid)
-          _ -> find' tags (replyEid, rootEid)
-   in find' (tags event) (Nothing, Nothing)
-
 findIsReplyTo :: Event -> Maybe EventId
-findIsReplyTo e =
-  case findReplyTags e of
-    (replyEid@(Just _), _) -> replyEid
-    (Nothing, rootEid@(Just _)) -> rootEid
-    _ -> Nothing
+findIsReplyTo event =
+  let find' _ (Just eid, _) = Just eid
+      find' [] (_, Just rid) = Just rid
+      find' [] (Nothing, Nothing) = Nothing
+      find' (e : tags) (_, rootEid) =
+        case e of
+          ETag eid _ (Just Reply) -> Just eid
+          ETag rid _ (Just Root) -> find' tags (Nothing, Just rid)
+          _ -> find' tags (Nothing, rootEid)
+   in find' (tags event) (Nothing, Nothing)
 
 isEtag :: Tag -> Bool
 isEtag ETag {} = True
