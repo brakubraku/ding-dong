@@ -32,7 +32,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
 import Debug.Trace (trace)
-import Miso hiding (at, now, send)
+import Miso hiding (at, now, send, WebSocket(..))
 import Miso.String (MisoString)
 import qualified Miso.String as S
 import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe)
@@ -92,10 +92,10 @@ start = do
           FeedPage
           now
           Map.empty
-          Nothing
+          (Nothing, Nothing)
           [FeedPage]
           Map.empty
-          relaysList
+          (Map.fromList ((\r -> (r,(False,0,0))) <$> relaysList))
           Map.empty
           []
           Map.empty
@@ -115,6 +115,13 @@ updateModel ::
   Effect Action Model
 updateModel nn rl pl action model =
   case action of
+    HandleWebSocket (WebSocketOpen r) -> 
+      noEff $ model & #relays % at (r ^. #uri) % _Just % _1 .~ True
+    HandleWebSocket (WebSocketError r e) -> 
+      noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1
+    HandleWebSocket (WebSocketClose r e) -> 
+      noEff $ model & #relays % at  (r ^. #uri) % _Just % _3 %~ (+) 1
+
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
        in noEff $
@@ -380,13 +387,17 @@ updateModel nn rl pl action model =
     ActualTime t -> do
       noEff $ model & #now .~ t
     DisplayThread e -> do
-      let updated = model & #threadOf ?~ e
+      let updated = model & #threadOf % _1 ?~ e
        in 
        effectSub updated $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO $ do
           sink . GoPage $ ThreadPage e
           sink . ScrollTo $ "top-top"
+    DisplayReplyThread e -> 
+     batchEff
+       (model & #threadOf % _2 ?~ "")
+       [pure $ DisplayThread e]
     ThreadEvents [] _ -> noEff $ model
     ThreadEvents es screen ->
       let (updated, enotes, eprofs) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -788,11 +799,12 @@ displayNoteShort withEmbed m (e, content) =
         [class_ "text-note-properties"]
         ( maybe [] repliesCount replies
             ++ [displayReactions reactions]
+            ++ [replyIcon]
         )
     ]
   where
     eid = e ^. #eventId
-    isThreadOf = m ^. #threadOf == Just e
+    isThreadOf = m ^. #threadOf % _1 == Just e
     reactions = m ^. #reactions % #processed % at eid
     reid = RootEid $ fromMaybe eid $ findRootEid e
     replies = do
@@ -807,6 +819,7 @@ displayNoteShort withEmbed m (e, content) =
               isThreadOf
           ]
       ]
+    replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "Reply"]
 
 displayPagedNote :: Model -> (Lens' Model PagedNotesModel) -> (Event, [Content]) -> View Action
 displayPagedNote m pml ec@(e,_) 
@@ -991,12 +1004,24 @@ displayThread m e =
                   else "note-no-parent"
             ]
             [displayNote m (e, processContent e)]
+      writeReplyDisplay = 
+        m ^. #threadOf % _2 >>= \replMsg -> pure $
+          div_
+            []
+            [ textarea_
+                [ class_ "reply-text-area",
+                  prop "content" $ replMsg
+                ]
+                [],
+              button_ [] [text "Send"]
+            ]
       repliesDisplay = do
         thread <- m ^. #threads % at reid
         let replies = getRepliesFor thread (e ^. #eventId)
         pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> replies
    in div_ [class_ "thread-container"] $
-        catMaybes [parentDisplay, noteDisplay] ++ fromMaybe [] repliesDisplay
+        catMaybes [parentDisplay, noteDisplay, writeReplyDisplay] 
+          ++ fromMaybe [] repliesDisplay
 
 displayReactions :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View action
 displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
@@ -1038,15 +1063,29 @@ displayProfilePage m =
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =
   div_ [class_ "relays-page"] $
-    [info]
-      <> ( displayRelay
-             <$> m ^. #relays
-         )
-      ++ [inputRelay]
+    [info, relaysGrid, inputRelay]
+  
   where
     info = div_ [class_ "relay-info"] [text $ "Remove relays which time out to improve loading speed"]
-    displayRelay r =
-      div_ [class_ "relay"] [text r]
+    
+    displayRelay (r, (isConnected, errCnt, closeCnt)) =
+      [ div_ [class_ "relay"] [text r],
+        div_ [class_ "relay-connected"] [text $ bool "No" "Yes" isConnected],
+        div_ [class_ "relay-error-count"] [text . T.pack . show $ errCnt],
+        div_ [class_ "relay-close-count"] [text . T.pack . show $ closeCnt]
+      ]
+    
+    relaysGrid =
+      div_ [class_ "relays-grid"] $
+        gridHeader
+          ++ concat (displayRelay <$> (Map.toList $ m ^. #relays))
+    
+    gridHeader =
+      [ div_ [] [text "Relay"],
+        div_ [] [text "Connected"],
+        div_ [] [text "Errors count"],
+        div_ [] [text "Close count"]
+      ]
     inputRelay =
       input_
         [ class_ "input-relay",

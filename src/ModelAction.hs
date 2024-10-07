@@ -28,7 +28,7 @@ import Optics
 data Action
   = RelayConnected RelayURI
   | PagedNotesProcess Bool (Lens' Model PagedNotesModel) Page [(Event, Relay)]
-  | HandleWebSocket (WebSocket ())
+  | HandleWebSocket WebSocketAction
   | ReceivedProfiles [(XOnlyPubKey, Profile, UTCTime, Relay)]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
@@ -39,6 +39,7 @@ data Action
   | WriteModel Model
   | ActualTime UTCTime
   | DisplayThread Event
+  | DisplayReplyThread Event
   | ThreadEvents [(Event, Relay)] Page
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
@@ -88,13 +89,13 @@ data Model = Model
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,
-    threadOf :: Maybe Event, 
+    threadOf :: (Maybe Event, Maybe Text), -- event and possible reply message
     history :: [Page],
     subscriptions ::
       Map.Map
         Page
         [(SubscriptionId, SubState)],
-    relays :: [Text],
+    relays :: Map.Map Text (Bool, Int, Int), 
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay)
@@ -228,3 +229,5 @@ getRepliesFor t eid = fromMaybe [] $
     replIds <- Set.toList <$> t ^. #replies % at eid
     let replies = catMaybes $ (\r -> Map.lookup r (t ^. #events)) <$> replIds
     pure replies
+
+

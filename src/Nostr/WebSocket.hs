@@ -12,7 +12,7 @@
 
 module Nostr.WebSocket
   ( -- * Types
-    WebSocket (..),
+    WebSocketAction (..),
     URL (..),
     Protocols (..),
     SocketState (..),
@@ -44,7 +44,7 @@ import Miso.FFI
 import Miso.FFI.WebSocket (Socket)
 import qualified Miso.FFI.WebSocket as WS
 import Miso.String
-import Miso.WebSocket
+import Miso.WebSocket hiding (WebSocket(..))
 import Nostr.Log
 import Nostr.Network
 import Nostr.Relay
@@ -54,9 +54,14 @@ import Optics
 import Prelude hiding (map)
 import Data.Time
 
+data WebSocketAction = 
+  WebSocketOpen Relay | 
+  WebSocketClose Relay Text | 
+  WebSocketError Relay Text
+
 connectRelays ::
   NostrNetwork ->
-  (WebSocket () -> action) ->
+  (WebSocketAction -> action) ->
   Sub action
 connectRelays nn sendMsg sink = do
   -- connect a relay
@@ -75,7 +80,7 @@ connectRelays nn sendMsg sink = do
             pure $ rels & at (relay ^. #uri) %~ fmap (\r -> r {connected = True})
           _ <- swapMVar socketState 1
           print $ "branko-websocket-open" <> show relay
-          sink . sendMsg $ WebSocketOpen
+          sink . sendMsg $ WebSocketOpen relay
 
       WS.addEventListener socket "message" $ \v -> do
         msg <- valToStr =<< WS.data' v
@@ -112,7 +117,7 @@ connectRelays nn sendMsg sink = do
         code <- codeToCloseCode <$> WS.code e
         reason <- WS.reason e
         clean <- WS.wasClean e
-        liftIO . sink . sendMsg $ (WebSocketClose code clean reason)
+        liftIO . sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
         status <- WS.socketState socket
         _ <- liftIO . swapMVar socketState $ status
@@ -138,12 +143,12 @@ connectRelays nn sendMsg sink = do
 #endif
         if undef
           then do
-            liftIO . sink . sendMsg $ (WebSocketError mempty)
+            liftIO . sink . sendMsg $ (WebSocketError relay mempty)
             liftIO . print $ "branko-subId-websocket-error"
           else do
             Just d <- fromJSVal d'
             liftIO . print $ "branko-subId-websocket-error:" <> show d
-            liftIO . sink . sendMsg $ (WebSocketError d)
+            liftIO . sink . sendMsg $ (WebSocketError relay d)
 
       rc <- liftIO . atomically . cloneTChan $ (nn ^. #requestCh)
       -- listen for requests to send
@@ -198,3 +203,5 @@ codeToCloseCode = go
     go 1013 = Try_Again_Later
     go 1015 = TLS_Handshake
     go n = OtherCode n
+
+decodeError code clean reason = "Connection closed" -- TODO
