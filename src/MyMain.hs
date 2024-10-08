@@ -92,7 +92,7 @@ start = do
           FeedPage
           now
           Map.empty
-          (Nothing, Nothing)
+          Nothing
           [FeedPage]
           Map.empty
           (Map.fromList ((\r -> (r,(False,0,0))) <$> relaysList))
@@ -390,16 +390,14 @@ updateModel nn rl pl action model =
     ActualTime t -> do
       noEff $ model & #now .~ t
     DisplayThread e -> do
-      let updated = model & #threadOf % _1 ?~ e
-       in 
-       effectSub updated $ \sink -> do
+       effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO $ do
           sink . GoPage $ ThreadPage e
           sink . ScrollTo $ "top-top"
     DisplayReplyThread e -> 
      batchEff
-       (model & #threadOf % _2 ?~ "")
+       (model & #writeReplyTo ?~ e)
        [pure $ DisplayThread e]
     ThreadEvents [] _ -> noEff $ model
     ThreadEvents es screen ->
@@ -503,11 +501,14 @@ updateModel nn rl pl action model =
             (pure $ ReportError "Failed sending response: Signing event failed")
             ( \signedEvt -> do
                 liftIO . runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
-                pure NoAction
+                pure ClearWritingReply
             )
             signed
       where 
         getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
+    ClearWritingReply -> 
+       noEff $ model & #writeReplyTo .~ Nothing
+                     & #noteDraft .~ ""
     _ -> noEff model
   where
     -- Note: this only works correctly when subscription is AtEOS,
@@ -1008,6 +1009,7 @@ displayProfile m xo =
 displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
+      isWriteReply = Just e == m ^. #writeReplyTo
       parentDisplay = do
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
@@ -1024,13 +1026,13 @@ displayThread m e =
             ]
             [displayNote m (e, processContent e)]
       writeReplyDisplay = 
-        m ^. #threadOf % _2 >>= \replMsg -> pure $
+        flip (bool Nothing) isWriteReply $ pure $
           div_
             []
             [ textarea_
                 [ class_ "reply-text-area",
                   onInput $ UpdateField #noteDraft,
-                  prop "content" $ replMsg
+                  prop "content" $ m ^. #noteDraft
                 ]
                 [],
               button_ [onClick $ SendReplyTo e] [text "Send"]

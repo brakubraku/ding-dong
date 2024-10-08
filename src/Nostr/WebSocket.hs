@@ -101,7 +101,7 @@ connectRelays nn sendMsg sink = do
                     writeTChan
                       (subscription ^. #responseCh)
                       (EventReceived subId event, relay)
-              Nothing ->
+              Nothing -> do
                 liftIO
                   . logRelayError relay
                   . pack
@@ -109,9 +109,13 @@ connectRelays nn sendMsg sink = do
                     <> show subId
                     <> " not found in responseChannels. Event received="
                     <> show event
+                liftIO . sink . sendMsg . WebSocketError relay $ "SubId not found in response channels"
+
           Just (Nostr.Response.EOSE subId) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
-          _ -> liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
+          _ -> do 
+               liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
+               liftIO . sink . sendMsg $ (WebSocketError relay $ "Could not decode answer booyatch")
 
       WS.addEventListener socket "close" $ \e -> do
         code <- codeToCloseCode <$> WS.code e
@@ -155,7 +159,6 @@ connectRelays nn sendMsg sink = do
       let doLoop =
             do
               status <- liftIO $ readMVar socketState
-              liftIO . print $ "branko-puppy:" <> show relay <> " running" <> " status=" <> show status 
               case status of
                 0 -> do
                   -- not ready yet

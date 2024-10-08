@@ -67,6 +67,7 @@ data Action
   | FeedLongRunningProcess [(Event, Relay)]
   | ShowNewNotes
   | SendReplyTo Event
+  | ClearWritingReply
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -90,7 +91,7 @@ data Model = Model
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,
-    threadOf :: (Maybe Event, Maybe Text), -- event and possible reply message
+    writeReplyTo :: Maybe Event, -- event to reply to
     history :: [Page],
     subscriptions ::
       Map.Map
