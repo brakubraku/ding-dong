@@ -14,21 +14,19 @@ cp ./*.css dist/
 cp ./*.svg dist/
 
 pushd ../
-cabal --with-compiler=wasm32-wasi-ghc  \
-      --with-hc-pkg=wasm32-wasi-ghc-pkg \
-      --with-hsc2hs=wasm32-wasi-hsc2hs \
-      --ghc-option=-L/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib \
-       build --allow-newer
+PKG_CONFIG_PATH=/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib/pkgconfig
+if command -v wasm32-wasi-cabal &>/dev/null; then
+    wasm32-wasi-cabal build --allow-newer
+else
+ echo "porked"
+    # cabal \
+    #     --with-compiler=wasm32-wasi-ghc \
+    #     --with-hc-pkg=wasm32-wasi-ghc-pkg \
+    #     --with-hsc2hs=wasm32-wasi-hsc2hs \
+    #     --ghc-option=-L/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib \
+    #     build ghc-wasm-miso-examples
+fi
 popd
-# if command -v wasm32-wasi-cabal &>/dev/null; then
-#     wasm32-wasi-cabal build ghc-wasm-miso-examples
-# else
-#     cabal \
-#         --with-compiler=wasm32-wasi-ghc \
-#         --with-hc-pkg=wasm32-wasi-ghc-pkg \
-#         --with-hsc2hs=wasm32-wasi-hsc2hs \
-#         build ghc-wasm-miso-examples
-# fi
 
 hs_wasm_path=$(find .. -name "*.wasm")
 
