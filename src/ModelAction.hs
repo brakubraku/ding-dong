@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module ModelAction where
 
@@ -24,6 +25,7 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.WebSocket
 import Optics
+import Optics.TH
 
 data Action
   = RelayConnected RelayURI
@@ -68,6 +70,7 @@ data Action
   | ShowNewNotes
   | SendReplyTo Event
   | ClearWritingReply
+  | AllLoaded
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -123,6 +126,8 @@ newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
 newtype Since = Since UTCTime
   deriving (Eq)
+
+
 
 newtype Until = Until UTCTime
   deriving (Eq)
@@ -234,3 +239,4 @@ getRepliesFor t eid = fromMaybe [] $
     pure replies
 
 
+makePrisms ''Since
