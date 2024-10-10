@@ -14,64 +14,87 @@ import Nostr.Network
 import Nostr.Profile
 import Nostr.RelayPool
 import Nostr.Request
+import BechUtils (decodeBech, extractProfileIds)
+import Data.Text
 
-savedContacts = catMaybes $ (\p -> decodeHex p >>= parseXOnlyPubKey) <$> pubKeys
+someContacts :: [XOnlyPubKey]
+someContacts = catMaybes $ (\p -> decodeHex p >>= parseXOnlyPubKey) <$> someKeys
+-- someContacts = extractProfileIds . catMaybes $ decodeBech <$> pubKeys
 
-pubKeys :: [String]
-pubKeys =
-  [ "02aaac8883e92694118f0043e57d8119b513ce0ae31b116c851c0e955195f30e",
+-- >>> Prelude.length someContacts
+-- 19
+
+someKeys :: [Text]
+someKeys =
+  [ "9ca0bd7450742d6a20319c0e3d4c679c9e046a9dc70e8ef55c2905e24052340b",
+    "8fb140b4e8ddef97ce4b821d247278a1a4353362623f64021484b372f948000c",
+    "668ceee55475f595ec0e8ef44c64bf9da8d9dd6008ac54dcd24b2501930b960e",
+    "e88a691e98d9987c964521dff60025f60700378a4879180dcbbb4a5027850411",
     "1bc70a0148b3f316da33fe3c89f23e3e71ac4ff998027ec712b905cd24f6a411",
-    "f66c55b57b987829e5a3c5c2df0aebc3279a56ce9d41ecbf312bd9b32f250612",
-    "6d0dddfbef0274c0b8ee587c1061323db75d50bd7933a70365e7483fd2a45016",
-    "75f457569d7027f819de92e8bb13795c0febe9750dc3fb1b5c42aeb502d0841d",
-    "8f72da02fbc80380cbd8b03533d5913b2a5c9fabc9c37cfdafc344ec335f5d21",
-    "5e653220e624e74c35387b8c26d3f35ffb955bf94235e1e7bc53b2569dd9bd21",
-    "c69205cdb39b8c3b8b953c1b6282a49c379b52c369452e5aee9c24ca0b58b32a",
-    "50fbd82a5221fd9a4a7c117a7ff47f4ec794e9a35b553fd6edc4bacb685d8131",
-    "3013f8b30d44d43506ae456b001881d311ce1bf69864dc74a0c3e16ec7aee832",
-    "1a3ab0a32fe5b7764b06c6aad6414ec3514ee1442fc1b8423d7818e9028bd933",
-    "6ad3e2a34818b153c81f48c58f44e5199e7b4fc8dbe37810a000dce3c90b7740",
-    "9b37d4a2a1cb24652dab5b0aab6b574276507133527a826ae7d20e1ef92d3d41",
-    "da27f5dd5068704a520a7dcd61bf004ce00596feb56849756845bb30bf00234c",
+    "a3eb29554bd27fca7f53f66272e4bb59d066f2f31708cf341540cb4729fbd841",
+    "a9b9525992a486aa16b3c1d3f9d3604bca08f3c15b712d70711b9aecd8c3dc44",
     "fa984bd7dbb282f07e16e7ae87b26a2a7b9b90b7246a44771f0cf5ae58018f52",
-    "1ae011cb34999af15602a2aa927f32bb92d65f6161ed71abdaa4f50c1257a556",
-    "e9d926146f72aa582bd0a84ede374b656d18b3287b2ce274abb12be062441057",
-    "8c667c46b4f20670a52cd5cc41b67f13410660fac78604c6006975453ba70f5b",
     "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-    "cbab7074a03bf89c7dd1623e42e65409e3918662af6c65fe2e38c92ff9f0bd61",
-    "d830ee7b7c30a364b1244b779afbb4f156733ffb8c87235086e26b0b4e61cd62",
-    "27154fb873badf69c3ea83a0da6e65d6a150d2bf8f7320fc3314248d74645c64",
-    "000000dd7a2e54c77a521237a516eefb1d41df39047a9c64882d05bc84c9d666",
-    "6b9da920c4b6ecbf2c12018a7a2d143b4dfdf9878c3beac69e39bb597841cc6e",
-    "f27c6a9d6e2e0e28115104508d097a04750b357a02c1a7e0ce5bb2fc54210470",
-    "14c0aae7882730fb0885723a82ec3010ed8ca46eb65f503d24e3dc3ddc45b472",
-    "f03df3d4134230420cdf7acbb35f96a2542424246ab052ba24c6fec6a4d4f676",
-    "59aa572a2b7d8569ce019a0a0dfa43251fdc2aa8947b0d69b5a5010789d8dd7a",
-    "eb2d6b7b9825a1b35b4cd22de54a90abade29d89542a906fd223d4e8cee3b484",
-    "be6fd25772d10b35df54c10e573fd3e383d2e8eaa4a0bddf0d5def578cb70897",
-    "76dd32f31619b8e35e9f32e015224b633a0df8be8d5613c25b8838a370407698",
-    "345f22270195358dc81564a3790c141df689e48ed8c946c6ce910f6f9fd18699",
-    "e56509901ced5e39282ae1748e1cf1477beed17f08495d2ad9bc3f7e60d7fb9b",
-    "e64c0224682106e49f0c3b67f59d3df9d3efa282c272173acd8ec291f6d5839e",
-    "4e050249d143dac893b8d072a328ac3eb9e14218e717a0e6965bb8a28d23d79f",
-    "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2",
-    "975b04dcfb3a72dc5bc64f52cf948b73e71e0cee328c956dc0c340796a8ef0a2",
-    "8eea02e8912085962a930b28beed2683a988614de9a339750ae0b3061e2c6db1",
-    "a3c488ec1906c556aef094f0c4fd8eeb79dd6909badd500a303234f26e33f6bd",
-    "c1831fbe2653f76164421d57db6cee38b8cef8ce6771bc65c12f8543de4b39bf",
-    "ddf3ee335bd27b9845547436e2202adadda4349f01827476d512091f5406d5cd",
-    "a80fc4a78634ee26aabcac951b4cfd7b56ae18babd33c5afdcf6bed6dc80ebd1",
-    "b9148b801147ea86609c4e555fe853b0ba8adbd491c6db75373a9260ae8609d2",
-    "f5d70542664e65719b55d8d6250b7d51cbbea7711412dbb524108682cbd7f0d4",
-    "dd2dbe6b8c09a4abb9eb18fa2ce174c3ebf311d2ce11251487a32bee477844d7",
-    "8c07e2316b9d8b5db37b554b3e2d58cc1dc5ff98d21a826dc4a6f895134127d8",
-    "ee772a9ec50f3c664ce3583a23d7f9e036d4e353f11a94b2d11113165d3dced8",
-    "e7bf8dad360828f0289b7b4bea1a1bd28eb6d4d6522fa17f957e0dfb839ef3db",
-    "0e6e0dab0d20d1033ef6f4f902024be3ef8948f1203c47e300b325e21b836ddc",
-    "382d893abf7bb83b09fa1e37cc6e71b27a4e46a3fea57463bffc8c812ee697e7",
-    "97ca76334c49ef77e3c7819a4b3ba42c9ce1bd4a7cbdfd35a6cefd532f1a4dec"
+    "deab79dafa1c2be4b4a6d3aca1357b6caa0b744bf46ad529a5ae464288579e68",
+    "433e80c14ff7b8e16e179ccec35f55833df7dd5a5a063d23117b4b01b6f97170",
+    "0a24b1e0d4ed9589a19714cbf0db25224529d1c7dca85866747e466548842275",
+    "9f006fa3597d3e30cf6824c555d20769db8c862077ed020756dde9a050714585",
+    "8a699686811889186df398c7253e8c4417ce73fe814edeae7ecd81dbde9536ac",
+    "604e96e099936a104883958b040b47672e0f048c98ac793f37ffe4c720279eb2",
+    "b8a9df8218084e490d888342a9d488b7cf0fb20b1a19b963becd68ed6ab5cbbd",
+    "04c915daefee38317fa734444acee390a8269fe5810b2241e5e6dd343dfbecc9",
+    "34651a9392d34bf9d064e39f3c10beef74b5e28e710c07324317b687c4abd7e8",
+    "c6f7077f1699d50cf92a9652bfebffac05fc6842b9ee391089d959b8ad5d48fd"
   ]
 
+pubKeys :: [Text]
+pubKeys = [
+  -- "npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s",
+  --   "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m",
+  --   "npub1j8y6tcdfw3q3f3h794s6un0gyc5742s0k5h5s2yqj0r70cpklqeqjavrvg",
+  --   "npub1csamkk8zu67zl9z4wkp90a462v53q775aqn5q6xzjdkxnkvcpd7srtz4x9",
+  --   "npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m",
+  --   "npub1qny3tkh0acurzla8x3zy4nhrjz5zd8l9sy9jys09umwng00manysew95gx",
+  --   "npub1dergggklka99wwrs92yz8wdjs952h2ux2ha2ed598ngwu9w7a6fsh9xzpc",
+  --   "npub1y24gz5gwucl79vtv4ctwpysl0r5m4xyzu2rgulnr44ks3t5mt92q4nz2ad",
+  --   "npub1z4m7gkva6yxgvdyclc7zp0vz4ta0s2d9jh8g83w03tp5vdf3kzdsxana6p",
+  --   "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6",
+  --   "npub18ams6ewn5aj2n3wt2qawzglx9mr4nzksxhvrdc4gzrecw7n5tvjqctp424",
+  --   "npub107jk7htfv243u0x5ynn43scq9wrxtaasmrwwa8lfu2ydwag6cx2quqncxg",
+  --   "npub1sn0wdenkukak0d9dfczzeacvhkrgz92ak56egt7vdgzn8pv2wfqqhrjdv9",
+  --   "npub1tvqc82mv8cezhax5r34n4muc2c4pgjz8kaye2smj032nngg52clq0rkrq4",
+  --   "npub1cj8znuztfqkvq89pl8hceph0svvvqk0qay6nydgk9uyq7fhpfsgsqwrz4u",
+  --   "npub1hu3hdctm5nkzd8gslnyedfr5ddz3z547jqcl5j88g4fame2jd08qh6h8nh",
+  --   "npub16vrkgd28wq6n0h77lqgu8h4fdu0eapxgyj0zqq6ngfvjf2vs3nuq5mp2va",
+  --   "npub1a2cww4kn9wqte4ry70vyfwqyqvpswksna27rtxd8vty6c74era8sdcw83a",
+  --   "npub1gcxzte5zlkncx26j68ez60fzkvtkm9e0vrwdcvsjakxf9mu9qewqlfnj5z",
+  --   "npub1cjw49ftnxene9wdxujz3tp7zspp0kf862cjud4nm3j2usag6eg2smwj2rh",
+  --   "npub1sqaxzwvh5fhgw9q3d7v658ucapvfeds3dcd2587fcwyesn7dnwuqt2r45v",
+  --   "npub1jt0x3vsnqtazzda3ewa8ykdch2t8k566qhrd9vyy0k0ntleu744q8h6q3n",
+  --   "npub17u5dneh8qjp43ecfxr6u5e9sjamsmxyuekrg2nlxrrk6nj9rsyrqywt4tp",
+  --   "npub1cn4t4cd78nm900qc2hhqte5aa8c9njm6qkfzw95tszufwcwtcnsq7g3vle",
+  --   "npub1hqaz3dlyuhfqhktqchawke39l92jj9nt30dsgh2zvd9z7dv3j3gqpkt56s",
+  --   "npub1clk6vc9xhjp8q5cws262wuf2eh4zuvwupft03hy4ttqqnm7e0jrq3upup9",
+  --   "npub1g53mukxnjkcmr94fhryzkqutdz2ukq4ks0gvy5af25rgmwsl4ngq43drvk",
+  --   "npub12rv5lskctqxxs2c8rf2zlzc7xx3qpvzs3w4etgemauy9thegr43sf485vg",
+  --   "npub1r0rs5q2gk0e3dk3nlc7gnu378ec6cnlenqp8a3cjhyzu6f8k5sgs4sq9ac",
+    "npub1v6xwae25wh6etmqw3m6yce9lnk5dnhtqpzk9fhxjfvjsryctjc8q2kxk5t",
+    "npub13pnmakf738yn6rv2ex9jgs7924renmderyp5d9rtztsr7ymxg3gqej06vw",
+    "npub1l2vyh47mk2p0qlsku7hg0vn29faehy9hy34ygaclpn66ukqp3afqutajft",
+    "npub14xu4ykvj5jr2594nc8fln5mqf09q3u7ptdcj6ur3rwdwekxrm3zq86428l",
+    "npub1504jj42t6flu5l6n7e389e9mt8gxduhnzuyv7dq4gr95w20mmpqscx0cg0",
+    "npub137c5pd8gmhhe0njtsgwjgunc5xjr2vmzvglkgqs5sjeh972gqqxqjak37w",
+    "npub13f5edp5przy3sm0nnrrj205vgstuuul7s98datn7ekqahh54x6kqufgvmt",
+    "npub1hz5alqscpp8yjrvgsdp2n4ygkl8slvstrgvmjca7e45w6644ew7sewtysa",
+    "npub1az9xj85cmxv8e9j9y80lvqp97crsqdu2fpu3srwthd99qfu9qsgstam8y8",
+    "npub1gvlgps2077uwzmshnn8vxh64sv7l0h26tgrr6gc30d9srdhew9cqxcnhgv",
+    -- "npub1tlgqfynfdyup4s4m8ge8yqpkm8ukxtfflv3dcxl4mra3e83x27vqrlj5tp",
+    "npub1nuqxlg6e05lrpnmgynz4t5s8d8dcep3qwlksyp6kmh56q5r3gkzssrnl5j",
+    "npub1q3sle0kvfsehgsuexttt3ugjd8xdklxfwwkh559wxckmzddywnws6cd26p",
+    "npub1m64hnkh6rs47fd9x6wk2zdtmdj4qkazt734d22d94ery9zzhne5qw9uaks",
+    "npub1pgjtrcx5ak2cngvhzn9lpke9yfzjn5w8mj59sen50erx2jyyyf6s4hqm7z"
+  ]
+  
 saveContacts :: [(XOnlyPubKey, Maybe Username)] -> NostrNetworkT ()
 saveContacts contacts = do
   (Keys sk xo _) <- asks keys
