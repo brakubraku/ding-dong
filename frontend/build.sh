@@ -14,7 +14,6 @@ cp ./*.css dist/
 cp ./*.svg dist/
 
 pushd ../
-PKG_CONFIG_PATH=/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib/pkgconfig
 if command -v wasm32-wasi-cabal &>/dev/null; then
     wasm32-wasi-cabal build --allow-newer
 else
