@@ -33,10 +33,3 @@ source-repository-package
     tag: f771c8010f001b87c5ccf9b61703b6912f7062d5
 
 allow-newer: all
-
-program-options
- if arch(wasm32)
-  ghc-options: -L/usr/lib64 -L/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib -lgmp
- else
-  ghc-options: -lgmp -L/usr/lib64 
- ld-options: -L/usr/lib64
