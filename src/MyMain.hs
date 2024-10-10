@@ -1153,7 +1153,7 @@ eventAge now e =
         | days > 0 = show days <> "d"
         | hours > 0 = show hours <> "h"
         | minutes > 0 = show minutes <> "m"
-        | otherwise = ""
+        | otherwise = "now"
         where
           days = s `div` (3600 * 24)
           hours = s `div` 3600
