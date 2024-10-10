@@ -612,10 +612,10 @@ updateContacts xos = do
   setLocalStorage "my-contacts" $ Set.toList xos
 
 loadContacts :: JSM [XOnlyPubKey]
-loadContacts = fromRight [] <$> getLocalStorage "my-contacts"
+loadContacts = fromRight defaultContacts <$> getLocalStorage "my-contacts"
 
--- loadContacts :: JSM [XOnlyPubKey]
--- loadContacts = pure someContacts
+defaultContacts :: [XOnlyPubKey]
+defaultContacts = someContacts
 
 secs :: Int -> Int
 secs = (* 1000000)
