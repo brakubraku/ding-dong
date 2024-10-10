@@ -3,8 +3,8 @@ packages:
 
 source-repository-package
     type: git
-    location: https://github.com/amesgen/miso
-    tag: 27dd5fc80be9d0a3b80a9ecc81ee3401bc610e01
+    location: https://github.com/brakubraku/miso
+    tag: ade623b9d7467961f827cd42c69aab503e605dd3
 
 source-repository-package
     type: git
