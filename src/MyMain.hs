@@ -501,6 +501,8 @@ updateModel nn rl pl action model =
             (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
             ( \signedEvt -> liftIO $ do
                 runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
+                -- it seems like it takes some time for relays to display the reply
+                -- so instead of requesting it back I add it manually here
                 sink $ RepliesRecvNoEmbedLoading [(signedEvt, localhost)]
                 sink ClearWritingReply
             )
