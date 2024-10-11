@@ -95,7 +95,7 @@
     flex: 6 0 0;
     overflow: hidden;
     padding-left: 5px;
-    padding-right: 5px;
+    padding-right: 15px;
     padding-top: 30px;
 }
 
@@ -444,4 +444,16 @@ textarea {
 .relays-grid {
     display: grid;
     grid-template-columns: auto auto auto auto;
+}
+
+.reply-icon {
+    cursor: pointer;
+    margin-left: 5px;
+    font-weight: bold;
+}
+.myprofile-edit input {
+    display: block;
+    padding: 5px;
+    margin-bottom: 5px;
+    width: 100%;
 }

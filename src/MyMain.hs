@@ -55,11 +55,15 @@ import PeriodicLoader
 import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
 import Utils
-import Contacts (someContacts)
+import Contacts
+-- import Miso.Svg.Event(onLoad)
+import Data.Default
+
+import Data.Aeson
 
 start :: JSM ()
 start = do
-  keys <- loadKeys
+  keys@(Keys _ me _) <- loadKeys
   contacts <- Set.fromList <$> loadContacts
   now <- liftIO getCurrentTime
   let relaysList =
@@ -100,6 +104,8 @@ start = do
           []
           Map.empty
           ""
+          def
+          me
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -122,8 +128,8 @@ updateModel nn rl pl action model =
       noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1
     HandleWebSocket (WebSocketClose r e) -> 
       noEff $ 
-        model & #relays % at  (r ^. #uri) % _Just % _3 %~ (+) 1
-              & #relays % at  (r ^. #uri) % _Just % _1 .~ False
+        model & #relays % at (r ^. #uri) % _Just % _3 %~ (+) 1
+              & #relays % at (r ^. #uri) % _Just % _1 .~ False
 
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
@@ -139,6 +145,7 @@ updateModel nn rl pl action model =
             runInNostr $ RP.waitForActiveConnections (secs 2)
             forkJSM $ startLoader nn rl ReceivedReactions sink
             forkJSM $ startLoader nn pl ReceivedProfiles sink
+            load pl [model ^. #me] -- fetch my profile
             forkJSM $ -- put actual time to model every 60 seconds
               let loop = do
                     now <- liftIO getCurrentTime
@@ -263,7 +270,7 @@ updateModel nn rl pl action model =
             model & pml % #since .~ Since newSince
        in effectSub newModel $ \sink -> do
             maybe
-              (liftIO . print $ "[ERROR] Empty filter in LoadMoreNotes")
+              (liftIO . print $ "[ERROR] EEempty filter in LoadMoreNotes")
               ( \filter ->
                   subscribe
                     nn
@@ -370,7 +377,11 @@ updateModel nn rl pl action model =
       let add p ps@(p1 : _) =
             bool (p : ps) ps (p1 == p)
           add p [] = [p]
+          profile = fst <$> model ^. #profiles % at (model ^. #me)
+          fillMyProfile m = m & #myProfile .~ fromMaybe def profile
+          isProfileEdit = page == MyProfilePage
        in noEff $ model & #page .~ page & #history %~ add page
+                        & bool id fillMyProfile isProfileEdit
     GoBack ->
       let updated = do
             (_, xs) <- uncons $ model ^. #history
@@ -409,6 +420,7 @@ updateModel nn rl pl action model =
               sink . SubscribeForEmbedded $ enotes
               sink $ SubscribeForEmbeddedReplies enotes screen
     UpdateField l v -> noEff $ model & l .~ v
+    UpdateMaybeField l v -> noEff $ model & l .~ v
     FindProfile ->
       let pagedFilter xos =
             \(Since s) (Until u) ->
@@ -496,7 +508,7 @@ updateModel nn rl pl action model =
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
           let reply = createReplyEvent e now xo $ model ^. #noteDraft
-              signed = signEvent reply key xo
+              signed = trace ("branko-reply-event-is: " <> show (encode reply)) $ signEvent reply key xo
           maybe
             (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
             ( \signedEvt -> liftIO $ do
@@ -509,13 +521,32 @@ updateModel nn rl pl action model =
             signed
       where 
         getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
-        -- it seems like it takes some time for relays to display the reply
-        -- so instead of requesting it back I add it manually here
         localhost = Relay "localhost" (RelayInfo False False) False
 
     ClearWritingReply -> 
        noEff $ model & #writeReplyTo .~ Nothing
                      & #noteDraft .~ ""
+    -- AllLoaded -> model <# do 
+    --              liftIO . print $ "AllLoaded now"
+    --              pure NoAction
+    SendUpdateProfile -> 
+      effectSub model $ \sink -> do
+          let Keys _ xo _ = keys $ nn
+          now <- liftIO getCurrentTime
+          key <- liftIO $ getSecKey xo
+          let updateEvent = setMetadata (model ^. #myProfile) xo now
+              signed = signEvent updateEvent key xo
+          maybe
+            (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
+            ( \signedEvt -> liftIO $ do
+                runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
+                -- TODO: update profile in #profiles if sending successfull
+                  -- TODO: extract this sign and send functionality and use it in SendReplyTo as well
+            )
+            signed
+      where 
+       getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
+    
     _ -> noEff model
   where
     -- Note: this only works correctly when subscription is AtEOS,
@@ -629,6 +660,7 @@ secs = (* 1000000)
 
 appView :: Model -> View Action
 appView m =
+  -- div_ [onLoad AllLoaded] $
   div_ [] $
     [ div_
         [ bool
@@ -846,7 +878,7 @@ displayNoteShort withEmbed m (e, content) =
               isThreadOf
           ]
       ]
-    replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "Reply"]
+    replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "↪"]
 
 displayPagedNote :: Model -> (Lens' Model PagedNotesModel) -> (Event, [Content]) -> View Action
 displayPagedNote m pml ec@(e,_) 
@@ -906,6 +938,7 @@ middlePanel m =
       ThreadPage e -> displayThread m e
       ProfilePage -> displayProfilePage m
       RelaysPage -> displayRelaysPage m
+      MyProfilePage -> displayMyProfilePage m
 
 rightPanel :: Model -> View Action
 rightPanel m = ul_ [class_ "right-panel"] errors
@@ -932,7 +965,8 @@ leftPanel m =
           -- pItem "Followers"
           pItem "Following" Following,
           aItem "Find Profile" (DisplayProfilePage Nothing),
-          pItem "Relays" RelaysPage
+          pItem "Relays" RelaysPage,
+          pItem "My Profile" MyProfilePage
           -- pItem "Bookmarks"
         ],
       div_
@@ -1088,6 +1122,36 @@ displayProfilePage m =
   where
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+
+displayMyProfilePage :: Model -> View Action
+displayMyProfilePage m =
+  div_
+    [class_ "myprofile-edit"]
+    [ input_
+        [ class_ "input-username",
+          placeholder_ "Enter Username",
+          value_ $ m ^. #myProfile % #username,
+          type_ "text",
+          onInput $ UpdateField (#myProfile % #username)
+        ],
+      input_
+        [ class_ "input-about",
+          placeholder_ "Enter About",
+          value_ . fromMaybe "" $ m ^. #myProfile % #about,
+          type_ "text",
+          onInput $ UpdateMaybeField (#myProfile % #about) . Just
+        ], 
+      input_
+        [ class_ "input-about",
+          placeholder_ "Enter profile pic URL",
+          value_ . fromMaybe "" $ m ^. #myProfile % #picture,
+          type_ "text",
+          onInput $ UpdateMaybeField (#myProfile % #picture) . Just
+        ],
+      button_
+          [class_ "update-profile-button", onClick SendUpdateProfile]
+          [text "Update"]
+    ]
 
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =

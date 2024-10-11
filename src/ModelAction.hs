@@ -4,7 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE TemplateHaskell #-}
+-- {-# LANGUAGE TemplateHaskell #-}
 
 module ModelAction where
 
@@ -50,7 +50,8 @@ data Action
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
-  | UpdateField (Lens' Model Text) Text
+  | UpdateField (Lens' Model Text) Text                      -- TODO: see below
+  | UpdateMaybeField (Lens' Model (Maybe Text)) (Maybe Text) -- don't know how to fiddle the type signatures to merge these two
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
   | DisplayProfilePage (Maybe XOnlyPubKey)
@@ -71,6 +72,7 @@ data Action
   | SendReplyTo Event
   | ClearWritingReply
   | AllLoaded
+  | SendUpdateProfile
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -81,6 +83,7 @@ data Page
   | ThreadPage Event
   | ProfilePage
   | RelaysPage
+  | MyProfilePage 
   deriving (Show, Eq, Generic, Ord)
 
 data Model = Model
@@ -104,7 +107,9 @@ data Model = Model
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay),
-    noteDraft :: Text
+    noteDraft :: Text,
+    myProfile :: Profile,
+    me :: XOnlyPubKey
   }
   deriving (Eq, Generic)
 
@@ -239,4 +244,4 @@ getRepliesFor t eid = fromMaybe [] $
     pure replies
 
 
-makePrisms ''Since
+-- makePrisms ''Since
