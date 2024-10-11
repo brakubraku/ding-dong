@@ -426,8 +426,10 @@ createReplyEvent replyTo now xo replyMsg =
         addTag e $ ETag eid Nothing (Just Reply)
       addRootTag rid e = 
         addTag e $ ETag rid Nothing (Just Root)
-   in reply & 
-       (maybe 
-          (addRootTag (replyTo ^. #eventId))
-          (\rid -> addRootTag rid . addReplyToEidTag (replyTo ^. #eventId))
-        $ rootEid)
+      tagAuthor e = 
+        addTag e $ PTag (ValidXOnlyPubKey $ replyTo ^. #pubKey) Nothing Nothing
+   in reply & tagAuthor
+            & (maybe 
+                (addRootTag (replyTo ^. #eventId))
+                (\rid -> addRootTag rid . addReplyToEidTag (replyTo ^. #eventId))
+              $ rootEid)
