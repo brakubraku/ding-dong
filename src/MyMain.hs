@@ -285,10 +285,10 @@ updateModel nn rl pl action model =
           nn
           PeriodicUntilEOS
           [anytimeF $ LinkedEvents eids]
-          EmbeddedRepliesRecv
+          RepliesRecvNoEmbedLoading 
           (Just $ SubState page)
           getEventRelayEither
-    EmbeddedRepliesRecv es ->
+    RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
     SubscribeForEmbedded [] ->
@@ -491,21 +491,26 @@ updateModel nn rl pl action model =
       model <# do
         liftIO (print what) >> pure NoAction
     SendReplyTo e -> 
-        model <# do
+        effectSub model $ \sink -> do
           let Keys _ xo _ = keys $ nn
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
           let reply = createReplyEvent e now xo $ model ^. #noteDraft
               signed = signEvent reply key xo
           maybe
-            (pure $ ReportError "Failed sending response: Signing event failed")
-            ( \signedEvt -> do
-                liftIO . runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
-                pure ClearWritingReply
+            (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
+            ( \signedEvt -> liftIO $ do
+                runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
+                sink $ RepliesRecvNoEmbedLoading [(signedEvt, localhost)]
+                sink ClearWritingReply
             )
             signed
       where 
         getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
+        -- it seems like it takes some time for relays to display the reply
+        -- so instead of requesting it back I add it manually here
+        localhost = Relay "localhost" (RelayInfo False False) False
+
     ClearWritingReply -> 
        noEff $ model & #writeReplyTo .~ Nothing
                      & #noteDraft .~ ""

@@ -424,8 +424,10 @@ createReplyEvent replyTo now xo replyMsg =
       addTag e tag = e & #tags' %~ \ts -> tag : ts
       addReplyToEidTag eid e = 
         addTag e $ ETag eid Nothing (Just Reply)
-      addRootTag mrid e = 
-        maybe e (\rid -> addTag e $ ETag rid Nothing (Just Root)) mrid
-   in addReplyToEidTag (replyTo ^. #eventId)
-        . addRootTag rootEid
-        $ reply
+      addRootTag rid e = 
+        addTag e $ ETag rid Nothing (Just Root)
+   in reply & 
+       (maybe 
+          (addRootTag (replyTo ^. #eventId))
+          (\rid -> addRootTag rid . addReplyToEidTag (replyTo ^. #eventId))
+        $ rootEid)

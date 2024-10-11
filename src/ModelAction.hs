@@ -63,7 +63,7 @@ data Action
   | LogConsole String
   | ScrollTo Text
   | SubscribeForEmbeddedReplies [EventId] Page
-  | EmbeddedRepliesRecv [(Event, Relay)]
+  | RepliesRecvNoEmbedLoading [(Event, Relay)]
   | ReportError Text
   | StartFeedLongRunning [DatedFilter]
   | FeedLongRunningProcess [(Event, Relay)]
