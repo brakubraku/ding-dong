@@ -21,25 +21,32 @@ import Nostr.Filter
 import Nostr.Log
 import Nostr.Network
 import Nostr.Relay
-import Nostr.Request hiding (subId)
+import Nostr.Request 
 import Nostr.Response
 import Optics
 import System.Entropy
 import Nostr.Event
 
-changeStateForAllSubs :: Relay -> (Maybe RelaySubState -> Maybe RelaySubState) -> NostrNetworkT ()
-changeStateForAllSubs relay change = do
-  network <- ask
-  allSubs <- Map.keys <$> (liftIO . readMVar) (network ^. #subscriptions)
-  mapM_ (\sid -> changeState sid relay change) allSubs
+changeStateForAllSubs ::
+  Relay ->
+  (Maybe RelaySubState -> Maybe RelaySubState) ->
+  NostrNetworkT ()
+changeStateForAllSubs r change = do
+  nn <- ask
+  allSubs <- Map.keys <$> (liftIO . readMVar) (nn ^. #subscriptions)
+  mapM_ (\sid -> changeState sid r change) allSubs
 
-changeState :: SubscriptionId -> Relay -> (Maybe RelaySubState -> Maybe RelaySubState) -> NostrNetworkT ()
-changeState subId relay change = do
-  network <- ask
-  lift . modifyMVar_ (network ^. #subscriptions) $ \subs -> do
+changeState ::
+  SubscriptionId ->
+  Relay ->
+  (Maybe RelaySubState -> Maybe RelaySubState) ->
+  NostrNetworkT ()
+changeState sid relay change = do
+  nn <- ask
+  lift . modifyMVar_ (nn ^. #subscriptions) $ \subs -> do
     let updated =
           subs
-            & at subId
+            & at sid
             % _Just
             % #relaysState
             % at relay
@@ -47,10 +54,10 @@ changeState subId relay change = do
     pure updated
 
 addRelay :: Relay -> NostrNetworkT [Relay]
-addRelay relay = do
+addRelay r = do
   nn <- ask
   lift . modifyMVar (nn ^. #relays) $ \rels -> do
-    let updated = rels & at (relay ^. #uri) .~ Just relay
+    let updated = rels & at (r ^. #uri) .~ Just r
     pure (updated, Map.elems updated)
 
 removeRelay :: Relay -> NostrNetworkT [Relay]
@@ -60,60 +67,67 @@ removeRelay relay = do
     let updated = Map.delete (relay ^. #uri) rels
     pure (updated, Map.elems updated)
 
-saveRelays :: [Relay] -> IO ()
-saveRelays relays = do
-  LazyBytes.writeFile "relays.ft" $ encode relays
-  putStrLn "Relays saved to disk"
-
-subscribe :: TChan (Response, Relay) -> [DatedFilter] -> NostrNetworkT SubscriptionId
-subscribe responseChannel filters = do
-  subId <- lift generateSubId
-  registerResponseChannel subId responseChannel
+subscribe ::
+  TChan (Response, Relay) ->
+  [DatedFilter] ->
+  NostrNetworkT SubscriptionId
+subscribe rch filters = do
+  sid <- lift generate
+  registerResponseChannel sid rch
   lift . logDebug $ "Subscribing for filters: " <> (pack . show) filters
-  send . Subscribe . Subscription filters $ subId
-  return subId
+  send . Subscribe . Subscription filters $ sid
+  pure sid
   where
-    generateSubId = B16.extractBase16 . B16.encodeBase16 <$> getEntropy 6
+    generate =
+      B16.extractBase16
+        . B16.encodeBase16
+        <$> getEntropy 6
 
-    registerResponseChannel :: SubscriptionId -> TChan (Response, Relay) -> NostrNetworkT ()
-    registerResponseChannel subId responseChannel = do
+    registerResponseChannel ::
+      SubscriptionId ->
+      TChan (Response, Relay) ->
+      NostrNetworkT ()
+    registerResponseChannel sid rch = do
       network <- ask
       -- set subscription state to Running for all relays
-      rels <- filter (\r -> r ^. #connected) . Map.elems <$> (liftIO . readMVar) (network ^. #relays)
+      rels <-
+        filter (\r -> r ^. #connected)
+          . Map.elems
+          <$> (liftIO . readMVar) (network ^. #relays)
       let subsRunning = Map.fromList . zip rels $ (repeat Running)
       lift . modifyMVar_ (network ^. #subscriptions) $
-        pure . Map.insert subId (SubscriptionState subsRunning responseChannel)
+        pure . Map.insert sid (SubscriptionState subsRunning rch)
 
 subscribeForFilter ::
   [DatedFilter] ->
   -- TODO: return readonly response channel
   NostrNetworkT (TChan (Response, Relay), SubscriptionId)
 subscribeForFilter fs = do
-  responseCh <- lift . atomically $ newTChan
-  subId <- subscribe responseCh fs
-  pure (responseCh, subId)
+  rch <- lift . atomically $ newTChan
+  sid <- subscribe rch fs
+  pure (rch, sid)
 
 unsubscribe :: SubscriptionId -> NostrNetworkT ()
-unsubscribe subId = do
-  network <- ask
-  send $ Close subId
-  lift . modifyMVar_ (network ^. #subscriptions) $
-    \subs -> pure $ Map.delete subId subs
+unsubscribe sid = do
+  nn <- ask
+  send $ Close sid
+  lift . modifyMVar_ (nn ^. #subscriptions) $
+    \subs -> pure $ Map.delete sid subs
 
 send :: Request -> NostrNetworkT ()
 send request@(Subscribe sub) = do
-  when (isUnbounded sub) $
-      lift . logWarning $ "Unbounded subscription:" <> show sub
+  when isUnbounded $
+    lift . putStrLn $
+      "Warning: " <> "Unbounded subscription:" <> show sub
   send' request
   where
-    isUnbounded sub = not (any isAnytime (filters sub))
-    logWarning text = putStrLn $ "Warning: " <> text
+    isUnbounded = not (any isAnytime (filters sub))
 send request = send' request
 
 send' :: Request -> NostrNetworkT ()
 send' request = do
-  network <- ask
-  lift . atomically . writeTChan (network ^. #requestCh) $ request
+  nn <- ask
+  lift . atomically . writeTChan (nn ^. #requestCh) $ request
 
 sendEvent :: Event -> NostrNetworkT ()
 sendEvent e = 
@@ -121,8 +135,13 @@ sendEvent e =
 
 waitForActiveConnections :: Int -> NostrNetworkT ()
 waitForActiveConnections timeout = do
-  network <- ask
-  relays' <- lift . readMVar $ (network ^. #relays)
-  unless (all connected relays' || timeout <= 0) $ do
+  nn <- ask
+  rels <- lift . readMVar $ (nn ^. #relays)
+  unless (all connected rels || timeout <= 0) $ do
     lift . threadDelay $ 100000
     waitForActiveConnections (timeout - 100000)
+
+saveRelays :: [Relay] -> IO ()
+saveRelays rels = do
+  LazyBytes.writeFile "relays.ft" $ encode rels
+  putStrLn "Relays saved to disk"
