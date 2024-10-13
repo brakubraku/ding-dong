@@ -18,18 +18,28 @@ data Response
   = EventReceived SubscriptionId Event
   | Notice Text
   | EOSE SubscriptionId
+  | OK EventId Bool (Maybe Text)
   deriving (Eq, Show)
 
 instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
     type' <- parseJSON $ arr V.! 0
-    param <- parseJSON $ arr V.! 1
     case type' of
       String "EVENT" -> do
         event <- parseJSON $ arr V.! 2
-        return $ EventReceived param event
-      String "NOTICE" -> return $ Notice param
-      String "EOSE" -> return $ EOSE param
+        subid <- parseJSON $ arr V.! 1
+        pure $ EventReceived subid event
+      String "NOTICE" -> do 
+        subid <- parseJSON $ arr V.! 1
+        pure $ Notice subid
+      String "EOSE" -> do 
+        subid <- parseJSON $ arr V.! 1
+        pure $ EOSE subid
+      String "OK" -> do 
+        eid <- parseJSON $ arr V.! 1
+        isSuccess <- parseJSON $ arr V.! 2
+        failureReason <- parseJSON $ arr V.! 3
+        pure $ OK eid isSuccess failureReason
       _ ->
         mzero
 

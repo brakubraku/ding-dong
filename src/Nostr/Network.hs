@@ -24,12 +24,17 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.Response hiding (EOSE)
 import Optics
+import Nostr.Event
+import Data.Time
 
 data SubscriptionState = SubscriptionState
   { relaysState :: Map Relay RelaySubState,
     responseCh :: TChan (Response, Relay)
   }
   deriving (Generic, Eq)
+
+data RequestResult = ResultUnknown | ResultSuccess | ResultError Text
+  deriving Eq
 
 printState :: SubscriptionState -> Text
 printState ss =
@@ -39,6 +44,7 @@ printState ss =
 data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
     subscriptions :: MVar (Map SubscriptionId SubscriptionState),
+    requestResults :: MVar (Map EventId ((Map Relay RequestResult), UTCTime)),
     requestCh :: TChan Request,
     keys :: Keys
   }
@@ -73,6 +79,7 @@ ratioOfFinished sid ss = fromMaybe 1 $ do
 initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
 initNetwork relays keys = do
   relays <- newMVar . fromList . zip relays $ (newRelay <$> relays)
+  requestResults <- newMVar Map.empty
   requestCh <- atomically newTChan
   subscriptions <- newMVar Map.empty
   pure NostrNetwork {..}
@@ -84,3 +91,33 @@ initNetwork relays keys = do
           connected = False,
           info = RelayInfo True True
         }
+
+getResults :: EventId -> NostrNetworkT (Maybe (Map Relay RequestResult, UTCTime))
+getResults eid = do
+  nn <- ask
+  reqs <- liftIO $ readMVar $ nn ^. #requestResults
+  pure $ reqs ^. at eid
+
+checkResult :: Map Relay RequestResult -> Float
+checkResult results = do
+      let r = Map.toList results
+      let (ok, other) = partition ((== ResultSuccess) . snd) r
+      let (unknown, error) = partition ((== ResultUnknown) . snd) other
+      let length = toInteger . Prelude.length
+          ratio =
+            int2Float (fromInteger . length $ ok)
+              / int2Float (fromInteger . length $ unknown)
+      ratio
+
+setResultSuccess :: EventId -> Relay -> NostrNetworkT ()
+setResultSuccess = setResult ResultSuccess
+
+setResultError :: Text -> EventId -> Relay -> NostrNetworkT ()
+setResultError er = setResult (ResultError er)
+
+setResult :: RequestResult -> EventId -> Relay -> NostrNetworkT ()
+setResult res eid r = do 
+  nn <- ask
+  liftIO $ modifyMVar_ (nn ^. #requestResults) $ 
+    \rr -> do 
+      pure $ rr & at eid % _Just % _1 % at r ?~ res

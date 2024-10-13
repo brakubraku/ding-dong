@@ -26,6 +26,7 @@ import Nostr.Response
 import Optics
 import System.Entropy
 import Nostr.Event
+import Data.DateTime
 
 changeStateForAllSubs ::
   Relay ->
@@ -130,7 +131,15 @@ send' request = do
   lift . atomically . writeTChan (nn ^. #requestCh) $ request
 
 sendEvent :: Event -> NostrNetworkT ()
-sendEvent e = 
+sendEvent e = do
+  nn <- ask 
+  now <- liftIO getCurrentTime
+  rels <- Map.elems <$> liftIO (readMVar $ nn ^. #relays)
+  -- when sending an event, set request results as unknown for all connected relays
+  liftIO $ modifyMVar_ (nn ^. #requestResults) $ 
+    \rr -> do
+      let cr = filter (view #connected) rels 
+      pure $ rr & at (e ^. #eventId) ?~ (Map.fromList (zip cr (repeat ResultUnknown)), now)
   send . SendEvent $ e
 
 waitForActiveConnections :: Int -> NostrNetworkT ()

@@ -113,6 +113,10 @@ connectRelays nn sendMsg sink = do
 
           Just (Nostr.Response.EOSE subId) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
+          Just (Nostr.Response.OK eid True _) -> do
+            liftIO . flip runReaderT nn $ setResultSuccess eid relay
+          Just (Nostr.Response.OK eid False reason) -> do
+            liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
           _ -> do 
                liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
                liftIO . sink . sendMsg $ (WebSocketError relay $ "Could not decode answer booyatch")

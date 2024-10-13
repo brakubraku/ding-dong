@@ -502,26 +502,18 @@ updateModel nn rl pl action model =
     LogConsole what ->
       model <# do
         liftIO (print what) >> pure NoAction
-    SendReplyTo e -> 
-        effectSub model $ \sink -> do
-          let Keys _ xo _ = keys $ nn
-          now <- liftIO getCurrentTime
-          key <- liftIO $ getSecKey xo
-          let reply = createReplyEvent e now xo $ model ^. #noteDraft
-              signed = trace ("branko-reply-event-is: " <> show (encode reply)) $ signEvent reply key xo
-          maybe
-            (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
-            ( \signedEvt -> liftIO $ do
-                runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
-                -- it seems like it takes some time for relays to display the reply
-                -- so instead of requesting it back I add it manually here
-                sink $ RepliesRecvNoEmbedLoading [(signedEvt, localhost)]
-                sink ClearWritingReply
-            )
-            signed
-      where 
-        getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
-        localhost = Relay "localhost" (RelayInfo False False) False
+    SendReplyTo e -> do
+        let replyEventF = 
+             \t -> createReplyEvent e t (model ^. #me) 
+               $ model ^. #noteDraft
+            localhost = Relay "localhost" (RelayInfo False False) False
+            successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
+                const ClearWritingReply]
+        signAndSend 
+              replyEventF 
+              successActs
+              (singleton . const . ReportError $ "Failed sending reply!")
+
 
     ClearWritingReply -> 
        noEff $ model & #writeReplyTo .~ Nothing
@@ -529,26 +521,58 @@ updateModel nn rl pl action model =
     -- AllLoaded -> model <# do 
     --              liftIO . print $ "AllLoaded now"
     --              pure NoAction
-    SendUpdateProfile -> 
+    SendUpdateProfile -> do
+            let me = model ^. #me
+            let newProfileF = \now -> setMetadata (model ^. #myProfile) me now
+            signAndSend 
+              newProfileF 
+              (singleton . const . DisplayProfilePage $ Just me) 
+              (singleton . const . ReportError $ "Failed updating profile!")
+            -- TODO: update profile in #profiles if sending successfull
+    _ -> noEff model
+  where
+    signAndSend ueF successActs failureActs = 
       effectSub model $ \sink -> do
-          let Keys _ xo _ = keys $ nn
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
-          let updateEvent = setMetadata (model ^. #myProfile) xo now
-              signed = signEvent updateEvent key xo
+          let Keys _ xo _ = keys $ nn
+              signed = signEvent (ueF now) key xo
           maybe
-            (liftIO . sink $ ReportError "Failed sending response: Signing event failed")
-            ( \signedEvt -> liftIO $ do
-                runNostr nn $ RP.sendEvent (trace ("branko-signed:" <> show signedEvt) signedEvt)
-                -- TODO: update profile in #profiles if sending successfull
-                  -- TODO: extract this sign and send functionality and use it in SendReplyTo as well
+            (liftIO . sink $ ReportError "Failed sending: Event signing failed")
+            ( \se -> liftIO $ do
+                isSuccess <- runNostr nn $ sendAndWait se (Seconds 1)
+                bool 
+                  (sequence_ ((\f -> sink (f se)) <$> failureActs)) 
+                  (sequence_ ((\f -> sink (f se)) <$> successActs))
+                  isSuccess
             )
             signed
       where 
        getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
-    
-    _ -> noEff model
-  where
+
+    sendAndWait e (Seconds timeout) =
+      do
+        let signed = e
+            eid = e ^. #eventId
+        RP.sendEvent signed
+        let loop =
+              do
+                now <- liftIO getCurrentTime
+                results <- getResults eid
+                case results of
+                  Just (res, start) ->
+                    case ( checkResult res > 0.5,
+                           (realToFrac $ diffUTCTime now start) > timeout -- TODO: arbitary 0.5
+                         ) of
+                      (True, _) -> pure True
+                      (False, True) -> pure False
+                      (False, False) -> do 
+                        liftIO $ sleep (Seconds 0.1) 
+                        loop
+                  Nothing -> pure False
+        loop
+
+
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.

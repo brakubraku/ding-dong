@@ -31,7 +31,7 @@ import Optics
 import ModelAction (SubState (..))
 import Data.Bool (bool)
 import Debug.Trace
-
+import Utils
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -43,12 +43,6 @@ import Debug.Trace
 
 data SubType = PeriodicUntilEOS | PeriodicForever | AllAtEOS
   deriving (Eq)
-
-newtype Seconds = Seconds
-  { getSeconds :: Float
-  }
-  deriving (Eq, Generic)
-  deriving newtype (Num, Ord)
 
 -- how often to poll for responses
 period :: Seconds
