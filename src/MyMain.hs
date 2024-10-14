@@ -991,6 +991,14 @@ leftPanel m =
           pItem "My Profile" MyProfilePage
           -- pItem "Bookmarks"
         ],
+      div_ [class_ "logged-in-profile"] $
+        [div_ [] [text "logged in as: "],
+         div_ [] [text . (<> "...") . T.take 20 . fromMaybe "" . encodeBechXo $ m ^. #me]]
+          ++ ( fromMaybe [] $
+                 m ^. #profiles % at (m ^. #me)
+                   >>= \(p, _) ->
+                     pure $ [ div_ [] [text . T.pack . show $ p ^. #username]]
+             ),
       div_
         [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
         [backArrow]

@@ -271,7 +271,7 @@
 
 .profile-page .banner-pic-default {
     height: 200px;
-    background-color: rgba(218, 86, 26, 0.664);
+    background-color: rgba(74, 76, 169, 0.66)
 }
 
 .profile-page .profile-about {
@@ -429,12 +429,6 @@
     display:flex
 }
 
-/* .responseto-icon {
-  display: flex;
-  justify-content: flex-end;
-  flex-direction: column;
-} */
-
 .responseto-icon {
     width: 18px;
     top: 40px;
@@ -442,7 +436,7 @@
     border-left: 2px solid black;
     left: 24px;
     border-top: 2px solid black;
-    margin-right: 30px;
+    margin-right: 24px;
     margin-bottom: 40px;
 }
 
@@ -478,4 +472,13 @@
 
 body {
     background:gray
+}
+
+.logged-in-profile {
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-top:20px;
 }
