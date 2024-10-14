@@ -56,10 +56,7 @@ import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
 import Utils
 import Contacts
--- import Miso.Svg.Event(onLoad)
 import Data.Default
-
-import Data.Aeson
 
 start :: JSM ()
 start = do
@@ -125,12 +122,12 @@ updateModel nn rl pl action model =
     HandleWebSocket (WebSocketOpen r) -> 
       noEff $ model & #relays % at (r ^. #uri) % _Just % _1 .~ True
     HandleWebSocket (WebSocketError r e) -> 
-      noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1
+      -- TODO: this causes a lot of view regeneration
+      noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1 
     HandleWebSocket (WebSocketClose r e) -> 
       noEff $ 
         model & #relays % at (r ^. #uri) % _Just % _3 %~ (+) 1
               & #relays % at (r ^. #uri) % _Just % _1 .~ False
-
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
        in noEff $
@@ -150,7 +147,7 @@ updateModel nn rl pl action model =
               let loop = do
                     now <- liftIO getCurrentTime
                     liftIO . sink . ActualTime $ now
-                    liftIO . threadDelay . secs $ 2
+                    liftIO . threadDelay . secs $ 60
                     loop
                in loop
 
@@ -195,8 +192,7 @@ updateModel nn rl pl action model =
           Nothing
           getEventRelayEither
     FeedLongRunningProcess rs ->
-      let filterOutReplies = filter (not . isReply . fst) -- TODO: ignoring deletes
-          update er@(e, r) m =
+      let update er@(e, r) m =
             case ( e `elem` (fst <$> (m ^. #feedNew)),
                    e ^. #kind,
                    isJust $ m ^. #fromRelays % at e
@@ -211,8 +207,7 @@ updateModel nn rl pl action model =
        in noEff updated
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
-       in trace ("branko-new-notes:" <> show (model ^. #feedNew)) $
-            batchEff updated [pure $ PagedNotesProcess True #feed FeedPage (model ^. #feedNew)]
+       in batchEff updated [pure $ PagedNotesProcess True #feed FeedPage (model ^. #feedNew)]
     PagedNotesProcess putAtStart pml screen rs ->
       let (allNotes, enotes, eprofs) = processReceivedNotes rs
           plm = flip O.view model . (%) pml
@@ -298,8 +293,6 @@ updateModel nn rl pl action model =
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
-    SubscribeForEmbedded [] ->
-      noEff model
     SubscribeForParentsOf _ _ [] -> 
       noEff model
     SubscribeForParentsOf pml screen replies -> 
@@ -335,6 +328,8 @@ updateModel nn rl pl action model =
               sink $ SubscribeForReplies (eventId <$> events)
               sink $ SubscribeForEmbeddedReplies enotes screen
               sink $ SubscribeForEmbedded enotes
+    SubscribeForEmbedded [] ->
+      noEff model
     SubscribeForEmbedded eids ->
       effectSub model $
         subscribe
@@ -550,6 +545,7 @@ updateModel nn rl pl action model =
       where 
        getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
 
+    sendAndWait :: Event -> Seconds -> ReaderT NostrNetwork IO Bool
     sendAndWait e (Seconds timeout) =
       do
         let signed = e
@@ -576,6 +572,7 @@ updateModel nn rl pl action model =
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.
+    processReceivedNotes :: [(Event, Relay)] -> ([(Event, [Content])], [EventId], [XOnlyPubKey])
     processReceivedNotes rs =
       let evts =
             Set.toList . Set.fromList $ fst <$> rs -- fromList, toList, to eliminate duplicates
