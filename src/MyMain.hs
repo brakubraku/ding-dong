@@ -741,9 +741,7 @@ followingView m@Model {..} =
     displayProfile (xo, p) =
       div_
         [class_ "profile"]
-        [ button_
-            [class_ "unfollow-button", onClick (Unfollow xo)]
-            [text "Unfollow"],
+        [ 
           div_
             [class_ "pic-container"]
             [displayProfilePic xo $ p ^. #picture],
@@ -1052,7 +1050,8 @@ displayProfile m xo =
                     [class_ "follow-button-container"]
                     [ if isJust $ m ^. #contacts % at xo
                         then
-                          span_ [class_ "follow-button"] [text "Following"]
+                          div_ [] [span_ [class_ "follow-button"] [text "Following"],
+                          button_ [class_ "unfollow-button", onClick (Unfollow xo)] [text "Unfollow"]]
                         else
                           button_
                             [class_ "follow-button", onClick (Follow xo)]
