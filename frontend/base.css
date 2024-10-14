@@ -12,7 +12,14 @@
 
 .note-container {
     display: flex;
-    flex: 8 0 0
+    flex: 8 0 0;
+
+    background: #d3d3d3a3;;
+    border-radius: 15px;
+    padding-left: 10px;
+    margin-bottom:10px;
+    border: 1px solid black;
+    overflow:scroll;
 }
 
 .note-content {
@@ -22,7 +29,7 @@
 .text-note-container {
     flex: 10 0 0;
     text-align: left;
-    border-bottom: 1px solid #e1e1e1;
+    /* border-bottom: 1px solid #e1e1e1; */
     overflow: scroll;
     display: flex;
     flex-direction: column;
@@ -88,7 +95,12 @@
 }
 
 .left-panel-item {
-    width: 100px;
+    /* width: 100px; */
+    color: #951b95;
+    font-size: 20px;
+    text-align: center;
+    font-weight: bold;
+    cursor: pointer;
 }
 
 .middle-panel {
@@ -285,7 +297,8 @@
 .input-xo {
     width: 100%;
     border: none;
-    border-bottom: 2px solid gray
+    border-bottom: 2px solid black;
+    background-color: gray;
 }
 
 .link-pic {
@@ -315,8 +328,10 @@
     cursor: pointer;
     border: none;
     border-radius: 50%;
-    background: burlywood;
+    /* background: burlywood; */
     padding: 5px;
+    font-size:20px;
+    font-weight:bold;
 }
 
 .load-previous-container {
@@ -329,8 +344,10 @@
     cursor: pointer;
     border: none;
     border-radius: 50%;
-    background: burlywood;
+    /* background: burlywood; */
     padding: 5px;
+    font-size:20px;
+    font-weight:bold;
 }
 
 .embedded-profile {
@@ -422,21 +439,21 @@
     width: 18px;
     top: 40px;
     position: relative;
-    border-left: 2px solid grey;
+    border-left: 2px solid black;
     left: 24px;
-    border-top: 2px solid grey;
+    border-top: 2px solid black;
     margin-right: 30px;
-    margin-bottom: 28px;
+    margin-bottom: 40px;
 }
 
-textarea {
+.reply-text-area {
     width: 100%;
     height: 150px;
     padding: 12px 20px;
     box-sizing: border-box;
-    border: 2px solid #ccc;
+    border: 2px solid black;
     border-radius: 4px;
-    background-color: #f8f8f8;
+    background-color: lightgray;
     font-size: 16px;
     resize: none;
 }
@@ -456,4 +473,9 @@ textarea {
     padding: 5px;
     margin-bottom: 5px;
     width: 100%;
+    background-color: lightgray;
+}
+
+body {
+    background:gray
 }

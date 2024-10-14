@@ -1001,11 +1001,11 @@ leftPanel m =
     pItem label page =
       div_
         [class_ "left-panel-item"]
-        [button_ [onClick (GoPage page)] [text label]]
+        [div_ [onClick (GoPage page)] [text label]]
     aItem label action =
       div_
         [class_ "left-panel-item"]
-        [button_ [onClick action] [text label]]
+        [div_ [onClick action] [text label]]
     showBack = (> 1) . length $ m ^. #history
     backArrow = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: T.Text)]
 
