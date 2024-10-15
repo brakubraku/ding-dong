@@ -990,7 +990,7 @@ leftPanel m =
         ],
       div_ [class_ "logged-in-profile"] $
         [div_ [] [text "logged in as: "],
-         div_ [] [text . (<> "...") . T.take 20 . fromMaybe "" . encodeBechXo $ m ^. #me]]
+         div_ [class_ "my-npub", onClick . DisplayProfilePage . Just $ (m ^. #me) ] [text . (<> "...") . T.take 20 . fromMaybe "" . encodeBechXo $ m ^. #me]]
           ++ ( fromMaybe [] $
                  m ^. #profiles % at (m ^. #me)
                    >>= \(p, _) ->

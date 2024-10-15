@@ -482,3 +482,7 @@ body {
     align-items: center;
     margin-top:20px;
 }
+
+.my-npub {
+    cursor: pointer;
+}
