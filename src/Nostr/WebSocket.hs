@@ -135,10 +135,10 @@ connectRelays nn sendMsg sink = do
             let diff = (round $ diffUTCTime now lastReconnect)
             case (recnt > 3, diff > 1) of -- TODO: take time into account?
               (True,_) -> do 
-                liftIO . threadDelay $ 10 ^ 6 * 5 -- wait 5 secs to reconnect 
+                liftIO . sleep . Seconds $ 5
                 conRelay (0,now) relay 
               (False, _) -> do 
-                liftIO . threadDelay $ (10 ^ 5) * 5  -- wait 1/2 sec to reconnect 
+                liftIO . sleep . Seconds $ 0.5 
                 conRelay (recnt+1,now) relay 
 
       WS.addEventListener socket "error" $ \v -> do
@@ -166,7 +166,7 @@ connectRelays nn sendMsg sink = do
               case status of
                 0 -> do
                   -- not ready yet
-                  liftIO . threadDelay $ 10 ^ 5
+                  liftIO . sleep . Seconds $ 0.1
                   doLoop
                 1 -> do
                   -- ready

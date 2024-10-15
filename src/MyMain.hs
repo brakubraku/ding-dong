@@ -147,7 +147,7 @@ updateModel nn rl pl action model =
               let loop = do
                     now <- liftIO getCurrentTime
                     liftIO . sink . ActualTime $ now
-                    liftIO . threadDelay . secs $ 60
+                    liftIO . sleep . Seconds $ 60
                     loop
                in loop
 
@@ -159,7 +159,7 @@ updateModel nn rl pl action model =
                       subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
                       -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
                       print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
-                    liftIO . threadDelay . secs $ 5
+                    liftIO . sleep . Seconds $ 5
                     loop
                in loop
             -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink

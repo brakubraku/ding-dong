@@ -147,7 +147,7 @@ waitForActiveConnections timeout = do
   nn <- ask
   rels <- lift . readMVar $ (nn ^. #relays)
   unless (all connected rels || timeout <= 0) $ do
-    lift . threadDelay $ 100000
+    lift . sleep . Seconds $ 0.5
     waitForActiveConnections (timeout - 100000)
 
 saveRelays :: [Relay] -> IO ()

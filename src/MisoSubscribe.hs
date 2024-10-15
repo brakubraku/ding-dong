@@ -95,7 +95,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         let reportFinished = liftIO $ reportSubState True actOnSubState subId subStates
         let continue = do
               reportRunning 
-              liftIO . threadDelay . toMicro $ period
+              liftIO $ sleep period
               collectResponses
         case subType of
           AllAtEOS -> do

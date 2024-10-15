@@ -48,8 +48,7 @@ startLoader ::
   ([e] -> action) ->
   Sub action
 startLoader nn pl act sink =
-  let toMicro s = round $ getSeconds s * 10^6
-      loop = do
+  let loop = do
         toLoad <- liftIO $ modifyMVar (pl ^. #buffers) $ \b -> do
           let toLoad =
                 (b ^. #loading)
@@ -69,7 +68,7 @@ startLoader nn pl act sink =
             Nothing
             (pl ^. #extract)
             sink
-        liftIO . threadDelay . toMicro $ pl ^. #period
+        liftIO . sleep $ pl ^. #period
         loop
   in traceM "starting loader" >> loop
 
