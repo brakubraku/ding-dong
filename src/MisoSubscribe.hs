@@ -60,8 +60,7 @@ acceptableRatio :: Float
 acceptableRatio = 7 / 10
 
 toMicro :: Seconds -> Int
-toMicro (Seconds s) = float2Int $ s * fromInteger (10 ^ 6)
-
+toMicro s = round $ getSeconds s * fromInteger (10 ^ 6)
 
 data SubData = SubData
   { msgsRecvd :: Int,
@@ -72,7 +71,6 @@ data SubData = SubData
   }
   deriving (Eq, Generic)
 
--- TODO: add timeout to *AtEOS subscriptions
 subscribe ::
   NostrNetwork ->
   SubType ->
@@ -172,3 +170,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
     addMessages ms = do
       sd <- get
       put $ sd & #msgs %~ (<> ms)
+
+    -- don't want Num instance
+    subtract (Seconds s1) (Seconds s2) = Seconds (s2-s1)

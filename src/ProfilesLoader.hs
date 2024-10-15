@@ -15,13 +15,14 @@ import MyCrypto
 import Nostr.Profile
 import Data.Time.Clock
 import qualified Data.Set as S
+import Utils
 
 createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, UTCTime, Relay))
 createProfilesLoader = do
   buffers <- newMVar $ LoaderData S.empty S.empty
   let createFilter = \xos -> [DatedFilter (MetadataFilter xos) Nothing Nothing] -- TODO: Nothing Nothing
       extract = extractProfile
-      period = 300 -- every 300 miliseconds
+      period = Seconds 0.2 
   pure $ PeriodicLoader {..}
 
 extractProfile :: (Response, Relay) -> Either Text (XOnlyPubKey, Profile, UTCTime, Relay)

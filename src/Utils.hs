@@ -13,7 +13,7 @@ newtype Seconds = Seconds
   { getSeconds :: Float
   }
   deriving (Eq, Generic)
-  deriving newtype (Num, Ord)
+  deriving newtype (Ord)
 
 sleep :: Seconds -> IO () 
 sleep (Seconds s) = threadDelay . round $  s * 10^6

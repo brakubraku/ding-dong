@@ -20,10 +20,11 @@ import Optics
 import Miso (forkJSM, JSM)
 import Data.Text
 import Debug.Trace
+import Utils
 
 data LoaderData id = LoaderData
   { loading :: Set id,
-     loaded :: Set id
+    loaded :: Set id
   }
   deriving (Generic)
 
@@ -31,7 +32,7 @@ data PeriodicLoader id e = PeriodicLoader
   { buffers :: MVar (LoaderData id),
     createFilter :: [id] -> [DatedFilter],
     extract :: (Response, Relay) -> Either Text e,
-    period :: Int -- mili seconds
+    period :: Seconds 
   }
   deriving (Generic)
 
@@ -47,7 +48,7 @@ startLoader ::
   ([e] -> action) ->
   Sub action
 startLoader nn pl act sink =
-  let miliseconds mi = mi * 1000 -- convert miliseconds to microseconds
+  let toMicro s = round $ getSeconds s * 10^6
       loop = do
         toLoad <- liftIO $ modifyMVar (pl ^. #buffers) $ \b -> do
           let toLoad =
@@ -68,7 +69,7 @@ startLoader nn pl act sink =
             Nothing
             (pl ^. #extract)
             sink
-        liftIO . threadDelay . miliseconds $ pl ^. #period
+        liftIO . threadDelay . toMicro $ pl ^. #period
         loop
   in traceM "starting loader" >> loop
 
