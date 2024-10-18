@@ -458,7 +458,7 @@
 
 .relays-grid {
     display: grid;
-    grid-template-columns: auto auto auto auto auto; /* 5 columns */
+    grid-template-columns: auto auto auto auto auto auto; /* 6 columns */
 }
 
 .reply-icon {
@@ -502,4 +502,12 @@ body {
 
 .relay-disconnected {
     color:#ee1f1f
+}
+
+.relay-active {
+    background-color: #15ee15;
+}
+
+.relay-inactive {
+    background-color: #ee1f1f;
 }
