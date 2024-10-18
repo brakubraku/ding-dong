@@ -57,7 +57,7 @@ import ReactionsLoader (createReactionsLoader)
 import Utils
 import Contacts
 import Data.Default
-import StoredRelay (active, relay, loadRelays, saveRelays)
+import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
 
 start :: JSM ()
@@ -135,6 +135,22 @@ updateModel nn rl pl action model =
             traversed 
             % unsafeFiltered (\r -> r ^. #relay % #uri == uri) 
             %~ O.set #active isActive
+      in model <# do 
+          saveRelays updated
+          pure $ UpdatedRelaysList updated
+    AddRelay -> 
+      let uri = model ^. #relaysPage % #relay
+          nsr = newActiveRelay . newRelay $ uri
+          updated = 
+            nsr : filter 
+              (\sr -> sr ^. #relay % #uri /= uri) 
+              (model ^. #relaysList)
+      in 
+        model <# do 
+          saveRelays updated 
+          pure $ UpdatedRelaysList updated
+    RemoveRelay r -> 
+      let updated = filter (\sr -> sr ^. #relay % #uri /= r) $ model ^. #relaysList
       in model <# do 
           saveRelays updated
           pure $ UpdatedRelaysList updated
@@ -1217,13 +1233,15 @@ displayRelaysPage m =
     displayRelay (r, (isConnected, ErrorCount errCnt, CloseCount closeCnt)) =
       let isActive = headDef False $ m ^.. #relaysList % folded % filtered (\sr -> sr ^. #relay % #uri == r) % #active
       in 
-      [ div_ [class_ "relay"] [text r],
+      [ div_ [class_ ("relay-" <> bool "inactive" "active" isActive)] [text r],
         div_ [class_ ("relay-" <> bool "disconnected" "connected" isConnected)] [text $ bool "No" "Yes" isConnected],
         div_ [class_ "relay-error-count"] [text . T.pack . show $ errCnt],
         div_ [class_ "relay-close-count"] [text . T.pack . show $ closeCnt],
         div_ [class_ "relay-action"] 
          [div_ [onClick $ bool (ChangeRelayActive r True) (ChangeRelayActive r False) isActive] 
-               [text (bool "activate" "deactivate" isActive)]]
+               [text (bool "Activate" "Deactivate" isActive)]],
+        div_ [class_ "relay-action"]
+         [div_ [class_ (bool "visible" "invisible" isActive), onClick (RemoveRelay r)] [text "Remove"] ]
       ]
     
     active = Map.keys $ m ^. #relaysStats
@@ -1240,21 +1258,23 @@ displayRelaysPage m =
         div_ [] [text "Connected"],
         div_ [] [text "Errors count"],
         div_ [] [text "Close count"],
-        div_ [] [] -- disconnect/remove
+        div_ [] [], -- activate/deactivate
+        div_ [] [] -- remove
       ]
     inputRelay =
-      input_
-        [ class_ "input-relay",
-          class_
-            $ bool
-              "incorrect"
-              "correct"
-            $ validateUrl (m ^. #relaysPage % #relay),
-          -- value_ npub,
-          type_ "text",
-          onInput $ UpdateField (#relaysPage % #relay),
-          onEnter $ AddRelay
-        ]
+      div_ [] [
+        input_
+          [ class_ "input-relay",
+            class_
+              $ bool
+                "incorrect"
+                "correct"
+              $ validateUrl (m ^. #relaysPage % #relay),
+            value_ (m ^. #relaysPage % #relay),
+            type_ "text",
+            onInput $ UpdateField (#relaysPage % #relay)
+          ], 
+        button_ [onClick AddRelay] [text "Add relay"]]
     validateUrl _ = True -- TODO
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)

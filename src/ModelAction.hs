@@ -76,6 +76,7 @@ data Action
   | SendUpdateProfile
   | ChangeRelayActive Text Bool
   | UpdatedRelaysList [StoredRelay]
+  | RemoveRelay Text
   | Reload 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
@@ -143,8 +144,6 @@ newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
 newtype Since = Since UTCTime
   deriving (Eq)
-
-
 
 newtype Until = Until UTCTime
   deriving (Eq)
