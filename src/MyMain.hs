@@ -535,11 +535,12 @@ updateModel nn rl pl action model =
           maybe
             (liftIO . sink $ ReportError "Failed sending: Event signing failed")
             ( \se -> liftIO $ do
-                isSuccess <- runNostr nn $ sendAndWait se (Seconds 1)
-                bool 
-                  (sequence_ ((\f -> sink (f se)) <$> failureActs)) 
-                  (sequence_ ((\f -> sink (f se)) <$> successActs))
-                  isSuccess
+                isSuccess <- runInNostr $ sendAndWait se (Seconds 1)
+                sequence_ . fmap (\f -> sink (f se)) 
+                  $ bool 
+                     failureActs 
+                     successActs
+                     isSuccess
             )
             signed
       where 
