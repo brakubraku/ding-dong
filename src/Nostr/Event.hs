@@ -316,43 +316,17 @@ deleteEvents eids reason xo t =
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
-getReplyEventId :: Event -> Maybe EventId
-getReplyEventId = getMarkerEventId Reply
+newEvent :: Text -> XOnlyPubKey -> UTCTime -> Event
+newEvent c pk t = Event {
+  eventId = EventId "0",
+  pubKey = pk,
+  created_at = t,
+  kind = TextNote,
+  tags = [],
+  content = c,
+  sig = Bip340Sig "0"
+}
 
-getRootEventId :: Event -> Maybe EventId
-getRootEventId = getMarkerEventId Root
-
-getMarkerEventId :: Marker -> Event -> Maybe EventId
-getMarkerEventId m e =
-  if null replyList
-    then Nothing
-    else Just $ extractEventId $ head replyList
-  where
-    replyFilter :: Marker -> Tag -> Bool
-    replyFilter m (ETag _ _ (Just m')) = m == m'
-    replyFilter m _ = False
-
-    replyList = filter (replyFilter m) $ tags e
-
-    extractEventId :: Tag -> EventId
-    extractEventId (ETag eid _ _) = eid
-    extractEventId _ = error "Could not extract event id from reply or root tag"
-
-getParentId :: ReceivedEvent -> Maybe EventId
-getParentId event =
-  let eTags = filter isEtag . tags . fst $ event
-      replyTag = do
-        (ETag eid _ _) <- find isReplyTag eTags
-        pure eid
-   in case replyTag of
-        Just _ -> replyTag -- if found reply tag than this is the parent
-        Nothing -> do
-          -- else see if you find a root tag
-          (ETag eid _ _) <- find isRootTag eTags
-          pure eid
-  where
-    isRootTag (ETag _ _ (Just Root)) = True
-    isRootTag _ = False
 
 isReplyTag :: Tag -> Bool
 isReplyTag (ETag _ _ (Just Reply)) = True

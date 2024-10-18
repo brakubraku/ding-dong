@@ -1091,7 +1091,9 @@ displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
       isWriteReply = Just e == m ^. #writeReplyTo
-      parentDisplay = do
+      ep = newEvent "<Parent event not found on connected relays>" (m ^. #me) (m ^. #now) 
+      parentNotFound = div_ [class_ "parent-not-found"] [displayNote m (ep, processContent ep)]
+      parentDisplay = maybe  (bool Nothing (Just parentNotFound) $ isReply e) Just $ do
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
         parent <- thread ^. #events % at parentId
