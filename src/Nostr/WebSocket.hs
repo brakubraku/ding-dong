@@ -165,7 +165,7 @@ connectRelays nn sendMsg sink = do
             liftIO . print $ "branko-subId-websocket-error:" <> show d
             liftIO . sink . sendMsg $ (WebSocketError relay d)
 
-      rc <- liftIO . atomically . cloneTChan $ (nn ^. #requestCh)
+      rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
       -- listen for requests to send
       let doLoop =
             do
