@@ -142,13 +142,13 @@ sendEvent e = do
       pure $ rr & at (e ^. #eventId) ?~ (Map.fromList (zip cr (repeat ResultUnknown)), now)
   send . SendEvent $ e
 
-waitForActiveConnections :: Int -> NostrNetworkT ()
-waitForActiveConnections timeout = do
+waitForActiveConnections :: Seconds -> NostrNetworkT ()
+waitForActiveConnections (Seconds timeout) = do
   nn <- ask
   rels <- lift . readMVar $ (nn ^. #relays)
   unless (all connected rels || timeout <= 0) $ do
     lift . sleep . Seconds $ 0.5
-    waitForActiveConnections (timeout - 100000)
+    waitForActiveConnections $ Seconds (timeout - 0.5)
 
 saveRelays :: [Relay] -> IO ()
 saveRelays rels = do

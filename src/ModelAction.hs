@@ -26,6 +26,7 @@ import Nostr.Request
 import Nostr.WebSocket
 import Optics
 import Optics.TH
+import StoredRelay
 
 data Action
   = RelayConnected RelayURI
@@ -73,6 +74,9 @@ data Action
   | ClearWritingReply
   | AllLoaded
   | SendUpdateProfile
+  | ChangeRelayActive Text Bool
+  | UpdatedRelaysList [StoredRelay]
+  | Reload 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -85,6 +89,13 @@ data Page
   | RelaysPage
   | MyProfilePage 
   deriving (Show, Eq, Generic, Ord)
+
+newtype ErrorCount = ErrorCount Int 
+--  deriving newtype (Num, Eq)
+  deriving Eq
+newtype CloseCount = CloseCount Int 
+--  deriving newtype (Num, Eq)
+  deriving Eq
 
 data Model = Model
   { feed :: PagedNotesModel,
@@ -103,13 +114,14 @@ data Model = Model
       Map.Map
         Page
         [(SubscriptionId, SubState)],
-    relays :: Map.Map Text (Bool, Int, Int), 
+    relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay),
     noteDraft :: Text,
     myProfile :: Profile,
-    me :: XOnlyPubKey
+    me :: XOnlyPubKey,
+    relaysList :: [StoredRelay]
   }
   deriving (Eq, Generic)
 

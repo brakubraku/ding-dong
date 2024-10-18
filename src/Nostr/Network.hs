@@ -76,14 +76,15 @@ ratioOfFinished sid ss = fromMaybe 1 $ do
           / int2Float (fromInteger . length $ running ++ eose) -- TODO: wtf
   pure ratio
 
-initNetwork :: [RelayURI] -> Keys -> IO NostrNetwork
-initNetwork relays keys = do
-  relays <- newMVar . fromList . zip relays $ (newRelay <$> relays)
+initNetwork :: [Relay] -> Keys -> IO NostrNetwork
+initNetwork rels keys = do
+  relays <- newMVar . fromList . zip (view #uri <$> rels) 
+    $ rels & traversed % #connected .~ False
   requestResults <- newMVar Map.empty
   requestCh <- atomically newTChan
   subscriptions <- newMVar Map.empty
   pure NostrNetwork {..}
-  where
+
     newRelay :: RelayURI -> Relay
     newRelay ru =
       Relay

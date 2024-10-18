@@ -8,6 +8,7 @@ module Utils where
 import Miso
 import GHC.Generics
 import Control.Concurrent
+import Language.Javascript.JSaddle
 
 newtype Seconds = Seconds
   { getSeconds :: Float
@@ -27,3 +28,10 @@ loadingBar = rawHtml $
   \</div>\
 \</div>"
 
+reloadPage :: JSM ()
+reloadPage = do
+  _ <- getLocation # ("reload" :: String) $ ()
+  pure ()
+
+getLocation :: JSM JSVal
+getLocation = jsg ("window" :: String) ! ("location" :: String)

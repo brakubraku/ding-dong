@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
+-- {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -57,25 +57,20 @@ import ReactionsLoader (createReactionsLoader)
 import Utils
 import Contacts
 import Data.Default
+import StoredRelay (active, relay, loadRelays, saveRelays)
+import Data.List.Extra (headDef)
 
 start :: JSM ()
 start = do
   keys@(Keys _ me _) <- loadKeys
   contacts <- Set.fromList <$> loadContacts
   now <- liftIO getCurrentTime
-  let relaysList =
-        [ "wss://relay.nostrdice.com",
-          "wss://lunchbox.sandwich.farm",
-          "wss://relay.nostr.net",
-          "wss://polnostr.xyz",
-          "wss://relay.damus.io",
-          "wss://nostr.at",
-          "wss://ch.purplerelay.com"
-        ]
+  relaysList <- loadRelays
+  let activeRelays = relay <$> filter active relaysList
   nn <-
     liftIO $
       initNetwork
-        relaysList
+        activeRelays  
         keys
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
@@ -96,13 +91,14 @@ start = do
           Nothing
           [FeedPage]
           Map.empty
-          (Map.fromList ((\r -> (r,(False,0,0))) <$> relaysList))
+          (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           Map.empty
           []
           Map.empty
           ""
           def
           me
+          relaysList
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -120,26 +116,38 @@ updateModel ::
 updateModel nn rl pl action model =
   case action of
     HandleWebSocket (WebSocketOpen r) -> 
-      noEff $ model & #relays % at (r ^. #uri) % _Just % _1 .~ True
+      noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
     HandleWebSocket (WebSocketError r e) -> 
       -- TODO: this causes a lot of view regeneration
-      noEff $ model & #relays % at  (r ^. #uri) % _Just % _2 %~ (+) 1 
+      noEff $ model & #relaysStats % at  (r ^. #uri) % _Just % _2 %~ \(ErrorCount ec) -> ErrorCount (ec+1)
     HandleWebSocket (WebSocketClose r e) -> 
       noEff $ 
-        model & #relays % at (r ^. #uri) % _Just % _3 %~ (+) 1
-              & #relays % at (r ^. #uri) % _Just % _1 .~ False
+        model & #relaysStats % at (r ^. #uri) % _Just % _3 %~ (\(CloseCount cc) -> CloseCount (cc+1))
+              & #relaysStats % at (r ^. #uri) % _Just % _1 .~ False
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
        in noEff $
             model & #errors %~ addError er
+    UpdatedRelaysList rl -> 
+      noEff $ model & #relaysList .~ rl
+    ChangeRelayActive uri isActive -> 
+      let updated = (model ^. #relaysList) &
+            traversed 
+            % unsafeFiltered (\r -> r ^. #relay % #uri == uri) 
+            %~ O.set #active isActive
+      in model <# do 
+          saveRelays updated
+          pure $ UpdatedRelaysList updated
+    Reload -> 
+      model <# do 
+        reloadPage >> pure NoAction
     StartAction ->
       effectSub
         model
         $ \sink ->
           do
-            let runInNostr = liftIO . flip runReaderT nn
             -- wait for connections to relays having been established
-            runInNostr $ RP.waitForActiveConnections (secs 2)
+            liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
             forkJSM $ startLoader nn rl ReceivedReactions sink
             forkJSM $ startLoader nn pl ReceivedProfiles sink
             load pl [model ^. #me] -- fetch my profile
@@ -569,7 +577,6 @@ updateModel nn rl pl action model =
                   Nothing -> pure False
         loop
 
-
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.
@@ -622,6 +629,8 @@ updateModel nn rl pl action model =
               (ts & at reid ?~ updatedWithRelay, eids, xos)
             Nothing ->
               (ts & at reid ?~ updatedWithRelayAndEvent, enotes ++ eids, eprofs ++ xos)
+
+    runInNostr = runNostr nn
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
@@ -676,9 +685,6 @@ loadContacts = fromRight defaultContacts <$> getLocalStorage "my-contacts"
 
 defaultContacts :: [XOnlyPubKey]
 defaultContacts = someContacts
-
-secs :: Int -> Int
-secs = (* 1000000)
 
 appView :: Model -> View Action
 appView m =
@@ -1198,28 +1204,43 @@ displayMyProfilePage m =
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =
   div_ [class_ "relays-page"] $
-    [info, relaysGrid, inputRelay]
+    [info, relaysGrid, reloadInfo, inputRelay]
   
   where
     info = div_ [class_ "relay-info"] [text $ "Remove relays which time out to improve loading speed"]
     
-    displayRelay (r, (isConnected, errCnt, closeCnt)) =
+    reloadInfo =
+      div_
+        [class_ "relay_info"]
+        [button_ [onClick Reload] [text "Reload"], span_ [] [text " for changes to take effect"]]
+
+    displayRelay (r, (isConnected, ErrorCount errCnt, CloseCount closeCnt)) =
+      let isActive = headDef False $ m ^.. #relaysList % folded % filtered (\sr -> sr ^. #relay % #uri == r) % #active
+      in 
       [ div_ [class_ "relay"] [text r],
-        div_ [class_ "relay-connected"] [text $ bool "No" "Yes" isConnected],
+        div_ [class_ ("relay-" <> bool "disconnected" "connected" isConnected)] [text $ bool "No" "Yes" isConnected],
         div_ [class_ "relay-error-count"] [text . T.pack . show $ errCnt],
-        div_ [class_ "relay-close-count"] [text . T.pack . show $ closeCnt]
+        div_ [class_ "relay-close-count"] [text . T.pack . show $ closeCnt],
+        div_ [class_ "relay-action"] 
+         [div_ [onClick $ bool (ChangeRelayActive r True) (ChangeRelayActive r False) isActive] 
+               [text (bool "activate" "deactivate" isActive)]]
       ]
     
+    active = Map.keys $ m ^. #relaysStats
+    inactive = m ^.. #relaysList % folded % filtered (\sr -> not . elem (sr ^. #relay % #uri) $ active)
+    inactiveStats = (\sr -> (sr ^. #relay % #uri, (False, ErrorCount 0, CloseCount 0))) <$> inactive
+
     relaysGrid =
       div_ [class_ "relays-grid"] $
         gridHeader
-          ++ concat (displayRelay <$> (Map.toList $ m ^. #relays))
+          ++ concat (displayRelay <$> ((Map.toList $ m ^. #relaysStats) ++ inactiveStats))
     
     gridHeader =
       [ div_ [] [text "Relay"],
         div_ [] [text "Connected"],
         div_ [] [text "Errors count"],
-        div_ [] [text "Close count"]
+        div_ [] [text "Close count"],
+        div_ [] [] -- disconnect/remove
       ]
     inputRelay =
       input_

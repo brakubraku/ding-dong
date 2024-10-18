@@ -13,7 +13,6 @@ import Data.Text (Text)
 import GHC.Exts (fromList)
 import GHC.Generics
 
-
 data RelayInfo = RelayInfo
   { readable  :: Bool
   , writable  :: Bool
@@ -57,9 +56,6 @@ instance ToJSON Relay where
     , ( "info", toJSON $ info r)
     ]
     
-relayName :: Relay -> Text
-relayName = uri 
-
 -- extractScheme :: Relay -> Text
 -- extractScheme r = URI.unRText scheme
 --   where
@@ -89,8 +85,3 @@ relayName = uri
 --   where
 --     uri' = uri r
 
-sameRelay :: Relay -> Relay -> Bool
-sameRelay r r' = uri r == uri r'
-
-removeRelayFromList :: [Relay] -> Relay -> [Relay]
-removeRelayFromList relayList relay = filter (\r' -> not $ relay `sameRelay` r') relayList

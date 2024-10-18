@@ -429,6 +429,10 @@
     display:flex
 }
 
+.parent-not-found {
+    border: 1px solid red;
+}
+
 .responseto-icon {
     width: 18px;
     top: 40px;
@@ -454,7 +458,7 @@
 
 .relays-grid {
     display: grid;
-    grid-template-columns: auto auto auto auto;
+    grid-template-columns: auto auto auto auto auto; /* 5 columns */
 }
 
 .reply-icon {
@@ -462,6 +466,7 @@
     margin-left: 5px;
     font-weight: bold;
 }
+
 .myprofile-edit input {
     display: block;
     padding: 5px;
@@ -471,7 +476,7 @@
 }
 
 body {
-    background:gray
+    background:gray;
 }
 
 .logged-in-profile {
@@ -485,4 +490,16 @@ body {
 
 .my-npub {
     cursor: pointer;
+}
+
+.relay-action {
+    cursor: pointer;
+}
+
+.relay-connected {
+    color: #15ee15
+}
+
+.relay-disconnected {
+    color:#ee1f1f
 }
