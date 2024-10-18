@@ -264,8 +264,9 @@ verifyThis eid pubKey signature = do
 
 verifySignature :: Event -> Bool
 verifySignature e =
-  case msg $ getEventId $ eventId e of
-    Just m -> verifyBip340 (pubKey e) m (sig e)
+  case msg . getEventId . eventId $ e of
+    -- Just m -> validateEventId e && verifyBip340 (pubKey e) m (sig e)
+    Just m -> verifyBip340 (pubKey e) m $ sig e
     Nothing -> False
 
 textNote :: Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent

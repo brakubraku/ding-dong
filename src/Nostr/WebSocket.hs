@@ -94,6 +94,13 @@ connectRelays nn sendMsg sink = do
         case resp of
           Just (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
+            case (verifySignature event) of
+              False -> 
+                liftIO
+                  . logRelayError relay
+                  . pack
+                  $ "Failed signature verification of eventId=" <> show event
+              True -> 
             case Map.lookup subId subs of
               Just subscription -> do
                 liftIO $
