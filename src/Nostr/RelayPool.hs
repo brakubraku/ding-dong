@@ -94,7 +94,7 @@ subscribe rch filters = do
       rels <-
         filter (\r -> r ^. #connected)
           . Map.elems
-          <$> (liftIO . readMVar) (network ^. #relays)
+          <$> (liftIO . readMVar $ network ^. #relays)
       let subsRunning = Map.fromList . zip rels $ (repeat Running)
       lift . modifyMVar_ (network ^. #subscriptions) $
         pure . Map.insert sid (SubscriptionState subsRunning rch)

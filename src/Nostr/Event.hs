@@ -52,7 +52,7 @@ data Tag
   | PTag UnknownXOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
   | RTag Text (Maybe ReadWrite)
   | NonceTag
-  | UnknownTag String
+  | UnknownTag Array
   deriving (Eq, Show, Ord)
 
 data Event = Event
@@ -150,9 +150,9 @@ instance FromJSON Tag where
           String "r" ->
             RTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2)
           _ ->
-            return . UnknownTag $ show v
-    | otherwise = return . UnknownTag $ show v
-  parseJSON v = return . UnknownTag $ show v
+            return . UnknownTag $ v
+    | otherwise = return . UnknownTag $  v
+  parseJSON _ = fail "DingyDongy: Unexpected format for Tag"
 
 instance ToJSON Tag where
   toJSON (ETag eventId Nothing Nothing) =
@@ -196,6 +196,7 @@ instance ToJSON Tag where
           maybe (String "") (\r -> String r) relayURL,
           maybe (String "") (\n -> String n) name
         ]
+  toJSON (UnknownTag v) = Array v
   toJSON _ =
     -- @todo implement nonce tag
     Array $ fromList []
@@ -225,7 +226,8 @@ exportEventId i = unpack . B16.extractBase16 . B16.encodeBase16 $ getEventId i
 
 signEvent :: UnsignedEvent -> SecKey -> XOnlyPubKey -> Maybe Event
 signEvent u sk xo = do
-  signature <- signBip340 sk . fromJust . msg . getEventId $ eid
+  eidMsg <- msg . getEventId $ eid
+  signature <- signBip340 sk eidMsg
   pure
     Event
       { eventId = eid,
@@ -237,7 +239,8 @@ signEvent u sk xo = do
         sig = signature
       }
   where
-    eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
+    eid = EventId . SHA256.hash . toStrict . encode $ u
+
 
 validateEventId :: Event -> Bool
 validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)

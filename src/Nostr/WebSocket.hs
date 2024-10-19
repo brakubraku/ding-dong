@@ -138,7 +138,8 @@ connectRelays nn sendMsg sink = do
         _ <- liftIO . swapMVar socketState $ status
         now <- liftIO getCurrentTime
         when (status == 3) $
-          unless (code == CLOSE_NORMAL) $ do
+          unless (code == CLOSE_NORMAL || code == CLOSE_NO_STATUS) $ do
+            liftIO . print $ show now <> ":xxy-reconnecting " <> show relay
             let diff = (round $ diffUTCTime now lastReconnect)
             case (recnt > 3, diff > 1) of -- TODO: take time into account?
               (True,_) -> do 
@@ -187,8 +188,9 @@ connectRelays nn sendMsg sink = do
                   let changeToError st
                         | st /= Nostr.Network.EOSE = Nostr.Network.Error "Error" -- TODO: more descriptive error
                         | otherwise = st
-                  liftIO . runReaderT (changeStateForAllSubs relay (fmap changeToError)) $ nn
+                  liftIO . runNostr nn $ changeStateForAllSubs relay (fmap changeToError)
       doLoop
+      WS.close socket
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
 sendJson' socket m = do
