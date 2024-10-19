@@ -94,7 +94,7 @@ connectRelays nn sendMsg sink = do
         case resp of
           Just (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
-            case (verifySignature event) of
+            case (verifySignature event) of -- TODO: verify hash of event as well
               False -> 
                 liftIO
                   . logRelayError relay
