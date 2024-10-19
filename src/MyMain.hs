@@ -834,7 +834,12 @@ displayProfilePic xo (Just pic) =
       prop "src" $ pic,
       onClick $ DisplayProfilePage (Just xo)
     ]
-displayProfilePic _ _ = div_ [class_ "profile-pic"] []
+displayProfilePic xo _ = 
+  div_
+    [ class_ "profile-pic",
+      onClick $ DisplayProfilePage (Just xo)
+    ]
+    []
 
 displayNoteContent :: Bool -> Model -> [Content] -> View Action
 displayNoteContent withEmbed m content =
