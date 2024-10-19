@@ -53,6 +53,8 @@ import Nostr.Response
 import Optics
 import Prelude hiding (map)
 import Data.Time
+import Nostr.Event (verifySignature)
+import Utils
 
 data WebSocketAction = 
   WebSocketOpen Relay | 
@@ -101,22 +103,22 @@ connectRelays nn sendMsg sink = do
                   . pack
                   $ "Failed signature verification of eventId=" <> show event
               True -> 
-            case Map.lookup subId subs of
-              Just subscription -> do
-                liftIO $
-                  atomically $
-                    writeTChan
-                      (subscription ^. #responseCh)
-                      (EventReceived subId event, relay)
-              Nothing -> do
-                liftIO
-                  . logRelayError relay
-                  . pack
-                  $ "SubId="
-                    <> show subId
-                    <> " not found in responseChannels. Event received="
-                    <> show event
-                liftIO . sink . sendMsg . WebSocketError relay $ "SubId not found in response channels"
+                case Map.lookup subId subs of
+                  Just subscription -> do
+                    liftIO $
+                      atomically $
+                        writeTChan
+                          (subscription ^. #responseCh)
+                          (EventReceived subId event, relay)
+                  Nothing -> do
+                    liftIO
+                      . logRelayError relay
+                      . pack
+                      $ "SubId="
+                        <> show subId
+                        <> " not found in responseChannels. Event received="
+                        <> show event
+                    liftIO . sink . sendMsg . WebSocketError relay $ "SubId not found in response channels"
 
           Just (Nostr.Response.EOSE subId) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn

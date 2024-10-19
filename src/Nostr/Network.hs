@@ -85,13 +85,13 @@ initNetwork rels keys = do
   subscriptions <- newMVar Map.empty
   pure NostrNetwork {..}
 
-    newRelay :: RelayURI -> Relay
-    newRelay ru =
-      Relay
-        { uri = ru,
-          connected = False,
-          info = RelayInfo True True
-        }
+newRelay :: RelayURI -> Relay
+newRelay ru =
+  Relay
+    { uri = ru,
+      connected = False,
+      info = RelayInfo True True
+    }
 
 getResults :: EventId -> NostrNetworkT (Maybe (Map Relay RequestResult, UTCTime))
 getResults eid = do

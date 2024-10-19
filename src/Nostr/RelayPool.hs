@@ -27,6 +27,7 @@ import Optics
 import System.Entropy
 import Nostr.Event
 import Data.DateTime
+import Utils
 
 changeStateForAllSubs ::
   Relay ->
