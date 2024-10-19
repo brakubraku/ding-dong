@@ -81,6 +81,15 @@ data UnsignedEvent = UnsignedEvent
   }
   deriving (Eq, Show, Generic)
 
+fromEvent :: Event -> UnsignedEvent 
+fromEvent e = UnsignedEvent {
+  pubKey' = pubKey e,
+  created_at' = created_at e,
+  kind' = kind e,
+  tags' = tags e,
+  content' = content e
+}
+
 type ReceivedEvent = (Event, [Relay])
 
 instance Show EventId where
@@ -242,8 +251,14 @@ signEvent u sk xo = do
     eid = EventId . SHA256.hash . toStrict . encode $ u
 
 
+-- TODO: in order for this to work, you must be able to encode 
+--       UnsignedEvent fully - i.e. your ToJSON instance must be complete.
+--       I suspect I am not encoding the full "Tags specification", or likely
+--       other things as well. Or just somehow hash the bytestring representation of 
+--       those event parts which are hashed into eid
 validateEventId :: Event -> Bool
-validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
+validateEventId e = 
+    (getEventId . eventId $ e) == (SHA256.hash . toStrict . encode $ fromEvent e)
 
 -- TODO: use this to debug the problems with verifying signatures
 -- checking below event (taken from nostr) works with verifyThis function
