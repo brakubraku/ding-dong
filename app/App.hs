@@ -11,14 +11,14 @@ import qualified Language.Javascript.JSaddle.Wasm as JSaddle.Wasm
 import Language.Javascript.JSaddle.Types
 #endif
 
-import MyMain
+import qualified DingDong
 
 #ifdef wasi_HOST_OS
 
 foreign export javascript "hs_start" main :: JSString -> IO ()
 
 main :: JSString -> IO ()
-main e = JSaddle.Wasm.run start 
+main e = JSaddle.Wasm.run DingDong.start 
 
 #else   
 main ::  IO ()

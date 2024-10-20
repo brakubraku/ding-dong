@@ -13,7 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
-module MyMain where
+module DingDong where
 
 import BechUtils
 import ContentUtils
@@ -31,7 +31,6 @@ import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
-import Debug.Trace (trace)
 import Miso hiding (at, now, send, WebSocket(..))
 import Miso.String (MisoString)
 import qualified Miso.String as S

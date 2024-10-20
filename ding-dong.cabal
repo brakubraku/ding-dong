@@ -38,7 +38,7 @@ library
                       ProfilesLoader
                       ProfilesLoader.Types
                       MyCrypto
-                      MyMain
+                      DingDong
                       Contacts
                       MisoSubscribe
                       ModelAction
@@ -78,11 +78,8 @@ library
 
 executable nostr-wasm
   hs-source-dirs: app 
-  -- default-language: GHC2021
   main-is:
      App.hs
-  -- other-modules:
-  --    MyMain
   if arch(wasm32)
     ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
   else 
@@ -99,4 +96,3 @@ executable nostr-wasm
     , base
     , mtl
     , optics
-    -- , jsaddle-warp
