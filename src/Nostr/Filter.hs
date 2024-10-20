@@ -25,7 +25,6 @@ import Nostr.Event
 import Nostr.Kind
 import Prelude hiding (until)
 
--- TODO: check that these are toJSON/fromJSON properly
 data DatedFilter = DatedFilter
   { eventfilter :: Filter,
     since :: Maybe UTCTime,
