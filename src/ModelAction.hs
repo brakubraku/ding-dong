@@ -27,12 +27,13 @@ import Nostr.WebSocket
 import Optics
 import Optics.TH
 import StoredRelay
+import ProfilesLoader.Types
 
 data Action
   = RelayConnected RelayURI
   | PagedNotesProcess Bool (Lens' Model PagedNotesModel) Page [(Event, Relay)]
   | HandleWebSocket WebSocketAction
-  | ReceivedProfiles [(XOnlyPubKey, Profile, UTCTime, Relay)]
+  | ReceivedProfiles [ProfOrRelays]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction
@@ -106,6 +107,7 @@ data Model = Model
     reactions :: Reactions, -- TODO: what about deleted reactions?
     contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
+    profileRelays :: Map.Map XOnlyPubKey ([Relay], UTCTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,

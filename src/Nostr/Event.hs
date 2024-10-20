@@ -386,6 +386,30 @@ isEtag _ = False
 getETags :: Event -> [Tag]
 getETags e = filter isEtag . tags $ e
 
+isRtag :: Tag -> Bool
+isRtag RTag {} = True
+isRtag _ = False
+
+getRTags  :: Event -> [Tag]
+getRTags e = filter isRtag . tags $ e
+
+rTagToRelay :: Tag -> Maybe Relay
+rTagToRelay (RTag uri mrw) = Just $ 
+    Relay
+      uri
+      ( RelayInfo
+          { readable = maybe False pr mrw,
+            writable = maybe False pw mrw
+          }
+      )
+      False
+  where 
+    pr Read = True
+    pr _ = False
+    pw Write = True
+    pw _ = False
+rTagToRelay _ = Nothing
+
 getSingleETag :: Event -> Maybe Tag
 getSingleETag e =
   let etags = getETags e

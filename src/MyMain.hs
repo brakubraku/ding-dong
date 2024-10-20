@@ -59,6 +59,7 @@ import Contacts
 import Data.Default
 import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
+import ProfilesLoader.Types (ProfOrRelays)
 
 start :: JSM ()
 start = do
@@ -85,6 +86,7 @@ start = do
           (Reactions Map.empty Map.empty)
           contacts
           Map.empty
+          Map.empty
           FeedPage
           now
           Map.empty
@@ -109,7 +111,7 @@ start = do
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
-  PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, UTCTime, Relay) ->
+  PeriodicLoader XOnlyPubKey ProfOrRelays ->
   Action ->
   Model ->
   Effect Action Model
@@ -381,17 +383,23 @@ updateModel nn rl pl action model =
        in noEff $
             model & #reactions .~ Prelude.foldl processReceived reactions rs
     ReceivedProfiles rs ->
-      let profiles =
-            (\(xo, pro, when, rel) -> (xo, (pro, when))) <$> rs
-          updated =
-            model & #profiles
-              %~ Map.unionWith
-                ( \p1@(_, d1) p2@(_, d2) ->
-                    -- prefer most recent profile
-                    if d1 > d2 then p1 else p2
-                )
-                (Map.fromList profiles)
-       in noEff $ updated
+      let process :: ProfOrRelays -> Model -> Model
+          process por m = 
+           case por of 
+            (xo, Just (profile, date, _), Nothing) -> 
+              m & #profiles % at xo %~ Just .
+              fromMaybe (profile, date) . fmap (\(p,d) -> do 
+                  if date > d 
+                  then (profile,date)
+                  else (p,d))
+            (xo, Nothing, Just (relays, date)) -> 
+              m & #profileRelays % at xo %~ Just .
+               fromMaybe (relays, date) . fmap (\(r,d) -> do 
+                  if date > d 
+                  then (relays,date)
+                  else (r,d))
+            _ -> m 
+      in noEff $ Prelude.foldr process model rs 
     GoPage page ->
       let add p ps@(p1 : _) =
             bool (p : ps) ps (p1 == p)
@@ -515,9 +523,7 @@ updateModel nn rl pl action model =
        in batchEff
             (model & #fpm .~ fpm)
             [pure FindProfile, pure $ GoPage ProfilePage]
-    LogReceived ers ->
-      let unique = Set.toList . Set.fromList $ fst <$> ers
-       in trace ("branko-log-kind10002:" <> show unique) $ noEff model
+    LogReceived ers -> noEff $ model
     LogConsole what ->
       model <# do
         liftIO (print what) >> pure NoAction
@@ -1078,6 +1084,18 @@ displayProfile m xo =
               span_
                 [class_ "display-name"]
                 [text . fromMaybe "" $ p ^. #displayName]
+        let rInfoText r = case (r ^. #info) of 
+                              RelayInfo True True -> "(RW)"
+                              RelayInfo True False -> "(R)"
+                              RelayInfo False True -> "(W)"
+                              RelayInfo False False -> ""
+        let relays = m ^. #profileRelays % at xo >>= \(rels,_) -> 
+              pure $ div_ [] . concat $ 
+                ((\r -> [span_ [class_ "relay"] [text (r ^. #uri)],
+                        span_ [class_ "relay-info"] 
+                              [text $ rInfoText r]]) 
+                <$> rels)
+            relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
         let notesDisplay =
               displayPagedNotes m (#fpm % #events) ProfilePage
         pure $
@@ -1089,7 +1107,7 @@ displayProfile m xo =
               div_
                 [class_ "profile-pic-container"]
                 [ fromMaybe profilepicDef profilepic,
-                  div_ [class_ "names"] [profileName, displayName],
+                  div_ [class_ "names"] [profileName, displayName, relaysDisplay],
                   div_
                     [class_ "follow-button-container"]
                     [ if isJust $ m ^. #contacts % at xo
@@ -1319,14 +1337,3 @@ eventAge now e =
           minutes = s `div` 60
    in format ageSeconds
 
-subscribeForRelays :: NostrNetwork -> [XOnlyPubKey] -> Sub Action
-subscribeForRelays nn xo =
-  subscribe
-    nn
-    PeriodicUntilEOS
-    [subFilter]
-    LogReceived
-    Nothing
-    getEventRelayEither
-  where
-    subFilter = anytimeF . RelayListMetadata $ xo

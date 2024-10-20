@@ -36,6 +36,7 @@ library
                       PeriodicLoader
                       ReactionsLoader
                       ProfilesLoader
+                      ProfilesLoader.Types
                       MyCrypto
                       MyMain
                       Contacts

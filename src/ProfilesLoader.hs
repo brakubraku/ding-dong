@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLabels #-}
 
 module ProfilesLoader where
 
@@ -12,32 +13,47 @@ import Nostr.Filter
 import Nostr.Relay
 import Nostr.Response
 import MyCrypto
-import Nostr.Profile
-import Data.Time.Clock
 import qualified Data.Set as S
 import Utils
+import Optics
+import Data.Maybe (catMaybes)
+import Data.Bifunctor
+import Nostr.Kind (Kind(Metadata, RelayList))
+import ProfilesLoader.Types
 
-createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey (XOnlyPubKey, Profile, UTCTime, Relay))
+createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey ProfOrRelays)
 createProfilesLoader = do
   buffers <- newMVar $ LoaderData S.empty S.empty
-  let createFilter = \xos -> [DatedFilter (MetadataFilter xos) Nothing Nothing] -- TODO: Nothing Nothing
+  let createFilter = \xos -> [DatedFilter (MetadataFilter xos) Nothing Nothing, 
+                              DatedFilter (RelayListMetadata xos) Nothing Nothing] -- TODO: Nothing Nothing
       extract = extractProfile
       period = Seconds 0.2 
   pure $ PeriodicLoader {..}
 
-extractProfile :: (Response, Relay) -> Either Text (XOnlyPubKey, Profile, UTCTime, Relay)
+extractProfile :: (Response, Relay) -> Either Text ProfOrRelays
 extractProfile (resp, rel) = do
   event <- getEventOrError resp
-  re <- maybe (Left "Event is not a profile!") Right $ extractProfileFromResp (event, rel)
-  pure re
+  let profOrRels = extractProfileFromResp (event, rel)
+  result <- case profOrRels of 
+    (_, Nothing, Nothing) -> Left "Event is not a profile!"
+    _ -> Right profOrRels
+  pure result
 
 extractProfileFromResp ::
   (Event, Relay) ->
-  Maybe (XOnlyPubKey, Profile, UTCTime, Relay)
-extractProfileFromResp (event, relay) = parseProfiles event
+  ProfOrRelays
+extractProfileFromResp (event, relay) 
+  | event ^. #kind == Metadata = (xo, parseProfiles event, Nothing)
+  | event ^. #kind == RelayList = (xo, Nothing, parseRelays event)
+  | otherwise = (xo, Nothing, Nothing)
   where
+    xo = pubKey event
     parseProfiles e =
-      let xo = pubKey e
-       in case readProfile e of
-            Just p -> Just (xo, p, created_at e, relay)
+          case readProfile e of
+            Just p -> Just (p, created_at e, relay)
             Nothing -> Nothing
+    parseRelays e = 
+         let rtags = first (catMaybes . fmap rTagToRelay) (getRTags e, e ^. #created_at)
+         in case fst rtags of 
+              [] -> Nothing
+              _ -> Just rtags
