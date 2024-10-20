@@ -167,7 +167,7 @@ updateModel nn rl pl action model =
             liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
             forkJSM $ startLoader nn rl ReceivedReactions sink
             forkJSM $ startLoader nn pl ReceivedProfiles sink
-            load pl [model ^. #me] -- fetch my profile
+            load pl $ [model ^. #me] ++ Set.toList (model ^. #contacts) -- fetch my and my contacts' profiles
             forkJSM $ -- put actual time to model every 60 seconds
               let loop = do
                     now <- liftIO getCurrentTime
