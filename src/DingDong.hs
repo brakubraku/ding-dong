@@ -216,19 +216,18 @@ updateModel nn rl pl action model =
           FeedLongRunningProcess
           Nothing
           getEventRelayEither
-    FeedLongRunningProcess rs ->
-      let update er@(e, r) m =
-            case ( e `elem` (fst <$> (m ^. #feedNew)),
-                   e ^. #kind,
-                   isJust $ m ^. #fromRelays % at e
-                 ) of
-              (False, TextNote, False) ->
-                m & #feedNew %~ (\ers -> ers ++ [er])
-                  & #fromRelays % at e ?~ Set.singleton r
-              (False, TextNote, True) ->
-                m & #fromRelays % at e %~ fmap (Set.insert r)
-              (_, _, _) -> m
-          updated = Prelude.foldr update model rs
+
+    FeedLongRunningProcess ers ->
+       let update er@(e, r) m =
+              m & #fromRelays % at e 
+                     %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
+                & case (e `elem` (fst <$> m ^. #feedNew),
+                        e `elem` (fst <$> m ^. #feed % #notes), 
+                        any (== e ^. #kind) [TextNote])
+                  of 
+                    (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
+                    _ -> id   
+           updated =  Prelude.foldr update model ers
        in noEff updated
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
