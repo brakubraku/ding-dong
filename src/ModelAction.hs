@@ -31,7 +31,7 @@ import ProfilesLoader.Types
 
 data Action
   = RelayConnected RelayURI
-  | PagedNotesProcess Bool (Lens' Model PagedNotesModel) Page [(Event, Relay)]
+  | PagedEventsProcess Bool (Lens' Model PagedEventsModel) Page [(Event, Relay)]
   | HandleWebSocket WebSocketAction
   | ReceivedProfiles [ProfOrRelays]
   | ReceivedReactions [(ReactionEvent, Relay)]
@@ -47,8 +47,8 @@ data Action
   | ThreadEvents [(Event, Relay)] Page
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
-  | SubscribeForParentsOf (Lens' Model PagedNotesModel) Page [Event]
-  | FeedEventParentsProcess (Map.Map EventId EventId) (Lens' Model PagedNotesModel) Page [(Event, Relay)]
+  | SubscribeForParentsOf (Lens' Model PagedEventsModel) Page [Event]
+  | FeedEventParentsProcess (Map.Map EventId EventId) (Lens' Model PagedEventsModel) Page [(Event, Relay)]
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
@@ -60,9 +60,9 @@ data Action
   | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
-  | ShowNext (Lens' Model PagedNotesModel) Page
-  | ShowPrevious (Lens' Model PagedNotesModel)
-  | LoadMoreNotes (Lens' Model PagedNotesModel) Page
+  | ShowNext (Lens' Model PagedEventsModel) Page
+  | ShowPrevious (Lens' Model PagedEventsModel)
+  | LoadMoreEvents (Lens' Model PagedEventsModel) Page
   | LogConsole String
   | ScrollTo Text
   | SubscribeForEmbeddedReplies [EventId] Page
@@ -100,7 +100,7 @@ newtype CloseCount = CloseCount Int
   deriving Eq
 
 data Model = Model
-  { feed :: PagedNotesModel,
+  { feed :: PagedEventsModel,
     feedNew :: [(Event, Relay)],
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
@@ -152,36 +152,36 @@ newtype Until = Until UTCTime
 
 type Threads = Map.Map RootEid Thread
 
-data PagedNotesModel = PagedNotesModel
+data PagedEventsModel = PagedEventsModel
   { filter :: Maybe (Since -> Until -> [DatedFilter]),
     since :: Since,
     step :: NominalDiffTime,
     factor :: Integer,
     page :: Int,
     pageSize :: Int,
-    notes :: [(Event, [Content])],
-    fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
+    events :: [(Event, [Content])],
+    fromRelays :: Map.Map Event (Set.Set Relay), -- TODO:
     parents :: Map.Map EventId (Event, [Content])
   }
   deriving (Generic)
 
 defaultPagedModel :: Since ->
-  PagedNotesModel
+  PagedEventsModel
 defaultPagedModel since =
-  PagedNotesModel
+  PagedEventsModel
     { filter = Nothing,
       since = since,
       step = nominalDay / 2,
       factor = 1,
       page = 0,
       pageSize = 15,
-      notes = [],
+      events = [],
       fromRelays = Map.empty,
       parents = Map.empty
     }
 
 -- TODO: alter this
-instance Eq PagedNotesModel where
+instance Eq PagedEventsModel where
   f1 == f2 =
     f1 ^. #page
       == f2 ^. #page
@@ -198,7 +198,7 @@ data RelaysPageModel = RelaysPageModel
 data FindProfileModel = FindProfileModel
   { findWho :: Text,
     lookingFor :: Maybe XOnlyPubKey,
-    events :: PagedNotesModel
+    events :: PagedEventsModel
   }
   deriving (Eq, Generic)
 

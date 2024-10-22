@@ -202,7 +202,7 @@ updateModel nn rl pl action model =
             model & #feed % #filter ?~ pagedFilter contacts
        in batchEff
             updated
-            [ pure $ LoadMoreNotes #feed FeedPage,
+            [ pure $ LoadMoreEvents #feed FeedPage,
               pure $
                 StartFeedLongRunning
                   (textNotesWithDeletes (Just since) Nothing contacts)
@@ -222,7 +222,7 @@ updateModel nn rl pl action model =
               m & #fromRelays % at e 
                      %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
                 & case (e `elem` (fst <$> m ^. #feedNew),
-                        e `elem` (fst <$> m ^. #feed % #notes), 
+                        e `elem` (fst <$> m ^. #feed % #events), 
                         any (== e ^. #kind) [TextNote])
                   of 
                     (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
@@ -231,20 +231,22 @@ updateModel nn rl pl action model =
        in noEff updated
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
-       in batchEff updated [pure $ PagedNotesProcess True #feed FeedPage (model ^. #feedNew)]
-    PagedNotesProcess putAtStart pml screen rs ->
-      let (allNotes, enotes, eprofs) = processReceivedNotes rs
+       in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew)]
+
+    PagedEventsProcess putAtStart pml screen rs ->
+      let (allNotes, _, enotes, eprofs) = processReceivedEvents rs
           plm = flip O.view model . (%) pml
           (_, replies) = Prelude.partition (not . isReply . fst) allNotes
           updatedNotes = bool 
-           (plm #notes ++ orderByAgeAsc allNotes) 
-           (orderByAgeAsc allNotes ++ plm #notes) putAtStart
+            (plm #events ++ orderByAgeAsc allNotes) 
+            (orderByAgeAsc allNotes ++ plm #events) 
+            putAtStart
           loadMore =
             length updatedNotes < plm #pageSize * plm #page + plm #pageSize
               && plm #factor < 100 -- TODO: put the number somewhere
           updated =
             model 
-              & pml % #notes .~ updatedNotes
+              & pml % #events .~ updatedNotes
               & case loadMore of
                   True ->
                     pml % #factor %~ (* 2)
@@ -260,8 +262,9 @@ updateModel nn rl pl action model =
               sink $ SubscribeForEmbeddedReplies enotes screen
               sink . SubscribeForEmbedded $ enotes
               when loadMore $
-                sink . LoadMoreNotes pml $
+                sink . LoadMoreEvents pml $
                   screen
+
     ShowPrevious pml ->
       let newModel =
             model & pml % #page %~ \pn -> if pn > 0 then pn - 1 else pn
@@ -275,13 +278,14 @@ updateModel nn rl pl action model =
           needsSub =
             f ^. #pageSize * f ^. #page
               + f ^. #pageSize
-              > length (f ^. #notes)
+              > length (f ^. #events)
        in batchEff
             newModel
             [ pure $ ScrollTo "top-top",
-              pure $ bool NoAction (LoadMoreNotes pml page) needsSub
+              pure $ bool NoAction (LoadMoreEvents pml page) needsSub
             ]
-    LoadMoreNotes pml page ->
+
+    LoadMoreEvents pml page ->
       let pm = model ^. pml
           Since since = pm ^. #since
           newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) since
@@ -289,13 +293,13 @@ updateModel nn rl pl action model =
             model & pml % #since .~ Since newSince
        in effectSub newModel $ \sink -> do
             maybe
-              (liftIO . print $ "[ERROR] EEempty filter in LoadMoreNotes")
+              (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
               ( \filter ->
                   subscribe
                     nn
                     AllAtEOS
                     (filter (Since newSince) (Until since))
-                    (PagedNotesProcess False pml page)
+                    (PagedEventsProcess False pml page)
                     (Just $ SubState page)
                     getEventRelayEither
                     sink
@@ -337,7 +341,7 @@ updateModel nn rl pl action model =
           (Just $ SubState screen)
           getEventRelayEither
     FeedEventParentsProcess pmap pml screen rs -> 
-       let  (notes, enotes, eprofs) = processReceivedNotes rs 
+       let  (notes, _, enotes, eprofs) = processReceivedEvents rs 
             events = fst <$> notes
             update ec@(e,_) m = 
                 maybe 
@@ -459,7 +463,7 @@ updateModel nn rl pl action model =
           updated =
             model 
               & #fpm % #lookingFor .~ xo
-              & #fpm % #events % #notes .~ []
+              & #fpm % #events % #events .~ []
               & #fpm % #events % #filter .~ (xo >>= \xo' -> Just (pagedFilter [xo']))
           runSubscriptions = do
             xo' <- xo
@@ -473,7 +477,7 @@ updateModel nn rl pl action model =
                   (Just . SubState $ ProfilePage)
                   extractProfile
                   sink
-                liftIO . sink $ LoadMoreNotes (#fpm % #events) ProfilePage
+                liftIO . sink $ LoadMoreEvents (#fpm % #events) ProfilePage
        in fromMaybe
             (noEff $ updated)
             runSubscriptions
@@ -600,14 +604,18 @@ updateModel nn rl pl action model =
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.
-    processReceivedNotes :: [(Event, Relay)] -> ([(Event, [Content])], [EventId], [XOnlyPubKey])
-    processReceivedNotes rs =
+    processReceivedEvents :: [(Event, Relay)] -> ([(Event, [Content])], [Event], [EventId], [XOnlyPubKey])
+    processReceivedEvents rs =
       let evts =
-            Set.toList . Set.fromList $ fst <$> rs -- fromList, toList, to eliminate duplicates
-          (noteEvts, deleteEvts) =
+            Set.toList . Set.fromList $ fst <$> rs -- to eliminate duplicates
+          (deleteEvts, other) =
+            Prelude.partition
+              (\e -> e ^. #kind == Delete)
+              evts
+          (noteEvts, rest) = 
             Prelude.partition
               (\e -> e ^. #kind == TextNote)
-              evts
+              other
           deletions =
             catMaybes $
               deleteEvts
@@ -624,10 +632,18 @@ updateModel nn rl pl action model =
                       `elem` deletions
               )
               noteEvts
+          otherThanNotes = 
+             filter
+              ( \e ->
+                  not $
+                    (e ^. #pubKey, e ^. #eventId)
+                      `elem` deletions
+              )
+              rest
           notesAndContent = (\e -> (e, processContent e)) <$> notes
           embedded = filterBech . concat $ snd <$> notesAndContent
           (eprofs, enotes) = partitionBechs embedded
-       in (notesAndContent, eprofs, enotes)
+       in (notesAndContent, otherThanNotes, eprofs, enotes)
 
     updateThreads :: (Event, Relay) -> (Threads, [EventId], [XOnlyPubKey]) -> (Threads, [EventId], [XOnlyPubKey])
     updateThreads (e, rel) (ts, eids, xos) =
@@ -784,7 +800,7 @@ displayFeed m =
     [class_ "feed"]
     [displayPagedNotes m #feed FeedPage]
 
-displayPagedNotes :: Model -> (Lens' Model PagedNotesModel) -> Page -> View Action
+displayPagedNotes :: Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
 displayPagedNotes m pml screen =
   div_
     []
@@ -814,8 +830,8 @@ displayPagedNotes m pml screen =
     f = m ^. pml
     pageSize = f ^. #pageSize
     page = f ^. #page
-    -- notes = take (pageSize * page + pageSize) $ f ^. #notes
-    notes = take pageSize . drop (page * pageSize) $ f ^. #notes
+    -- notes = take (pageSize * page + pageSize) $ f ^. #events
+    notes = take pageSize . drop (page * pageSize) $ f ^. #events
 
 areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =
@@ -931,7 +947,7 @@ displayNoteShort withEmbed m (e, content) =
       ]
     replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "↪"]
 
-displayPagedNote :: Model -> (Lens' Model PagedNotesModel) -> (Event, [Content]) -> View Action
+displayPagedNote :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
 displayPagedNote m pml ec@(e,_) 
     | isJust (findIsReplyTo e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
