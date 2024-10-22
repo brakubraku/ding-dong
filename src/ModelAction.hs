@@ -48,7 +48,7 @@ data Action
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
   | SubscribeForParentsOf (Lens' Model PagedEventsModel) Page [Event]
-  | FeedEventParentsProcess (Map.Map EventId EventId) (Lens' Model PagedEventsModel) Page [(Event, Relay)]
+  | FeedEventParentsProcess (Map.Map EventId (Set.Set EventId)) (Lens' Model PagedEventsModel) Page [(Event, Relay)]
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack

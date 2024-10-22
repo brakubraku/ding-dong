@@ -10,6 +10,7 @@ import qualified Data.Text as T
 import Prelude hiding (words)
 import Optics
 import Nostr.Event
+import Nostr.Kind (Kind(TextNote))
 
 data LinkType = Image | Other deriving (Show, Eq)
 
@@ -38,7 +39,9 @@ processBech :: T.Text -> Content
 processBech t = fromMaybe (TextC [t]) $ NostrC <$> decodeBech t
 
 processContent :: Event -> [Content]
-processContent e =
+processContent e
+ | e ^. #kind /= TextNote  = []
+ | otherwise = 
   let processWord w =
         let isLink = case T.stripPrefix "http" w of
               Just suffix ->

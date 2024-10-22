@@ -234,25 +234,25 @@ updateModel nn rl pl action model =
        in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew)]
 
     PagedEventsProcess putAtStart pml screen rs ->
-      let (allNotes, _, enotes, eprofs) = processReceivedEvents rs
+      let (ecs, enotes, eprofs) = processReceivedEvents rs
           plm = flip O.view model . (%) pml
-          (_, replies) = Prelude.partition (not . isReply . fst) allNotes
-          updatedNotes = bool 
-            (plm #events ++ orderByAgeAsc allNotes) 
-            (orderByAgeAsc allNotes ++ plm #events) 
+          (_, replies) = Prelude.partition (not . isReply . fst) ecs
+          updatedEvents = bool 
+            (plm #events ++ orderByAgeAsc ecs) 
+            (orderByAgeAsc ecs ++ plm #events) 
             putAtStart
           loadMore =
-            length updatedNotes < plm #pageSize * plm #page + plm #pageSize
+            length updatedEvents < plm #pageSize * plm #page + plm #pageSize
               && plm #factor < 100 -- TODO: put the number somewhere
           updated =
             model 
-              & pml % #events .~ updatedNotes
+              & pml % #events .~ updatedEvents
               & case loadMore of
                   True ->
                     pml % #factor %~ (* 2)
                   False ->
                     pml % #factor .~ 1
-          events = fst <$> allNotes
+          events = fst <$> ecs
        in effectSub updated $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
             load pl $ (pubKey <$> events) ++ eprofs
@@ -327,9 +327,12 @@ updateModel nn rl pl action model =
       let insert e (pmap, pids) = 
            fromMaybe (pmap, pids) $ do 
               parentEid <- findIsReplyTo e
+              let eid = e ^. #eventId
               pure $ 
-               (pmap & at parentEid .~ Just (e ^. #eventId), parentEid : pids)
-          -- have a record of which parent goes with which child
+               (pmap & at parentEid %~ -- record which parent goes with which child/children
+                  Just 
+                   . fromMaybe (Set.singleton eid) 
+                   . fmap (Set.insert eid), parentEid : pids)
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
       in 
         effectSub model $
@@ -341,13 +344,14 @@ updateModel nn rl pl action model =
           (Just $ SubState screen)
           getEventRelayEither
     FeedEventParentsProcess pmap pml screen rs -> 
-       let  (notes, _, enotes, eprofs) = processReceivedEvents rs 
+       let  (notes, enotes, eprofs) = processReceivedEvents rs 
             events = fst <$> notes
-            update ec@(e,_) m = 
+            upd ec chid m = m & pml % #parents % at chid .~ Just ec
+            update ec@(p,_) m = 
                 maybe 
                   m
-                  (\rt -> m & pml % #parents % at rt .~ Just ec)
-                  (pmap ^. at (e ^. #eventId))
+                  (\chids -> Prelude.foldr (upd ec) m chids)
+                  (pmap ^. at (p ^. #eventId))
             updatedModel = Prelude.foldr update model notes
        in  effectSub updatedModel $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
@@ -604,18 +608,12 @@ updateModel nn rl pl action model =
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.
-    processReceivedEvents :: [(Event, Relay)] -> ([(Event, [Content])], [Event], [EventId], [XOnlyPubKey])
+    processReceivedEvents :: [(Event, Relay)] -> ([(Event, [Content])], [EventId], [XOnlyPubKey])
     processReceivedEvents rs =
-      let evts =
-            Set.toList . Set.fromList $ fst <$> rs -- to eliminate duplicates
-          (deleteEvts, other) =
+      let (deleteEvts, otherEvts) =
             Prelude.partition
               (\e -> e ^. #kind == Delete)
-              evts
-          (noteEvts, rest) = 
-            Prelude.partition
-              (\e -> e ^. #kind == TextNote)
-              other
+              (Set.toList . Set.fromList $ fst <$> rs)  -- to eliminate duplicates
           deletions =
             catMaybes $
               deleteEvts
@@ -624,26 +622,18 @@ updateModel nn rl pl action model =
                       ETag eid _ _ <- getSingleETag e
                       pure (e ^. #pubKey, eid)
                   )
-          notes =
+          evts =
             filter
               ( \e ->
                   not $
                     (e ^. #pubKey, e ^. #eventId)
                       `elem` deletions
               )
-              noteEvts
-          otherThanNotes = 
-             filter
-              ( \e ->
-                  not $
-                    (e ^. #pubKey, e ^. #eventId)
-                      `elem` deletions
-              )
-              rest
-          notesAndContent = (\e -> (e, processContent e)) <$> notes
-          embedded = filterBech . concat $ snd <$> notesAndContent
+              otherEvts
+          ecs = (\e -> (e, processContent e)) <$> evts
+          embedded = filterBech . concat $ snd <$> ecs
           (eprofs, enotes) = partitionBechs embedded
-       in (notesAndContent, otherThanNotes, eprofs, enotes)
+       in (ecs, eprofs, enotes)
 
     updateThreads :: (Event, Relay) -> (Threads, [EventId], [XOnlyPubKey]) -> (Threads, [EventId], [XOnlyPubKey])
     updateThreads (e, rel) (ts, eids, xos) =
