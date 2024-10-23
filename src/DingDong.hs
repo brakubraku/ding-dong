@@ -118,19 +118,24 @@ updateModel nn rl pl action model =
   case action of
     HandleWebSocket (WebSocketOpen r) -> 
       noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
+
     HandleWebSocket (WebSocketError r e) -> 
       -- TODO: this causes a lot of view regeneration
       noEff $ model & #relaysStats % at  (r ^. #uri) % _Just % _2 %~ \(ErrorCount ec) -> ErrorCount (ec+1)
+
     HandleWebSocket (WebSocketClose r e) -> 
       noEff $ 
         model & #relaysStats % at (r ^. #uri) % _Just % _3 %~ (\(CloseCount cc) -> CloseCount (cc+1))
               & #relaysStats % at (r ^. #uri) % _Just % _1 .~ False
+
     ReportError er ->
       let addError e es = e : take 20 es -- TODO: 20
        in noEff $
             model & #errors %~ addError er
+
     UpdatedRelaysList rl -> 
       noEff $ model & #relaysList .~ rl
+
     ChangeRelayActive uri isActive -> 
       let updated = (model ^. #relaysList) &
             traversed 
@@ -139,6 +144,7 @@ updateModel nn rl pl action model =
       in model <# do 
           saveRelays updated
           pure $ UpdatedRelaysList updated
+
     AddRelay -> 
       let uri = model ^. #relaysPage % #relay
           nsr = newActiveRelay . newRelay $ uri
@@ -150,14 +156,17 @@ updateModel nn rl pl action model =
         model <# do 
           saveRelays updated 
           pure $ UpdatedRelaysList updated
+
     RemoveRelay r -> 
       let updated = filter (\sr -> sr ^. #relay % #uri /= r) $ model ^. #relaysList
       in model <# do 
           saveRelays updated
           pure $ UpdatedRelaysList updated
+
     Reload -> 
       model <# do 
         reloadPage >> pure NoAction
+
     StartAction ->
       effectSub
         model
@@ -229,6 +238,7 @@ updateModel nn rl pl action model =
                     _ -> id   
            updated =  Prelude.foldr update model ers
        in noEff updated
+
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
        in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew)]
@@ -270,8 +280,10 @@ updateModel nn rl pl action model =
             model & pml % #page %~ \pn -> if pn > 0 then pn - 1 else pn
        in newModel <# do
             pure . ScrollTo $ "notes-container-bottom"
+
     ScrollTo here ->
       model <# (scrollIntoView here >> pure NoAction)
+
     ShowNext pml page ->
       let newModel = model & pml % #page %~ (+) 1
           f = newModel ^. pml
@@ -305,9 +317,11 @@ updateModel nn rl pl action model =
                     sink
               )
               (pm ^. #filter)
+
     SubscribeForReplies [] -> noEff model
     SubscribeForReplies eids ->
       effectSub model $ subscribeForEventsReplies nn eids FeedPage
+
     SubscribeForEmbeddedReplies [] _ -> noEff $ model
     SubscribeForEmbeddedReplies eids page ->
       effectSub model $
@@ -318,6 +332,7 @@ updateModel nn rl pl action model =
           RepliesRecvNoEmbedLoading 
           (Just $ SubState page)
           getEventRelayEither
+
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
@@ -343,6 +358,7 @@ updateModel nn rl pl action model =
           (FeedEventParentsProcess pmap pml screen)
           (Just $ SubState screen)
           getEventRelayEither
+
     FeedEventParentsProcess pmap pml screen rs -> 
        let  (notes, enotes, eprofs) = processReceivedEvents rs 
             events = fst <$> notes
@@ -360,6 +376,7 @@ updateModel nn rl pl action model =
               sink $ SubscribeForReplies (eventId <$> events)
               sink $ SubscribeForEmbeddedReplies enotes screen
               sink $ SubscribeForEmbedded enotes
+
     SubscribeForEmbedded [] ->
       noEff model
     SubscribeForEmbedded eids ->
@@ -371,6 +388,7 @@ updateModel nn rl pl action model =
           EmbeddedEventsProcess
           (Just $ SubState FeedPage)
           getEventRelayEither
+          
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
           process (e, rel) (m, xos) =
@@ -384,10 +402,12 @@ updateModel nn rl pl action model =
        in updated <# do
             load pl $ Set.toList xos
             pure NoAction
+
     ReceivedReactions rs ->
       let reactions = model ^. #reactions
        in noEff $
             model & #reactions .~ Prelude.foldl processReceived reactions rs
+
     ReceivedProfiles rs ->
       let process :: ProfOrRelays -> Model -> Model
           process por m = 
@@ -406,6 +426,7 @@ updateModel nn rl pl action model =
                   else (r,d))
             _ -> m 
       in noEff $ Prelude.foldr process model rs 
+
     GoPage page ->
       let add p ps@(p1 : _) =
             bool (p : ps) ps (p1 == p)
@@ -415,34 +436,42 @@ updateModel nn rl pl action model =
           isProfileEdit = page == MyProfilePage
        in noEff $ model & #page .~ page & #history %~ add page
                         & bool id fillMyProfile isProfileEdit
+
     GoBack ->
       let updated = do
             (_, xs) <- uncons $ model ^. #history
             (togo, rest) <- uncons xs
             pure $ model & #page .~ togo & #history .~ (togo : rest)
        in noEff $ fromMaybe model updated
+
     Unfollow xo ->
       let updated = model & #contacts % at xo .~ Nothing
        in updated
             <# (updateContacts (updated ^. #contacts) >> pure NoAction)
+
     Follow xo ->
       let updated = model & #contacts % at xo .~ Just ()
        in updated
             <# (updateContacts (updated ^. #contacts) >> pure NoAction)
+
     WriteModel m ->
       model <# (writeModelToStorage m >> pure NoAction)
+
     ActualTime t -> do
       noEff $ model & #now .~ t
+
     DisplayThread e -> do
        effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO $ do
           sink . GoPage $ ThreadPage e
           sink . ScrollTo $ "top-top"
+
     DisplayReplyThread e -> 
      batchEff
        (model & #writeReplyTo ?~ e)
        [pure $ DisplayThread e]
+
     ThreadEvents [] _ -> noEff $ model
     ThreadEvents es screen ->
       let (updated, enotes, eprofs) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -452,8 +481,11 @@ updateModel nn rl pl action model =
             liftIO $ do
               sink . SubscribeForEmbedded $ enotes
               sink $ SubscribeForEmbeddedReplies enotes screen
+
     UpdateField l v -> noEff $ model & l .~ v
+
     UpdateMaybeField l v -> noEff $ model & l .~ v
+
     FindProfile ->
       let pagedFilter xos =
             \(Since s) (Until u) ->
@@ -485,6 +517,7 @@ updateModel nn rl pl action model =
        in fromMaybe
             (noEff $ updated)
             runSubscriptions
+
     SubState p st ->
       let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
           isRunning _ = False
@@ -520,6 +553,7 @@ updateModel nn rl pl action model =
                      )
                        <$> erRels
                    )
+
     DisplayProfilePage mxo ->
       let fpm =
             FindProfileModel
@@ -529,10 +563,13 @@ updateModel nn rl pl action model =
        in batchEff
             (model & #fpm .~ fpm)
             [pure FindProfile, pure $ GoPage ProfilePage]
+
     LogReceived ers -> noEff $ model
+
     LogConsole what ->
       model <# do
         liftIO (print what) >> pure NoAction
+
     SendReplyTo e -> do
         let replyEventF = 
              \t -> createReplyEvent e t (model ^. #me) 
@@ -549,9 +586,7 @@ updateModel nn rl pl action model =
     ClearWritingReply -> 
        noEff $ model & #writeReplyTo .~ Nothing
                      & #noteDraft .~ ""
-    -- AllLoaded -> model <# do 
-    --              liftIO . print $ "AllLoaded now"
-    --              pure NoAction
+  
     SendUpdateProfile -> do
             let me = model ^. #me
             let newProfileF = \now -> setMetadata (model ^. #myProfile) me now
@@ -560,7 +595,9 @@ updateModel nn rl pl action model =
               (singleton . const . DisplayProfilePage $ Just me) 
               (singleton . const . ReportError $ "Failed updating profile!")
             -- TODO: update profile in #profiles if sending successfull
+              
     _ -> noEff model
+
   where
     signAndSend ueF successActs failureActs = 
       effectSub model $ \sink -> do
