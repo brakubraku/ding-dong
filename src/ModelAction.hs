@@ -154,7 +154,7 @@ type Threads = Map.Map RootEid Thread
 
 data PagedEventsModel = PagedEventsModel
   { filter :: Maybe (Since -> Until -> [DatedFilter]),
-    since :: Since,
+    until :: Until,
     step :: NominalDiffTime,
     factor :: Integer,
     page :: Int,
@@ -165,12 +165,12 @@ data PagedEventsModel = PagedEventsModel
   }
   deriving (Generic)
 
-defaultPagedModel :: Since ->
+defaultPagedModel :: Until ->
   PagedEventsModel
-defaultPagedModel since =
+defaultPagedModel until =
   PagedEventsModel
     { filter = Nothing,
-      since = since,
+      until = until,
       step = nominalDay / 2,
       factor = 1,
       page = 0,

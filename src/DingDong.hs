@@ -78,9 +78,10 @@ start = do
       update = updateModel nn reactionsLoader profilesLoader
       initialModel =
         Model
-          (defaultPagedModel (Since now))
-          []
-          (FindProfileModel "" Nothing $ (defaultPagedModel (Since now)) {factor = 2, step = 5 * nominalDay})
+          (defaultPagedModel (Until now))
+          [] 
+         
+          (FindProfileModel "" Nothing $ (defaultPagedModel (Until now)) {factor = 2, step = 5 * nominalDay})
           (RelaysPageModel "")
           (Reactions Map.empty Map.empty)
           contacts
@@ -200,7 +201,7 @@ updateModel nn rl pl action model =
             liftIO . sink $ ShowFeed
     ShowFeed ->
       let contacts = (Set.toList $ model ^. #contacts)
-          Since since = model ^. #feed % #since
+          Until t = model ^. #feed % #until
           pagedFilter xos =
             \(Since s) (Until u) ->
               textNotesWithDeletes
@@ -214,7 +215,7 @@ updateModel nn rl pl action model =
             [ pure $ LoadMoreEvents #feed FeedPage,
               pure $
                 StartFeedLongRunning
-                  (textNotesWithDeletes (Just since) Nothing contacts)
+                  (textNotesWithDeletes (Just t) Nothing contacts)
             ]
     StartFeedLongRunning f ->
       effectSub model $
@@ -299,10 +300,10 @@ updateModel nn rl pl action model =
 
     LoadMoreEvents pml page ->
       let pm = model ^. pml
-          Since since = pm ^. #since
-          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) since
+          Until until = pm ^. #until
+          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
           newModel =
-            model & pml % #since .~ Since newSince
+            model & pml % #until .~ Until newSince
        in effectSub newModel $ \sink -> do
             maybe
               (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
@@ -310,7 +311,7 @@ updateModel nn rl pl action model =
                   subscribe
                     nn
                     AllAtEOS
-                    (filter (Since newSince) (Until since))
+                    (filter (Since newSince) (Until until))
                     (PagedEventsProcess False pml page)
                     (Just $ SubState page)
                     getEventRelayEither
@@ -559,7 +560,7 @@ updateModel nn rl pl action model =
             FindProfileModel
               (fromMaybe "" $ encodeBechXo =<< mxo)
               mxo
-              (defaultPagedModel (Since $ model ^. #now))
+              (defaultPagedModel (Until $ model ^. #now))
        in batchEff
             (model & #fpm .~ fpm)
             [pure FindProfile, pure $ GoPage ProfilePage]
