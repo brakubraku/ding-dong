@@ -518,3 +518,7 @@ body {
 .profile-relays .relay-info {
     margin-right: 5px;
 }
+
+.new-notifs-count {
+    color:#15ee15
+}

@@ -25,7 +25,6 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.WebSocket
 import Optics
-import Optics.TH
 import StoredRelay
 import ProfilesLoader.Types
 
@@ -79,6 +78,11 @@ data Action
   | UpdatedRelaysList [StoredRelay]
   | RemoveRelay Text
   | Reload 
+  | ListenToNotifs UTCTime
+  | ProcessNewNotifs [(Event, Relay)]
+  | ShowNotifications
+  | SubscribeForPagedReactionsTo (Lens' Model PagedEventsModel) Page [ReactionEvent]
+  | PagedReactionsToProcess (Lens' Model PagedEventsModel) Page [(Event, Relay)]
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -90,6 +94,7 @@ data Page
   | ProfilePage
   | RelaysPage
   | MyProfilePage 
+  | NotificationsPage 
   deriving (Show, Eq, Generic, Ord)
 
 newtype ErrorCount = ErrorCount Int 
@@ -102,6 +107,8 @@ newtype CloseCount = CloseCount Int
 data Model = Model
   { feed :: PagedEventsModel,
     feedNew :: [(Event, Relay)],
+    notifs :: PagedEventsModel,
+    notifsNew :: [(Event, Relay)],
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
     reactions :: Reactions, -- TODO: what about deleted reactions?
@@ -160,8 +167,10 @@ data PagedEventsModel = PagedEventsModel
     page :: Int,
     pageSize :: Int,
     events :: [(Event, [Content])],
-    fromRelays :: Map.Map Event (Set.Set Relay), -- TODO:
-    parents :: Map.Map EventId (Event, [Content])
+    fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
+    parents :: Map.Map EventId (Event, [Content]),
+    -- events being reacted to by reactions in #events
+    reactionEvents :: Map.Map EventId (Event, [Content]) 
   }
   deriving (Generic)
 
@@ -177,7 +186,8 @@ defaultPagedModel until =
       pageSize = 15,
       events = [],
       fromRelays = Map.empty,
-      parents = Map.empty
+      parents = Map.empty,
+      reactionEvents = Map.empty
     }
 
 -- TODO: alter this

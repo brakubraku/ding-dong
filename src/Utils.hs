@@ -9,6 +9,9 @@ import Miso
 import GHC.Generics
 import Control.Concurrent
 import Language.Javascript.JSaddle
+import Data.Time
+import Control.Monad.IO.Class
+import Data.Text 
 
 newtype Seconds = Seconds
   { getSeconds :: Float
@@ -35,3 +38,23 @@ reloadPage = do
 
 getLocation :: JSM JSVal
 getLocation = jsg ("window" :: String) ! ("location" :: String)
+
+lastNotifStorageId :: Text
+lastNotifStorageId = "last-notif-date"
+
+loadLastNotif :: JSM UTCTime 
+loadLastNotif = do 
+  now <- liftIO getCurrentTime
+  ln <- getLocalStorage lastNotifStorageId
+  case ln of
+    Right r -> pure r
+    Left _ -> do
+      saveLastNotif now
+      pure now
+
+saveLastNotif :: UTCTime -> JSM ()
+saveLastNotif when = 
+  setLocalStorage lastNotifStorageId when
+
+showt :: Show a => a -> Text
+showt = pack . show

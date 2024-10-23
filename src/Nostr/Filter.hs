@@ -46,6 +46,7 @@ data Filter
   | AllMetadata
   | RelayListMetadata [XOnlyPubKey]
   | ReactionsTo [EventId]
+  | Mentions [XOnlyPubKey]
   deriving (Eq, Show, Ord)
 
 instance ToJSON DatedFilter where
@@ -61,6 +62,9 @@ toPairs (ReactionsTo eids) =
     ("#e", toJSON eids)
     -- ("authors", toJSON xos)
     -- ("limit", Number 1)
+  ]
+toPairs (Mentions xos) =
+  [ ("#p", toJSON xos)
   ]
 toPairs (RelayListMetadata xos) =
   [ ("kinds", toJSON [RelayList]),

@@ -44,7 +44,7 @@ import Nostr.Kind
 import Nostr.Network
 import qualified Nostr.Network as Network
 import Nostr.Profile
-import Nostr.Reaction
+import Nostr.Reaction hiding (Reaction)
 import Nostr.Relay
 import qualified Nostr.RelayPool as RP
 import Nostr.Response
@@ -74,13 +74,18 @@ start = do
         keys
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
+  lastNotifDate <- loadLastNotif 
+  let notifsFilter =
+            \(Since s) (Until u) ->
+              [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
-      update = updateModel nn reactionsLoader profilesLoader
+      update = updateModel nn reactionsLoader profilesLoader lastNotifDate
       initialModel =
         Model
           (defaultPagedModel (Until now))
           [] 
-         
+           ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
+          []
           (FindProfileModel "" Nothing $ (defaultPagedModel (Until now)) {factor = 2, step = 5 * nominalDay})
           (RelaysPageModel "")
           (Reactions Map.empty Map.empty)
@@ -112,10 +117,11 @@ updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
   PeriodicLoader XOnlyPubKey ProfOrRelays ->
+  UTCTime ->
   Action ->
   Model ->
   Effect Action Model
-updateModel nn rl pl action model =
+updateModel nn rl pl lnd action model =
   case action of
     HandleWebSocket (WebSocketOpen r) -> 
       noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
@@ -197,8 +203,12 @@ updateModel nn rl pl action model =
                     liftIO . sleep . Seconds $ 5
                     loop
                in loop
-            -- forkJSM $ subscribeForRelays nn (Set.toList $ model ^. #contacts) sink
+            -- start showing feed
             liftIO . sink $ ShowFeed
+            -- start notifications
+            liftIO . sink $ LoadMoreEvents #notifs NotificationsPage
+            liftIO . sink $ ListenToNotifs lnd
+
     ShowFeed ->
       let contacts = (Set.toList $ model ^. #contacts)
           Until t = model ^. #feed % #until
@@ -217,6 +227,44 @@ updateModel nn rl pl action model =
                 StartFeedLongRunning
                   (textNotesWithDeletes (Just t) Nothing contacts)
             ]
+    
+    ShowNotifications -> 
+      let updated = model & #notifs % #page .~ 0 & #notifsNew .~ []
+          new = model ^. #notifsNew
+          hasNew = length new > 0
+          saveLast = do 
+            now <- liftIO getCurrentTime
+            saveLastNotif now 
+            pure NoAction
+      in batchEff (bool model updated hasNew) $ 
+            bool [] 
+                 [pure $ PagedEventsProcess True #notifs NotificationsPage new] 
+                 hasNew  
+               ++ [pure $ GoPage NotificationsPage, saveLast]
+
+    ListenToNotifs since -> 
+      effectSub model $ 
+        subscribe
+          nn
+          PeriodicForever
+          [sinceF since $ Mentions [model ^. #me]]
+          ProcessNewNotifs
+          Nothing
+          getEventRelayEither
+
+    ProcessNewNotifs ers -> 
+       let update er@(e, r) m =
+              m & #fromRelays % at e 
+                     %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
+                & case (e `elem` (fst <$> m ^. #notifsNew), 
+                        e `elem` (fst <$> m ^. #notifs % #events), 
+                        any (== e ^. #kind) [TextNote, Reaction]) 
+                  of 
+                    (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
+                    _ -> id   
+           updated = Prelude.foldr update model ers
+       in noEff updated
+
     StartFeedLongRunning f ->
       effectSub model $
         subscribe
@@ -264,10 +312,12 @@ updateModel nn rl pl action model =
                   False ->
                     pml % #factor .~ 1
           events = fst <$> ecs
+          reactions = catMaybes $ Nostr.Reaction.extract <$> events
        in effectSub updated $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
             load pl $ (pubKey <$> events) ++ eprofs
             liftIO $ do
+              sink $ SubscribeForPagedReactionsTo pml screen reactions
               sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
               sink $ SubscribeForReplies $ (eventId <$> events)
               sink $ SubscribeForEmbeddedReplies enotes screen
@@ -337,6 +387,25 @@ updateModel nn rl pl action model =
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
+
+    SubscribeForPagedReactionsTo _ _ [] -> noEff model
+    SubscribeForPagedReactionsTo pml screen res -> 
+      effectSub model $
+        subscribe
+          nn
+          PeriodicUntilEOS
+          [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
+          (PagedReactionsToProcess pml screen)
+          (Just $ SubState screen)
+          getEventRelayEither
+
+    PagedReactionsToProcess pml _ ers -> 
+      let process (e,_) m = 
+            m & pml % #reactionEvents % at (e ^. #eventId) ?~ (e, processContent e)
+          updated = Prelude.foldr process model ers
+      in 
+        noEff updated 
+     
     SubscribeForParentsOf _ _ [] -> 
       noEff model
     SubscribeForParentsOf pml screen replies -> 
@@ -583,7 +652,6 @@ updateModel nn rl pl action model =
               successActs
               (singleton . const . ReportError $ "Failed sending reply!")
 
-
     ClearWritingReply -> 
        noEff $ model & #writeReplyTo .~ Nothing
                      & #noteDraft .~ ""
@@ -826,10 +894,12 @@ displayFeed ::
 displayFeed m =
   div_
     [class_ "feed"]
-    [displayPagedNotes m #feed FeedPage]
+    [displayPagedEvents Notes m #feed FeedPage]
 
-displayPagedNotes :: Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
-displayPagedNotes m pml screen =
+data PagedWhat = Notes | Notifications
+
+displayPagedEvents :: PagedWhat -> Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
+displayPagedEvents pw m pml screen =
   div_
     []
     [ div_ [id_ "notes-container-top"] [],
@@ -846,9 +916,13 @@ displayPagedNotes m pml screen =
             ]
             [text "=<<"]
         ],
-      div_
-        [class_ "notes-container"]
-        (displayPagedNote m pml <$> notes), -- TODO: ordering can be different
+      (case pw of 
+        Notes -> 
+          div_
+            [class_ "notes-container"]
+            (displayPagedNote m pml <$> notes) -- TODO: ordering can be different
+        Notifications ->
+          div_ [] (displayPagedNotif m pml <$> notes)),
       div_
         [class_ "load-next-container"]
         [span_ [class_ "load-next", onClick (ShowNext pml screen)] [text ">>="]],
@@ -991,6 +1065,31 @@ displayPagedNote m pml ec@(e,_)
     responseToIco = div_ [class_ "responseto-icon"] 
       []
 
+displayPagedNotif :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
+displayPagedNotif m pml ec@(e,_) =
+    case e ^. #kind of 
+      TextNote -> 
+        div_ [] [tnInfo, displayNote m ec]
+      Reaction -> 
+        div_ [] [reactInfo, displayNote m reactTo]
+      _ -> div_ [] [] 
+  where 
+    replyTo = m ^. pml % #parents % at (e ^. #eventId)
+    unknown = Profile "" Nothing Nothing Nothing Nothing
+    profile = fromMaybe unknown $ getAuthorProfile m e
+    profileName = span_ [class_ "username"] [text $ profile ^. #username]
+    isReplyToU = maybe False (\(p,_) -> p ^. #pubKey == m ^. #me) replyTo
+    notifType = bool
+      ("mentioned you in")
+      ("replied to you")
+      isReplyToU
+    tnInfo = div_ [] [profileName, span_ [] [text $ " " <> notifType]]
+    reactInfo = div_ [] [profileName, span_ [] [text $ " reacted with " <> e ^. #content <> " to"]]
+    reactTo = fromMaybe (emptyEvent, processContent emptyEvent) $ do 
+       eid <- (Nostr.Reaction.extract e) ^? _Just % #reactionTo
+       m ^. pml % #reactionEvents % at eid
+    emptyEvent = newEvent "<Could not find the event this reaction belongs to>" (m ^. #me) (m ^. #now) 
+
 displayNote :: Model -> (Event, [Content]) -> View Action
 displayNote = displayNote' True 
 
@@ -1035,6 +1134,7 @@ middlePanel m =
       ProfilePage -> displayProfilePage m
       RelaysPage -> displayRelaysPage m
       MyProfilePage -> displayMyProfilePage m
+      NotificationsPage -> displayNotificationsPage m
 
 rightPanel :: Model -> View Action
 rightPanel m = ul_ [class_ "right-panel"] errors
@@ -1056,8 +1156,8 @@ leftPanel m =
     [class_ "left-panel"]
     [ div_
         []
-        [ pItem "Feed" FeedPage,
-          -- pItem "Notifications"
+        [ pItem "Following Feed" FeedPage,
+          notifications,
           -- pItem "Followers"
           pItem "Following" Following,
           aItem "Find Profile" (DisplayProfilePage Nothing),
@@ -1099,6 +1199,14 @@ leftPanel m =
         [div_ [onClick action] [text label]]
     showBack = (> 1) . length $ m ^. #history
     backArrow = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: T.Text)]
+    notifications = 
+      div_
+       [class_ "left-panel-item"]
+       [div_ [onClick ShowNotifications] 
+             [text "Notifications", span_ [class_ "new-notifs-count"] [text newNotifsCount]]] 
+    newNotifs = m ^. #notifsNew
+    hasNewNotifs = length newNotifs > 0
+    newNotifsCount = bool "" (" (" <> (T.pack . show $ length newNotifs) <> ")") hasNewNotifs
 
 displayProfile :: Model -> XOnlyPubKey -> View Action
 displayProfile m xo =
@@ -1140,7 +1248,7 @@ displayProfile m xo =
                 <$> rels)
             relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
         let notesDisplay =
-              displayPagedNotes m (#fpm % #events) ProfilePage
+              displayPagedEvents Notes m (#fpm % #events) ProfilePage
         pure $
           div_
             []
@@ -1252,6 +1360,12 @@ displayProfilePage m =
   where
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+
+displayNotificationsPage :: Model -> View Action
+displayNotificationsPage m = 
+  div_
+    [class_ "notifications"]
+    [displayPagedEvents Notifications m #notifs NotificationsPage]
 
 displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =
