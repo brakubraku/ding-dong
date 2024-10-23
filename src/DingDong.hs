@@ -913,7 +913,7 @@ displayNoteShort withEmbed m (e, content) =
     [ displayNoteContent withEmbed m content,
       div_
         [class_ "text-note-properties"]
-        ( maybe [] repliesCount replies
+        ( [showThreadIcon]
             ++ [displayReactions reactions]
             ++ [replyIcon]
         )
@@ -926,15 +926,16 @@ displayNoteShort withEmbed m (e, content) =
     replies = do
       thread <- m ^. #threads % at reid
       Set.size <$> thread ^. #replies % at eid
-    repliesCount c =
-      [ div_
-          [class_ "replies-count", onClick $ DisplayThread e]
-          [ bool
-              (text $ "▶ " <> (S.pack . show $ c))
-              (text $ "▽ " <> (S.pack . show $ c))
-              isThreadOf
-          ]
-      ]
+    showThreadIcon =
+      let count = maybe "" showt replies
+      in div_
+            [class_ "replies-count", onClick $ DisplayThread e]
+            [ bool
+                (text $ "▶ " <> count)
+                (text $ "▽ " <> count)
+                isThreadOf
+            ]
+
     replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "↪"]
 
 displayPagedNote :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
