@@ -196,7 +196,7 @@ updateModel nn rl pl lnd action model =
               let loop = do
                     liftIO $ do
                       let isRunning (_, s) = any (== Running) $ Map.elems (s ^. #relaysState)
-                      let showme (id, ss) = "subId=" <> T.pack (show id) <> ": " <> printState ss
+                      let showme (id, ss) = "subId=" <> showt id <> ": " <> printState ss
                       subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
                       -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
                       print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
@@ -614,10 +614,10 @@ updateModel nn rl pl lnd action model =
               . fmap (updateListWith st)
        in batchEff updatedModel $
             pure . ReportError
-              <$> ((\r -> "Relay " <> T.pack (show $ r ^. #uri) <> " timeouted") <$> toRels)
+              <$> ((\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels)
                 ++ ( ( \(r, er) ->
                          "Relay "
-                           <> T.pack (show $ r ^. #uri)
+                           <> (showt $ r ^. #uri)
                            <> " returned error: "
                            <> (fromMaybe "" er)
                      )
@@ -851,8 +851,8 @@ appView m =
         ]
         [ span_
             [class_ "new-notes-count"]
-            [ text . T.pack $
-                "Display " <> show howMany <> " new " <> bool "note" "notes" (howMany > 1)
+            [ text $
+                "Display " <> showt howMany <> " new " <> bool "note" "notes" (howMany > 1)
             ]
         ]
 
@@ -1142,7 +1142,7 @@ rightPanel m = ul_ [class_ "right-panel"] errors
     errors =
       ( \(i, e) ->
           liKeyed_
-            (Key . T.pack $ show i) -- so that Miso diff algoritm displays it in the correct order
+            (Key . showt $ i) -- so that Miso diff algoritm displays it in the correct order
             [ class_ "error",
               class_ "hide-after-period"
             ]
@@ -1182,7 +1182,7 @@ leftPanel m =
           ++ ( fromMaybe [] $
                  m ^. #profiles % at (m ^. #me)
                    >>= \(p, _) ->
-                     pure $ [ div_ [] [text . T.pack . show $ p ^. #username]]
+                     pure $ [ div_ [] [text . showt $ p ^. #username]]
              ),
       div_
         [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
@@ -1206,7 +1206,7 @@ leftPanel m =
              [text "Notifications", span_ [class_ "new-notifs-count"] [text newNotifsCount]]] 
     newNotifs = m ^. #notifsNew
     hasNewNotifs = length newNotifs > 0
-    newNotifsCount = bool "" (" (" <> (T.pack . show $ length newNotifs) <> ")") hasNewNotifs
+    newNotifsCount = bool "" (" (" <> (showt $ length newNotifs) <> ")") hasNewNotifs
 
 displayProfile :: Model -> XOnlyPubKey -> View Action
 displayProfile m xo =
@@ -1415,8 +1415,8 @@ displayRelaysPage m =
       in 
       [ div_ [class_ ("relay-" <> bool "inactive" "active" isActive)] [text r],
         div_ [class_ ("relay-" <> bool "disconnected" "connected" isConnected)] [text $ bool "No" "Yes" isConnected],
-        div_ [class_ "relay-error-count"] [text . T.pack . show $ errCnt],
-        div_ [class_ "relay-close-count"] [text . T.pack . show $ closeCnt],
+        div_ [class_ "relay-error-count"] [text . showt $ errCnt],
+        div_ [class_ "relay-close-count"] [text . showt $ closeCnt],
         div_ [class_ "relay-action"] 
          [div_ [onClick $ bool (ChangeRelayActive r True) (ChangeRelayActive r False) isActive] 
                [text (bool "Activate" "Deactivate" isActive)]],
