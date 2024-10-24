@@ -141,7 +141,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           return (x : xs)
 
     processMsgs :: [(Response, Relay)] -> IO ()
-    processMsgs [] = pure ()
     processMsgs rrs = do
       let processed = extractResults <$> rrs
       mapM_ logError $ lefts processed
