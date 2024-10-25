@@ -336,7 +336,10 @@ updateModel nn rl pl lnd action model =
       model <# (scrollIntoView here >> pure NoAction)
 
     ShowNext pml page ->
-      let newModel = model & pml % #page %~ (+) 1
+      let (Until start) = model ^. pml % #until
+          nextPage = model ^. pml % #page + 1
+          newModel = model & pml % #page .~ nextPage
+                           & pml % #pageStart % at nextPage ?~ start
           f = newModel ^. pml
           needsSub =
             f ^. #pageSize * f ^. #page
@@ -894,15 +897,16 @@ displayFeed ::
 displayFeed m =
   div_
     [class_ "feed"]
-    [displayPagedEvents Notes m #feed FeedPage]
+    [displayPagedEvents False Notes m #feed FeedPage]
 
 data PagedWhat = Notes | Notifications
 
-displayPagedEvents :: PagedWhat -> Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
-displayPagedEvents pw m pml screen =
+displayPagedEvents :: Bool -> PagedWhat -> Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
+displayPagedEvents showIntervals pw m pml screen =
   div_
     []
     [ div_ [id_ "notes-container-top"] [],
+      bool (div_ [] []) (div_ [] [text (pu <> " --- " <> ps)]) showIntervals,
       div_
         [ class_ "load-previous-container",
           bool
@@ -934,6 +938,11 @@ displayPagedEvents pw m pml screen =
     page = f ^. #page
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
     notes = take pageSize . drop (page * pageSize) $ f ^. #events
+    (Until until) = f ^. #until
+    since' = f ^. #pageStart % at page
+    since = fromMaybe "" (showt <$> since')
+    ps = maybe since (showt . O.view #created_at . fst . fst) $ Prelude.uncons notes
+    pu = showt $ maybe until (O.view #created_at . fst . snd) $ Prelude.unsnoc notes
 
 areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =
@@ -1248,7 +1257,7 @@ displayProfile m xo =
                 <$> rels)
             relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
         let notesDisplay =
-              displayPagedEvents Notes m (#fpm % #events) ProfilePage
+              displayPagedEvents True Notes m (#fpm % #events) ProfilePage
         pure $
           div_
             []
@@ -1365,7 +1374,7 @@ displayNotificationsPage :: Model -> View Action
 displayNotificationsPage m = 
   div_
     [class_ "notifications"]
-    [displayPagedEvents Notifications m #notifs NotificationsPage]
+    [displayPagedEvents False Notifications m #notifs NotificationsPage]
 
 displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =

@@ -165,6 +165,7 @@ data PagedEventsModel = PagedEventsModel
     step :: NominalDiffTime,
     factor :: Integer,
     page :: Int,
+    pageStart :: Map.Map Int UTCTime, -- keep track of when each page starts
     pageSize :: Int,
     events :: [(Event, [Content])],
     fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
@@ -176,13 +177,14 @@ data PagedEventsModel = PagedEventsModel
 
 defaultPagedModel :: Until ->
   PagedEventsModel
-defaultPagedModel until =
+defaultPagedModel until@(Until t) =
   PagedEventsModel
     { filter = Nothing,
       until = until,
       step = nominalDay / 2,
       factor = 1,
       page = 0,
+      pageStart = Map.fromList [(0, t)],
       pageSize = 15,
       events = [],
       fromRelays = Map.empty,
