@@ -83,6 +83,8 @@ data Action
   | ShowNotifications
   | SubscribeForPagedReactionsTo (Lens' Model PagedEventsModel) Page [ReactionEvent]
   | PagedReactionsToProcess (Lens' Model PagedEventsModel) Page [(Event, Relay)]
+  | SendLike Event
+  | LikeSent Event
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq

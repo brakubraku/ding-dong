@@ -387,7 +387,21 @@
 }
 
 .like-reaction {
+    color: black;
+    cursor: pointer;
+}
+
+.like-reaction-liked {
     color: purple;
+    cursor: pointer;
+}
+
+.dislike-reaction {
+    margin-left: 5px;
+}
+
+.other-reaction {
+    margin-left: 5px;
 }
 
 .hide-after-period {
@@ -523,3 +537,4 @@ body {
 .new-notifs-count {
     color:#15ee15
 }
+

@@ -18,7 +18,7 @@ module DingDong where
 import BechUtils
 import ContentUtils
 import Control.Concurrent
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Bifunctor (second)
@@ -660,14 +660,40 @@ updateModel nn rl pl lnd action model =
                      & #noteDraft .~ ""
   
     SendUpdateProfile -> do
-            let me = model ^. #me
-            let newProfileF = \now -> setMetadata (model ^. #myProfile) me now
-            signAndSend 
-              newProfileF 
-              (singleton . const . DisplayProfilePage $ Just me) 
-              (singleton . const . ReportError $ "Failed updating profile!")
-            -- TODO: update profile in #profiles if sending successfull
-              
+        let me = model ^. #me
+        let newProfileF = \now -> setMetadata (model ^. #myProfile) me now
+        signAndSend 
+          newProfileF 
+          (singleton . const . DisplayProfilePage $ Just me) 
+          (singleton . const . ReportError $ "Failed updating profile!")
+        -- TODO: update profile in #profiles if sending successfull
+    SendLike e -> do
+        let me = model ^. #me
+            rcs = model ^. #reactions % #processed % at (e ^. #eventId)
+            sendLike = likeEvent e me
+            isLikedByMe = fromMaybe False $ Set.member me <$> rcs ^? _Just % at Like % _Just
+            doNothing = noEff model
+
+        if isLikedByMe 
+        then doNothing
+        else 
+          signAndSend 
+            sendLike 
+            (singleton . const . LikeSent $ e) 
+            (singleton . const . ReportError $ "Failed sending like!")
+       
+    LikeSent e -> 
+      let me = model ^. #me
+          updated = model & #reactions % #processed % at (e ^. #eventId) 
+             %~ \rcs -> 
+              Just $ 
+                case rcs of 
+                  Nothing -> Map.fromList [(Like, Set.singleton me)]
+                  Just ss -> ss & at Like %~ Just .
+                      fromMaybe (Set.singleton $ me) . fmap (Set.insert me)
+      in 
+        noEff $ updated
+  
     _ -> noEff model
 
   where
@@ -1035,7 +1061,7 @@ displayNoteShort withEmbed m (e, content) =
       div_
         [class_ "text-note-properties"]
         ( [showThreadIcon]
-            ++ [displayReactions reactions]
+            ++ [displayReactions m e reactions]
             ++ [replyIcon]
         )
     ]
@@ -1333,16 +1359,21 @@ displayThread m e =
         catMaybes [parentDisplay, noteDisplay, writeReplyDisplay] 
           ++ fromMaybe [] repliesDisplay
 
-displayReactions :: Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View action
-displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
-displayReactions (Just reactions) =
-  let howMany = S.pack . show . length . fromMaybe Set.empty
-      likes = [span_ [class_ "like-reaction"] [text "♥ "], span_ [] [text $ howMany (reactions ^. at Like)]]
-      dislikes = "🖓 " <> howMany (reactions ^. at Dislike)
-      others = "Others: " <> howMany (reactions ^. at Nostr.Reaction.Other)
+displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View Action
+-- displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
+displayReactions m e rcs =
+  let howMany = showt . length
+      isLikedByMe = fromMaybe False $ Set.member (m ^. #me) <$> rcs ^? _Just % at Like % _Just
+      likeCls = bool "like-reaction" "like-reaction-liked" $ isLikedByMe
+      likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like
+      likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [] [text $ " " <> likeCnt]]
+      dislikeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike
+      dislikes = span_ [class_ "dislike-reaction"] [text $ "🖓 " <> dislikeCnt]
+      otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike
+      others = span_ [class_ "other-reaction"] [text $ "Others: " <> otherCnt]
    in div_
         [class_ "reactions-container"]
-        $ likes ++ [text (" " <> dislikes <> " " <> others)]
+        $ likes ++ [dislikes, others] 
 
 displayProfilePage :: Model -> View Action
 displayProfilePage m =

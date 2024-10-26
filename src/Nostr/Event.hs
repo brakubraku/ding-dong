@@ -297,6 +297,16 @@ textNote note xo t =
       content' = note
     }
 
+likeEvent :: Event -> XOnlyPubKey -> UTCTime -> UnsignedEvent
+likeEvent e xo t =
+  UnsignedEvent
+    { pubKey' = xo,
+      created_at' = t,
+      kind' = Reaction,
+      tags' = [ETag (e ^. #eventId) Nothing (Just Mention), PTag (ValidXOnlyPubKey $ e ^. #pubKey) Nothing Nothing ],
+      content' = "+"
+    }
+
 setMetadata :: Profile -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setMetadata profile xo t =
   UnsignedEvent
