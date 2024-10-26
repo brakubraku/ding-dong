@@ -4,7 +4,7 @@
 
 module Nostr.Keys where
 
-import Crypto.Secp256k1 (derivePubKey, deriveXOnlyPubKey, createContext, importXOnlyPubKey)
+import Crypto.Secp256k1 (derivePubKey, deriveXOnlyPubKey, createContext)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Text (Text)
@@ -38,11 +38,6 @@ data Keys = Keys
   }
   deriving (Eq, Show)
 
-data UnknownXOnlyPubKey
-  = ValidXOnlyPubKey XOnlyPubKey
-  | InvalidXOnlyPubKey
-  deriving (Eq, Show, Ord)
-
 instance Ord Keys where
   compare k1 k2 =
     let (SecKey s1) = secKey k1
@@ -73,18 +68,6 @@ instance FromJSON SecKey where
     case decodeHex s of
       Just key -> pure . SecKey $ key
       Nothing -> fail "SecKey fromJSON blew up"
-
-instance FromJSON UnknownXOnlyPubKey where
-  parseJSON = withText "unknown XOnlyPubKey" $ \t -> do
-    case textToByteStringType t parseXOnlyPubKey of
-      Just xo ->
-        return $ ValidXOnlyPubKey xo
-      Nothing ->
-        return InvalidXOnlyPubKey
-
-instance ToJSON UnknownXOnlyPubKey where
-  toJSON (ValidXOnlyPubKey xo) = toJSON xo
-  toJSON _ = String ""
 
 instance Ord XOnlyPubKey where
   compare (XOnlyPubKey a) (XOnlyPubKey b) =

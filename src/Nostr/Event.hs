@@ -49,7 +49,7 @@ data ReadWrite = Read | Write
  
 data Tag
   = ETag EventId (Maybe RelayURL) (Maybe Marker)
-  | PTag UnknownXOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
+  | PTag XOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
   | RTag Text (Maybe ReadWrite)
   | NonceTag
   | UnknownTag Array
@@ -197,11 +197,7 @@ instance ToJSON Tag where
     Array $
       fromList
         [ String "p",
-          case xo of
-            ValidXOnlyPubKey xo' ->
-              toJSON xo'
-            InvalidXOnlyPubKey ->
-              String "",
+          toJSON xo,
           maybe (String "") (\r -> String r) relayURL,
           maybe (String "") (\n -> String n) name
         ]
@@ -303,7 +299,7 @@ likeEvent e xo t =
     { pubKey' = xo,
       created_at' = t,
       kind' = Reaction,
-      tags' = [ETag (e ^. #eventId) Nothing (Just Mention), PTag (ValidXOnlyPubKey $ e ^. #pubKey) Nothing Nothing ],
+      tags' = [ETag (e ^. #eventId) Nothing (Just Mention), PTag (e ^. #pubKey) Nothing Nothing ],
       content' = "+"
     }
 
@@ -323,13 +319,14 @@ readProfile event = case kind event of
     decode $ fromStrict $ encodeUtf8 $ content event
   _ ->
     Nothing
+
 setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo,
       created_at' = t,
       kind' = Contacts,
-      tags' = map (\c -> PTag (ValidXOnlyPubKey $ fst c) (Just "") (snd c)) contacts,
+      tags' = map (\c -> PTag (fst c) (Just "") (snd c)) contacts,
       content' = ""
     }
 
@@ -454,7 +451,7 @@ createReplyEvent replyTo now xo replyMsg =
       addRootTag rid e = 
         addTag e $ ETag rid Nothing (Just Root)
       tagAuthor e = 
-        addTag e $ PTag (ValidXOnlyPubKey $ replyTo ^. #pubKey) Nothing Nothing
+        addTag e $ PTag (replyTo ^. #pubKey) Nothing Nothing
    in reply & tagAuthor
             & (maybe 
                 (addRootTag (replyTo ^. #eventId))
