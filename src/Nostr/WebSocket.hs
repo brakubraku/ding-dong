@@ -76,10 +76,13 @@ connectRelays nn sendMsg sink = do
       socket <- createWebSocket (relay ^. #uri) []
       socketState <- liftIO $ newMVar 0
 
+      let markConnected r=  
+           modifyMVar_ (nn ^. #relays) $ \rels ->
+              pure $ rels & at (r ^. #uri) %~ fmap (Optics.set #connected True)
+  
       WS.addEventListener socket "open" $ \_ -> do
         liftIO $ do
-          modifyMVar_ (nn ^. #relays) $ \rels ->
-            pure $ rels & at (relay ^. #uri) %~ fmap (\r -> r {connected = True})
+          markConnected relay
           _ <- swapMVar socketState 1
           print $ "branko-websocket-open" <> show relay
           sink . sendMsg $ WebSocketOpen relay
@@ -118,7 +121,6 @@ connectRelays nn sendMsg sink = do
                         <> show subId
                         <> " not found in responseChannels. Event received="
                         <> show event
-                    liftIO . sink . sendMsg . WebSocketError relay $ "SubId not found in response channels"
 
           Just (Nostr.Response.EOSE subId) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
@@ -128,7 +130,6 @@ connectRelays nn sendMsg sink = do
             liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
           _ -> do 
                liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
-               liftIO . sink . sendMsg $ (WebSocketError relay $ "Could not decode answer booyatch")
 
       WS.addEventListener socket "close" $ \e -> do
         code <- codeToCloseCode <$> WS.code e
@@ -183,16 +184,23 @@ connectRelays nn sendMsg sink = do
                   request <- liftIO . atomically . readTChan $ rc
                   sendJson' socket request -- TODO: if the socket is porked at this point this will pork up
                   doLoop
-                2 -> pure () -- exit but don't change subscription status, in case reconnect happens
-                3 -> pure () 
-                _ -> do 
-                  -- mark all non-EOSE subscriptions on this Relay as errored
-                  let changeToError st
-                        | st /= Nostr.Network.EOSE = Nostr.Network.Error "Error" -- TODO: more descriptive error
-                        | otherwise = st
-                  liftIO . runNostr nn $ changeStateForAllSubs relay (fmap changeToError)
+                2 -> markAllError relay "Relay closed connection"
+                3 -> markAllError relay "Relay closed connection"
+                _ -> markAllError relay "Error received from relay"
       doLoop
       WS.close socket
+
+    markAllError relay eText = do 
+      liftIO . runNostr nn $ do 
+        markDisconnected relay
+        changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
+
+markDisconnected :: Relay -> NostrNetworkT ()
+markDisconnected r = do 
+  nn <- ask 
+  liftIO . modifyMVar_ (nn ^. #relays) $ 
+    \rels -> do 
+        pure $ rels & at (r ^. #uri) %~ fmap (Optics.set #connected False)
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
 sendJson' socket m = do

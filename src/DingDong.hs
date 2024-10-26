@@ -113,6 +113,30 @@ start = do
     mountPoint = Nothing
     logLevel = Off
 
+reloadAfterReconnect :: NostrNetwork -> Sub Action
+reloadAfterReconnect nn sink  = do 
+    let checkState isReload = do
+          someConnected <- areSomeConnected
+          if someConnected && isReload 
+          then do
+            sleep . Seconds $ 2
+            sink Reload
+          else do
+            isDisconnected <- areAllDisconnected
+            sleep . Seconds $ 1
+            checkState $ if isReload then True else isDisconnected
+    liftIO $ checkState False
+  where
+    areSomeConnected = do
+       relays <- Map.elems <$> readMVar (nn ^. #relays)
+       pure $ any (==True) $ relays ^.. folded % #connected 
+    areAllDisconnected = do
+      relays <- Map.elems <$> readMVar (nn ^. #relays)
+      pure $ all (==False) $ relays ^.. folded % #connected 
+    
+-- allDisconnected :: RelayStats -> Bool
+-- allDisconnected rstats = all (==False) $ (\(c,_,_) -> c) <$> Map.elems rstats
+
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
@@ -128,7 +152,8 @@ updateModel nn rl pl lnd action model =
 
     HandleWebSocket (WebSocketError r e) -> 
       -- TODO: this causes a lot of view regeneration
-      noEff $ model & #relaysStats % at  (r ^. #uri) % _Just % _2 %~ \(ErrorCount ec) -> ErrorCount (ec+1)
+      noEff $ 
+        model & #relaysStats % at  (r ^. #uri) % _Just % _2 %~ (\(ErrorCount ec) -> ErrorCount (ec+1))
 
     HandleWebSocket (WebSocketClose r e) -> 
       noEff $ 
@@ -203,6 +228,10 @@ updateModel nn rl pl lnd action model =
                     liftIO . sleep . Seconds $ 5
                     loop
                in loop
+
+            -- check for connection status periodically and reload after 
+            -- connection is reestablished after being lost
+            forkJSM $ reloadAfterReconnect nn sink
             -- start showing feed
             liftIO . sink $ ShowFeed
             -- start notifications
@@ -1116,10 +1145,11 @@ displayPagedNotif m pml ec@(e,_) =
     isReplyToU = maybe False (\(p,_) -> p ^. #pubKey == m ^. #me) replyTo
     notifType = bool
       ("mentioned you in")
-      ("replied to you")
+      ("replied")
       isReplyToU
     tnInfo = div_ [] [profileName, span_ [] [text $ " " <> notifType]]
-    reactInfo = div_ [] [profileName, span_ [] [text $ " reacted with " <> e ^. #content <> " to"]]
+    reactInfo = div_ [] [profileName, span_ [] [text $ " reacted with " <> decodeContent (e ^. #content) <> " to"]]
+    decodeContent c = if c == "+" then "👍" else c 
     reactTo = fromMaybe (emptyEvent, processContent emptyEvent) $ do 
        eid <- (Nostr.Reaction.extract e) ^? _Just % #reactionTo
        m ^. pml % #reactionEvents % at eid
@@ -1369,7 +1399,7 @@ displayReactions m e rcs =
       likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [] [text $ " " <> likeCnt]]
       dislikeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike
       dislikes = span_ [class_ "dislike-reaction"] [text $ "🖓 " <> dislikeCnt]
-      otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike
+      otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Nostr.Reaction.Other
       others = span_ [class_ "other-reaction"] [text $ "Others: " <> otherCnt]
    in div_
         [class_ "reactions-container"]
