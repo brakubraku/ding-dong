@@ -442,6 +442,10 @@
     display:flex
 }
 
+.child {
+    margin-left: 40px;
+}
+
 .parent-not-found {
     border: 1px solid red;
 }

@@ -1119,8 +1119,8 @@ displayPagedNote m pml ec@(e,_)
     | isJust (findIsReplyTo e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
         in 
-          div_ [class_ "parent-reply-complex"] 
-           [div_ [class_ "parent"] [responseToIco, maybe emptyParent (\p -> displayNote m p) mp]
+          div_ [class_ "parent-child-complex"] 
+           [div_ [class_ "parent"] [maybe emptyParent (\p -> displayNote m p) mp]
            ,div_ [class_ "child"] [displayNote m ec]]
     | otherwise = 
         displayNote m ec
