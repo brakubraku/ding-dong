@@ -24,7 +24,7 @@ import Control.Monad.Reader
 import Data.Bifunctor (second)
 import Data.Bool (bool)
 import Data.Either (fromRight)
-import Data.List (singleton)
+import Data.List (singleton, uncons)
 import qualified Data.List as Prelude
 import qualified Data.Map as Map hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
@@ -49,7 +49,7 @@ import Nostr.Relay
 import qualified Nostr.RelayPool as RP
 import Nostr.Response
 import Nostr.WebSocket
-import Optics as O
+import Optics as O hiding (uncons)
 import PeriodicLoader
 import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
@@ -106,6 +106,7 @@ start = do
           def
           me
           relaysList
+          (defaultPagedModel (Until now))
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -722,6 +723,16 @@ updateModel nn rl pl lnd action model =
                       fromMaybe (Set.singleton $ me) . fmap (Set.insert me)
       in 
         noEff $ updated
+    
+    -- DisplayBookmarks ->
+    --   effectSub model $ 
+    --           subscribe
+    --             nn
+    --             PeriodicUntilEOS
+    --             [DatedFilter (MetadataFilter [xo']) Nothing Nothing]
+    --             ReceivedProfiles
+    --             (Just . SubState $ ProfilePage)
+    --             extractProfile
   
     _ -> noEff model
 
@@ -1030,7 +1041,11 @@ displayProfilePic xo _ =
 displayNoteContent :: Bool -> Model -> [Content] -> View Action
 displayNoteContent withEmbed m content =
   let displayContent (TextC textWords) =
-        text . T.unwords $ textWords
+        let pgraphs = uncons . filter (/= "") . T.splitOn "\n\n" $ T.unwords $ textWords
+        in div_ [] $ 
+            maybe []
+              (\(first,rest) -> text first : fmap (\ptext -> p_ [] [text ptext]) rest)
+              pgraphs
       displayContent (LinkC Image link) =
         div_
           []

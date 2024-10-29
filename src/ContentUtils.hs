@@ -61,4 +61,13 @@ processContent e
           other -> other : TextC ws : rest
       processAll w cnt =
         processWord w : cnt
-   in foldr (processAll) [] $ T.words (e ^. #content)
+      -- split it into paragraphs but preserve the newlines
+   in foldr (processAll) [] . splitToWords $ e ^. #content
+
+splitToWords :: T.Text -> [T.Text]
+splitToWords content = concat . catMaybes $
+   -- append \n\n to last word in a paragraph
+   fmap (\(prefix, lastWord) -> prefix ++ [lastWord <> "\n\n"]) 
+     <$> Data.List.unsnoc 
+     -- split to paragraphs and paragraphs into words
+       <$> (T.words <$>  T.splitOn "\n\n" content)
