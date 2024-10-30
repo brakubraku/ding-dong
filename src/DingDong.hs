@@ -1026,7 +1026,7 @@ footerView Model {..} =
 
 displayProfilePic :: XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic xo (Just pic) =
-  img_
+  imgKeyed_ (Key pic)
     [ class_ "profile-pic",
       prop "src" $ pic,
       onClick $ DisplayProfilePage (Just xo)
@@ -1051,7 +1051,7 @@ displayNoteContent withEmbed m content =
           []
           [ a_
               [href_ link, target_ "_blank"]
-              [img_ [class_ "link-pic", prop "src" link]]
+              [imgKeyed_ (Key link) [class_ "link-pic", prop "src" link]]
           ]
       displayContent (LinkC ContentUtils.Other link) =
         div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
@@ -1303,12 +1303,12 @@ displayProfile m xo =
         let banner =
               p ^. #banner >>= \b ->
                 pure $
-                  img_ [class_ "banner-pic", prop "src" b]
+                  imgKeyed_ (Key b) [class_ "banner-pic", prop "src" b]
         let bannerDef = div_ [class_ "banner-pic-default"] []
         let profilepic =
               p ^. #picture >>= \pic ->
                 pure $
-                  img_ [class_ "profile-pic", prop "src" pic]
+                  imgKeyed_ (Key pic) [class_ "profile-pic", prop "src" pic]
         let profilepicDef = div_ [class_ "profile-pic-default"] []
         let profileName = span_ [class_ "username"] [text $ p ^. #username]
         let displayName =
