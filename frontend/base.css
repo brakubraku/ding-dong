@@ -133,7 +133,15 @@
     font-size: 12px;
 }
 
-.display-name {
+.notification .username {
+    cursor:pointer
+}
+
+.notification .displayname {
+    cursor:pointer
+}
+
+.displayname {
     margin-left: 5px;
     color: #951b95;
     font-size: 12px;

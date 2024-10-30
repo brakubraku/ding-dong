@@ -1148,22 +1148,28 @@ displayPagedNotif :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content
 displayPagedNotif m pml ec@(e,_) =
     case e ^. #kind of 
       TextNote -> 
-        div_ [] [tnInfo, displayNote m ec]
+        notif [tnInfo, displayNote m ec]
       Reaction -> 
-        div_ [] [reactInfo, displayNote m reactTo]
+        notif [reactInfo, displayNote m reactTo]
       _ -> div_ [] [] 
   where 
+    notif = div_ [class_ "notification"]
     replyTo = m ^. pml % #parents % at (e ^. #eventId)
     unknown = Profile "" Nothing Nothing Nothing Nothing
     profile = fromMaybe unknown $ getAuthorProfile m e
-    profileName = span_ [class_ "username"] [text $ profile ^. #username]
+    profileName = span_ 
+       [class_ "username", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
+       [text $ profile ^. #username]
+    displayName = span_ 
+     [class_ "displayname", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
+     [text . fromMaybe "" $ profile ^. #displayName]
     isReplyToU = maybe False (\(p,_) -> p ^. #pubKey == m ^. #me) replyTo
     notifType = bool
       ("mentioned you in")
       ("replied")
       isReplyToU
-    tnInfo = div_ [] [profileName, span_ [] [text $ " " <> notifType]]
-    reactInfo = div_ [] [profileName, span_ [] [text $ " reacted with " <> decodeContent (e ^. #content) <> " to"]]
+    tnInfo = div_ [] [profileName, displayName, span_ [] [text $ " " <> notifType]]
+    reactInfo = div_ [] [profileName, displayName, span_ [] [text $ " reacted with " <> decodeContent (e ^. #content) <> " to"]]
     decodeContent c = if c == "+" then "👍" else c 
     reactTo = fromMaybe (emptyEvent, processContent emptyEvent) $ do 
        eid <- (Nostr.Reaction.extract e) ^? _Just % #reactionTo
@@ -1196,7 +1202,7 @@ displayNote' withEmbed m ec@(e, _) =
     profileName = span_ [class_ "username"] [text $ profile ^. #username]
     displayName =
       span_
-        [class_ "display-name"]
+        [class_ "displayname"]
         [text . fromMaybe "" $ profile ^. #displayName]
     noteAge = span_ [class_ "note-age"] [text . S.pack $ eventAge (m ^. #now) e]
 
@@ -1313,7 +1319,7 @@ displayProfile m xo =
         let profileName = span_ [class_ "username"] [text $ p ^. #username]
         let displayName =
               span_
-                [class_ "display-name"]
+                [class_ "displayname"]
                 [text . fromMaybe "" $ p ^. #displayName]
         let rInfoText r = case (r ^. #info) of 
                               RelayInfo True True -> "(RW)"
