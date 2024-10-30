@@ -428,13 +428,9 @@
     cursor: pointer;
     border: none;
     border-radius: 40%;
-    background: burlywood;
+    background: #815bd4;
     padding: 10px;
     font-size: 14px;
-}
-
-.parent-reply-complex {
-    /* border: 1px solid red; */
 }
 
 .parent {

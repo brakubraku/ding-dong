@@ -320,7 +320,7 @@ updateModel nn rl pl lnd action model =
 
     ShowNewNotes ->
       let updated = model & #feed % #page .~ 0 & #feedNew .~ []
-       in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew)]
+       in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew), pure $ ScrollTo "top-top"]
 
     PagedEventsProcess putAtStart pml screen rs ->
       let (ecs, enotes, eprofs) = processReceivedEvents rs
