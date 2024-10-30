@@ -1013,7 +1013,7 @@ areSubsRunning m p =
     subs <- m ^. #subscriptions % at p
     let isRunning (_, SubRunning _) = True
         isRunning (_, _) = False
-    pure . (> 0) . length . filter isRunning $ subs
+    pure . any isRunning $ subs
 
 footerView :: Model -> View action
 footerView Model {..} =
