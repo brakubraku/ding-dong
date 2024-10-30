@@ -14,7 +14,6 @@ import Data.Set as S
 import GHC.Generics
 import Nostr.Event
 import qualified Nostr.Kind as Kind
-import Nostr.ReactionUtils (reactionToEvent)
 import Nostr.Relay
 import Optics
 
@@ -87,5 +86,7 @@ processReceived reactions (event, relay) =
           (M.fromList [(event, S.singleton relay)])
         & updateProcessed event
 
--- map from sentiment to list of authors who expressed such sentiment
--- type Reactions = Map.Map Sentiment (Set.Set XOnlyPubKey)
+reactionToEvent :: Event -> Maybe EventId
+reactionToEvent e = do
+  (ETag eid _ _) <- snd <$> (unsnoc . Prelude.filter isEtag . tags $ e)
+  pure eid

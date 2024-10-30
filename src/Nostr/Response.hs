@@ -4,8 +4,6 @@ module Nostr.Response where
 
 import Control.Monad (mzero)
 import Data.Aeson
--- import Nostr.Relay
-
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T

@@ -32,7 +32,6 @@ library
                       Nostr.RelayPool
                       Nostr.Log
                       Nostr.Reaction
-                      Nostr.ReactionUtils
                       PeriodicLoader
                       ReactionsLoader
                       ProfilesLoader

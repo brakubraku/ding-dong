@@ -22,7 +22,6 @@ data RelayInfo = RelayInfo
 type RelayURI = Text
 data Relay = Relay
   { 
-    -- uri       :: URI
     uri :: RelayURI
   , info      :: RelayInfo
   , connected :: Bool
@@ -31,15 +30,6 @@ data Relay = Relay
 
 instance Eq Relay where 
   (==) = \r1 r2 -> uri r1 == uri r2
-
--- instance FromJSON URI where
---   parseJSON = withText "RelayURI" $ \u -> do
---     case mkURI u of
---       Just u' -> return u'
---       Nothing -> fail "invalid relay URI"
-
--- instance ToJSON URI where
---   toJSON u = String $ render u
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
@@ -55,33 +45,4 @@ instance ToJSON Relay where
     [ ( "uri", String $ uri r)
     , ( "info", toJSON $ info r)
     ]
-    
--- extractScheme :: Relay -> Text
--- extractScheme r = URI.unRText scheme
---   where
---     scheme = fromJust $ uri' ^. uriScheme
---     uri' = uri r
-
--- extractHostname :: Relay -> Text
--- extractHostname r =
---   URI.unRText $ fromJust $ uri' ^? uriAuthority . _Right . authHost
---   where
---     uri' = uri r
-
--- extractPort :: Relay -> Int
--- extractPort r =
---   case uri' ^? uriAuthority . _Right . authPort of
---     Just (Just p) -> wordToInt p
---     _ -> if extractScheme r == "wss" then 443 else 80
---   where
---     uri' = uri r
-
--- extractPath :: Relay -> Text
--- extractPath r =
---   case uri' ^? uriPath of
---     Just [] -> "/"
---     Just p  -> foldl (\x y -> x `append` "/" `append` y ) "" (map URI.unRText p)
---     _       -> "/"
---   where
---     uri' = uri r
-
+  

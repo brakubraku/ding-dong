@@ -41,6 +41,3 @@ logObject :: (Show a) => a -> Text -> IO ()
 logObject o e = do
   now <- getCurrentTime
   print $ (pack . show) now <> "[INFO] " <> (pack . show) o <> " " <> e
-
--- logError :: Text -> IO ()
--- logError e = print $ "[ERROR] " <> e

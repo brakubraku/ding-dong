@@ -45,7 +45,7 @@ extractProfileIds bs =
       <$> bs
 
 parseTLVs :: BS.ByteString -> [(Int, BS.ByteString)]
-parseTLVs bs =
+parseTLVs inputBs =
   let tlv bs = do
         (t, lvrest) <- BS.uncons bs
         (l, vrest) <- BS.uncons lvrest
@@ -53,7 +53,7 @@ parseTLVs bs =
         pure ((fromInteger . toInteger $ t, v), rest)
       getAll (Just ((t, v), rest)) = (t, v) : getAll (tlv rest)
       getAll Nothing = []
-   in getAll (tlv bs)
+   in getAll (tlv inputBs)
 
 get :: Int -> [(Int, BS.ByteString)] -> Maybe BS.ByteString
 get i ((j, bs) : tlvs) = bool (get i tlvs) (Just bs) $ i == j
