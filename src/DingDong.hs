@@ -664,8 +664,6 @@ updateModel nn rl pl lnd action model =
             (model & #fpm .~ fpm)
             [pure FindProfile, pure $ GoPage ProfilePage]
 
-    LogReceived ers -> noEff $ model
-
     LogConsole what ->
       model <# do
         liftIO (print what) >> pure NoAction

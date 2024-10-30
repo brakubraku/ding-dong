@@ -56,7 +56,6 @@ data Action
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
   | DisplayProfilePage (Maybe XOnlyPubKey)
-  | LogReceived [(Event, Relay)]
   | AddRelay
   | ShowFeed
   | ShowNext (Lens' Model PagedEventsModel) Page
