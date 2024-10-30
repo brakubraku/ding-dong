@@ -17,7 +17,6 @@ import Control.Monad.State (MonadState (get, put), StateT (runStateT))
 import Data.Either
 import Data.Text hiding (length)
 import qualified Data.Text as T hiding (length)
-import GHC.Float
 import GHC.Generics (Generic)
 import Miso hiding (at)
 import Nostr.Filter
@@ -30,7 +29,6 @@ import Nostr.Response
 import Optics
 import ModelAction (SubState (..))
 import Data.Bool (bool)
-import Debug.Trace
 import Utils
 
 -- 3 types of subscribes:
@@ -148,7 +146,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
 
     -- inform about subscription state changes if
     -- function actOnSubState is provided
-    -- reportSubState :: Bool -> Maybe ((SubscriptionId, SubState) -> action) -> SubscriptionId -> Map.Map SubscriptionId SubscriptionState -> IO ()
     reportSubState _ Nothing _ _ = pure ()
     reportSubState isFinished (Just act) subId subStates = do
       let relState = subStates ^? at subId % _Just % #relaysState

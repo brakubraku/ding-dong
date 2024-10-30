@@ -84,7 +84,6 @@ connectRelays nn sendMsg sink = do
         liftIO $ do
           markConnected relay
           _ <- swapMVar socketState 1
-          print $ "branko-websocket-open" <> show relay
           sink . sendMsg $ WebSocketOpen relay
 
       WS.addEventListener socket "message" $ \v -> do
@@ -142,7 +141,7 @@ connectRelays nn sendMsg sink = do
         now <- liftIO getCurrentTime
         when (status == 3) $
           unless (code == CLOSE_NORMAL || code == CLOSE_NO_STATUS) $ do
-            liftIO . print $ show now <> ":xxy-reconnecting " <> show relay
+            liftIO . print $ show now <> "reconnecting " <> show relay
             let diff = (round $ diffUTCTime now lastReconnect)
             case (recnt > 3, diff > 1) of -- TODO: take time into account?
               (True,_) -> do 
@@ -163,10 +162,8 @@ connectRelays nn sendMsg sink = do
         if undef
           then do
             liftIO . sink . sendMsg $ (WebSocketError relay mempty)
-            liftIO . print $ "branko-subId-websocket-error"
           else do
             Just d <- fromJSVal d'
-            liftIO . print $ "branko-subId-websocket-error:" <> show d
             liftIO . sink . sendMsg $ (WebSocketError relay d)
 
       rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)

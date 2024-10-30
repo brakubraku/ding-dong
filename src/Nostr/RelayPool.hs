@@ -4,17 +4,14 @@
 
 module Nostr.RelayPool where
 
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Monad (unless)
 import Control.Monad.Extra (when)
 import Control.Monad.Reader
 import Control.Monad.STM (atomically)
-import Data.Aeson (encode)
 import qualified Data.Base16.Types as B16
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map as Map
 import Data.Text (pack)
 import Nostr.Filter
@@ -47,27 +44,8 @@ changeState sid relay change = do
   nn <- ask
   lift . modifyMVar_ (nn ^. #subscriptions) $ \subs -> do
     let updated =
-          subs
-            & at sid
-            % _Just
-            % #relaysState
-            % at relay
-            %~ change
+          subs & at sid % _Just % #relaysState % at relay %~ change
     pure updated
-
-addRelay :: Relay -> NostrNetworkT [Relay]
-addRelay r = do
-  nn <- ask
-  lift . modifyMVar (nn ^. #relays) $ \rels -> do
-    let updated = rels & at (r ^. #uri) .~ Just r
-    pure (updated, Map.elems updated)
-
-removeRelay :: Relay -> NostrNetworkT [Relay]
-removeRelay relay = do
-  nn <- ask
-  lift . modifyMVar (nn ^. #relays) $ \rels -> do
-    let updated = Map.delete (relay ^. #uri) rels
-    pure (updated, Map.elems updated)
 
 subscribe ::
   TChan (Response, Relay) ->
@@ -150,8 +128,3 @@ waitForActiveConnections (Seconds timeout) = do
   unless (all connected rels || timeout <= 0) $ do
     lift . sleep . Seconds $ 0.5
     waitForActiveConnections $ Seconds (timeout - 0.5)
-
-saveRelays :: [Relay] -> IO ()
-saveRelays rels = do
-  LazyBytes.writeFile "relays.ft" $ encode rels
-  putStrLn "Relays saved to disk"

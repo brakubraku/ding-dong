@@ -135,9 +135,6 @@ reloadAfterReconnect nn sink  = do
       relays <- Map.elems <$> readMVar (nn ^. #relays)
       pure $ all (==False) $ relays ^.. folded % #connected 
     
--- allDisconnected :: RelayStats -> Bool
--- allDisconnected rstats = all (==False) $ (\(c,_,_) -> c) <$> Map.elems rstats
-
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
@@ -1141,8 +1138,6 @@ displayPagedNote m pml ec@(e,_)
         displayNote m ec
   where 
     emptyParent = div_ [] [text "Loading parent event"]
-    responseToIco = div_ [class_ "responseto-icon"] 
-      []
 
 displayPagedNotif :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
 displayPagedNotif m pml ec@(e,_) =
