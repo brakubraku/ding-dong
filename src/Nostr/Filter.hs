@@ -38,7 +38,7 @@ data Filter
   | TextNoteFilter [XOnlyPubKey]
   | DeletesFilter [XOnlyPubKey]
   | LinkedEvents [EventId]
-  | EventsWithId [EventId] -- parent event meaning one which eventId is a response to
+  | EventsWithId [EventId]
   | RepliesToEvent EventId
   | CalendarTimeFilter
   | CalendarDayFilter
@@ -139,12 +139,6 @@ textNotesWithDeletes since until xos =
     -- but instead take all of them until present
     DatedFilter (DeletesFilter xos) since Nothing
   ]
-
--- addTimeInterval :: UTCTime -> [Item [Pair]]
--- addTimeInterval interval =
---   [ ("since", toJSON $ toSeconds (inf interval)),
---     ("until", toJSON $ toSeconds (sup interval) + 60)
---   ]
 
 -- $(deriveFromJSON defaultOptions{constructorTagModifier = fmap toLower} ''Filter)
 
