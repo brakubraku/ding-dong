@@ -58,3 +58,13 @@ saveLastNotif when =
 
 showt :: Show a => a -> Text
 showt = pack . show
+
+getValueOfInput :: Text -> JSM Text
+getValueOfInput inputId = 
+    valToText =<< getElementById inputId ! ("value" :: String)
+
+setValueOfInput :: Text -> Text -> JSM ()
+setValueOfInput inputId t = do
+    i <- getElementById inputId 
+    v <- toJSVal t
+    setProp "value" v $ Object i

@@ -103,7 +103,6 @@ start = do
           []
           Map.empty
           ""
-          def
           me
           relaysList
           (defaultPagedModel (Until now))
@@ -531,11 +530,8 @@ updateModel nn rl pl lnd action model =
       let add p ps@(p1 : _) =
             bool (p : ps) ps (p1 == p)
           add p [] = [p]
-          profile = fst <$> model ^. #profiles % at (model ^. #me)
-          fillMyProfile m = m & #myProfile .~ fromMaybe def profile
-          isProfileEdit = page == MyProfilePage
-       in noEff $ model & #page .~ page & #history %~ add page
-                        & bool id fillMyProfile isProfileEdit
+          updated = model & #page .~ page & #history %~ add page
+       in noEff updated
 
     GoBack ->
       let updated = do
@@ -654,15 +650,18 @@ updateModel nn rl pl lnd action model =
                        <$> erRels
                    )
 
-    DisplayProfilePage mxo ->
+    PreloadProfile mxo -> 
       let fpm =
             FindProfileModel
               (fromMaybe "" $ encodeBechXo =<< mxo)
               mxo
               (defaultPagedModel (Until $ model ^. #now))
        in batchEff
-            (model & #fpm .~ fpm)
-            [pure FindProfile, pure $ GoPage ProfilePage]
+            (model & #fpm .~ fpm) 
+            [pure FindProfile]
+
+    DisplayProfilePage mxo ->
+      batchEff model [pure $ PreloadProfile mxo, pure $ GoPage ProfilePage]
 
     LogConsole what ->
       model <# do
@@ -670,8 +669,7 @@ updateModel nn rl pl lnd action model =
 
     SendReplyTo e -> do
         let replyEventF = 
-             \t -> createReplyEvent e t (model ^. #me) 
-               $ model ^. #noteDraft
+             \t -> pure $ createReplyEvent e t (model ^. #me) $ model ^. #noteDraft
             localhost = Relay "localhost" (RelayInfo False False) False
             successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
                 const ClearWritingReply]
@@ -684,18 +682,20 @@ updateModel nn rl pl lnd action model =
        noEff $ model & #writeReplyTo .~ Nothing
                      & #noteDraft .~ ""
   
-    SendUpdateProfile -> do
+    SendUpdateProfile getProfile -> do
         let me = model ^. #me
-        let newProfileF = \now -> setMetadata (model ^. #myProfile) me now
+        let newProfileF = \now -> do 
+              p <- getProfile
+              pure $ setMetadata p me now
         signAndSend 
           newProfileF 
-          (singleton . const . DisplayProfilePage $ Just me) 
+          (singleton . const . PreloadProfile $ Just me) 
           (singleton . const . ReportError $ "Failed updating profile!")
         -- TODO: update profile in #profiles if sending successfull
     SendLike e -> do
         let me = model ^. #me
             rcs = model ^. #reactions % #processed % at (e ^. #eventId)
-            sendLike = likeEvent e me
+            sendLike = pure . likeEvent e me
             isLikedByMe = fromMaybe False $ Set.member me <$> rcs ^? _Just % at Like % _Just
             doNothing = noEff model
 
@@ -728,16 +728,24 @@ updateModel nn rl pl lnd action model =
     --             ReceivedProfiles
     --             (Just . SubState $ ProfilePage)
     --             extractProfile
+
+    DisplayMyProfilePage -> 
+        batchEff model $
+          [ pure $ PreloadProfile (Just $ model ^. #me),
+            pure . GoPage $ MyProfilePage
+          ]
   
+   
     _ -> noEff model
 
   where
-    signAndSend ueF successActs failureActs = 
+    signAndSend makeEvent successActs failureActs = 
       effectSub model $ \sink -> do
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
+          e <- makeEvent now
           let Keys _ xo _ = keys $ nn
-              signed = signEvent (ueF now) key xo
+              signed = signEvent e key xo
           maybe
             (liftIO . sink $ ReportError "Failed sending: Event signing failed")
             ( \se -> liftIO $ do
@@ -1241,7 +1249,7 @@ leftPanel m =
           pItem "Following" Following,
           aItem "Find Profile" (DisplayProfilePage Nothing),
           pItem "Relays" RelaysPage,
-          pItem "My Profile" MyProfilePage
+          aItem "My Profile" DisplayMyProfilePage
           -- pItem "Bookmarks"
         ],
       div_ [class_ "logged-in-profile"] $
@@ -1455,31 +1463,68 @@ displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =
   div_
     [class_ "myprofile-edit"]
-    [ input_
-        [ class_ "input-username",
+    [ inputKeyed_ (Key $  username)
+        [ id_ iUsername,
+          defaultValue_ username,
           placeholder_ "Enter Username",
-          value_ $ m ^. #myProfile % #username,
-          type_ "text",
-          onInput $ UpdateField (#myProfile % #username)
-        ],
-      input_
-        [ class_ "input-about",
-          placeholder_ "Enter About",
-          value_ . fromMaybe "" $ m ^. #myProfile % #about,
-          type_ "text",
-          onInput $ UpdateMaybeField (#myProfile % #about) . Just
+          type_ "text"
         ], 
-      input_
-        [ class_ "input-about",
+      inputKeyed_ (Key displayname) 
+        [ id_ iDisplayname,
+          -- onCreated $ SetInitialValue "myprofile.displayname" displayname,
+          defaultValue_ displayname,
+          placeholder_ "Enter Displayname",
+          type_ "text"
+        ],
+      inputKeyed_ (Key about)
+        [ id_ iAbout,
+          defaultValue_ about,
+          placeholder_ "Enter About",
+          type_ "text"
+        ], 
+      inputKeyed_ (Key picture)
+        [ id_ iPicture,
+          defaultValue_ picture,
           placeholder_ "Enter profile pic URL",
-          value_ . fromMaybe "" $ m ^. #myProfile % #picture,
-          type_ "text",
-          onInput $ UpdateMaybeField (#myProfile % #picture) . Just
+          type_ "text"
+        ],
+      inputKeyed_ (Key banner)
+        [ id_ iBanner,
+          defaultValue_ banner,
+          placeholder_ "Enter banner pic URL",
+          type_ "text"
         ],
       button_
-          [class_ "update-profile-button", onClick SendUpdateProfile]
-          [text "Update"]
+          [class_ "update-profile-button", onClick $ SendUpdateProfile getProfile]
+          [text "Update"],
+      displayProfile m (m ^. #me)
     ]
+  where 
+    me = fromMaybe def $ fst <$> m ^. #profiles % at (m ^. #me)
+    username = me ^. #username
+    displayname = fromMaybe "" $ me ^. #displayName
+    about = fromMaybe "" $ me ^. #about
+    picture = fromMaybe "" $ me ^. #picture
+    banner = fromMaybe "" $ me ^. #banner
+    iUsername = "myprofile.username"
+    iDisplayname = "myprofile.displayname"
+    iAbout = "myprofile.about"
+    iPicture = "myprofile.picture"
+    iBanner = "myprofile.banner"
+    getProfile =
+      let get tid = getValueOfInput tid
+          getM tid = do
+            v <- getValueOfInput tid
+            pure $ case v of
+              "" -> Nothing
+              _ -> Just v
+       in Profile
+            <$> get iUsername
+            <*> getM iDisplayname
+            <*> getM iAbout
+            <*> getM iPicture
+            <*> getM iBanner
+
 
 displayRelaysPage :: Model -> View Action
 displayRelaysPage m =

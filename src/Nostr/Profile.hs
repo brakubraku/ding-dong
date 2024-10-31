@@ -37,6 +37,7 @@ instance ToJSON Profile where
     , "display_name" .= toJSON displayName
     , "about" .= toJSON about
     , "picture" .= toJSON picture
+    , "banner" .= toJSON banner
     ]
 
 instance FromJSON Profile where

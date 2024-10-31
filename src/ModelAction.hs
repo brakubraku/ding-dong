@@ -27,6 +27,7 @@ import Nostr.WebSocket
 import Optics
 import StoredRelay
 import ProfilesLoader.Types
+import Miso (JSM)
 
 data Action
   = RelayConnected RelayURI
@@ -55,6 +56,7 @@ data Action
   | UpdateMaybeField (Lens' Model (Maybe Text)) (Maybe Text) -- don't know how to fiddle the type signatures to merge these two
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
+  | PreloadProfile (Maybe XOnlyPubKey)
   | DisplayProfilePage (Maybe XOnlyPubKey)
   | AddRelay
   | ShowFeed
@@ -72,7 +74,7 @@ data Action
   | SendReplyTo Event
   | ClearWritingReply
   | AllLoaded
-  | SendUpdateProfile
+  | SendUpdateProfile (JSM Profile)
   | ChangeRelayActive Text Bool
   | UpdatedRelaysList [StoredRelay]
   | RemoveRelay Text
@@ -84,7 +86,8 @@ data Action
   | PagedReactionsToProcess (Lens' Model PagedEventsModel) Page [(Event, Relay)]
   | SendLike Event
   | LikeSent Event
-
+  | DisplayMyProfilePage
+ 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
 
@@ -130,7 +133,6 @@ data Model = Model
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay),
     noteDraft :: Text,
-    myProfile :: Profile,
     me :: XOnlyPubKey,
     relaysList :: [StoredRelay]
   }
