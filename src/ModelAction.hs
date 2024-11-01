@@ -131,13 +131,13 @@ data Model = Model
       Map.Map
         Page
         [(SubscriptionId, SubState)],
-    relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay),
     noteDraft :: Text,
     me :: XOnlyPubKey,
-    relaysList :: [StoredRelay]
+
+    
   }
   deriving (Eq, Generic)
 

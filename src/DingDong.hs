@@ -101,13 +101,11 @@ start = do
           Nothing
           [FeedPage]
           Map.empty
-          (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           Map.empty
           []
           Map.empty
           ""
           me
-          relaysList
           (defaultPagedModel (Until now))
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
