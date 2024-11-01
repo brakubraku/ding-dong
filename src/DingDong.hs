@@ -1159,8 +1159,8 @@ displayPagedNotif m pml ec@(e,_) =
     unknown = Profile "" Nothing Nothing Nothing Nothing
     profile = fromMaybe unknown $ getAuthorProfile m e
     profileName = span_ 
-       [class_ "username", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
-       [text $ profile ^. #username]
+     [class_ "username", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
+     [text $ profile ^. #username]
     displayName = span_ 
      [class_ "displayname", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
      [text . fromMaybe "" $ profile ^. #displayName]
