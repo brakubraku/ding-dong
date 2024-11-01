@@ -1473,32 +1473,38 @@ displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =
   div_
     [class_ "myprofile-edit"]
-    [ inputKeyed_ (Key $  username)
+    [ 
+      --  inputKeyed_ (Key username)
+      input_
         [ id_ iUsername,
           defaultValue_ username,
           placeholder_ "Enter Username",
           type_ "text"
         ], 
-      inputKeyed_ (Key displayname) 
+      -- inputKeyed_ (Key displayname) 
+      input_
         [ id_ iDisplayname,
           -- onCreated $ SetInitialValue "myprofile.displayname" displayname,
           defaultValue_ displayname,
           placeholder_ "Enter Displayname",
           type_ "text"
         ],
-      inputKeyed_ (Key about)
+      -- inputKeyed_ (Key about)
+      input_
         [ id_ iAbout,
           defaultValue_ about,
           placeholder_ "Enter About",
           type_ "text"
         ], 
-      inputKeyed_ (Key picture)
+      -- inputKeyed_ (Key picture)
+      input_
         [ id_ iPicture,
           defaultValue_ picture,
           placeholder_ "Enter profile pic URL",
           type_ "text"
         ],
-      inputKeyed_ (Key banner)
+      -- inputKeyed_ (Key banner)
+      input_
         [ id_ iBanner,
           defaultValue_ banner,
           placeholder_ "Enter banner pic URL",
