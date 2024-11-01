@@ -80,15 +80,17 @@ start = do
             \(Since s) (Until u) ->
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
-      update = updateModel nn reactionsLoader profilesLoader lastNotifDate
+      update = (\a (CompactModel m) -> CompactModel <$> updateModel nn reactionsLoader profilesLoader lastNotifDate a m)
       initialModel =
-        Model
+        CompactModel $ Model 
           (defaultPagedModel (Until now))
           [] 
            ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
           []
           (FindProfileModel "" Nothing $ (defaultPagedModel (Until now)) {factor = 2, step = 5 * nominalDay})
           (RelaysPageModel "")
+          relaysList
+          (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           (Reactions Map.empty Map.empty)
           contacts
           Map.empty
@@ -110,7 +112,7 @@ start = do
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
-    view = appView
+    view (CompactModel m) = appView m
     mountPoint = Nothing
     logLevel = Off
 

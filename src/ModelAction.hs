@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE FlexibleContexts #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
 module ModelAction where
@@ -115,6 +116,8 @@ data Model = Model
     notifsNew :: [(Event, Relay)],
     fpm :: FindProfileModel,
     relaysPage :: RelaysPageModel,
+    relaysList :: [StoredRelay],
+    relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
     reactions :: Reactions, -- TODO: what about deleted reactions?
     contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
@@ -138,19 +141,29 @@ data Model = Model
   }
   deriving (Eq, Generic)
 
--- TODO: Declare your own Eq Model instance depending on
---       *when* you want Miso update function to trigger!
-
--- perhaps Eq instance is not appropriate for this
--- TODO: modify Miso so that there is a typeclass
--- class TriggerViewUpdate a where
---      shouldTrigger :: a -> a -> Bool -- oldModel -> newModel -> Bool
--- and Model must be instance of it
-
--- instance Eq Model where
---   m1 == m2 =
---     case (m1 ^. #page) of
---       Feed ->
+newtype CompactModel = CompactModel Model
+-- Miso updates views whenever model changes. It uses Eq instance to determine that.
+-- Here I define a custom one, so that updates don't happen unnecesarrily.
+instance Eq CompactModel where
+  (==) (CompactModel m1) (CompactModel m2) 
+    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew] = False
+    | otherwise =
+        if m1 ^. #page /= m2 ^. #page then m1 == m2 
+        else 
+          case m1 ^. #page of  
+            -- TODO: would need heterogenous lists to get rid of eq 
+            FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
+            Following -> allEqual [eq #profiles, eq #contacts]
+            ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
+            ProfilePage -> allEqual $ [eq #contacts, eq #fpm, eq #profiles, eq #profileRelays] ++ notesAndStuff
+            RelaysPage -> allEqual [eq #relaysStats, eq #relaysPage, eq #relaysList]
+            MyProfilePage -> allEqual $ [eq #profiles] ++ notesAndStuff
+            NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
+            BookmarksPage -> False
+   where 
+    eq ls = m1 ^. ls == m2 ^. ls
+    allEqual = Prelude.all (==True) 
+    notesAndStuff = [eq #threads, eq #reactions, eq #embedded]
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
@@ -202,6 +215,9 @@ instance Eq PagedEventsModel where
       == f2 ^. #page
       && f1 ^. #pageSize == f2 ^. #pageSize
       && f1 ^. #step == f2 ^. #step
+      && Prelude.length (f1 ^. #events) == Prelude.length (f2 ^. #events)
+      && f1 ^. #parents == f2 ^. #parents
+      && f1 ^. #reactionEvents == f2 ^. #reactionEvents
 
 data RelayState = Connected | Disconnected | Error
 
