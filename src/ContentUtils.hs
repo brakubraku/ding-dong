@@ -12,7 +12,7 @@ import Optics
 import Nostr.Event
 import Nostr.Kind (Kind(TextNote))
 
-data LinkType = Image | Other deriving (Show, Eq)
+data LinkType = Image | Video | Other deriving (Show, Eq)
 
 data Content = TextC [T.Text] | LinkC LinkType T.Text | NostrC Bech
   deriving (Show, Eq)
