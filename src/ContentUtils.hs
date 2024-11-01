@@ -29,10 +29,12 @@ filterBech cnt =
 
 whatLink :: T.Text -> LinkType
 whatLink link =
-  case T.takeEnd 4 link of
-    ".gif" -> Image
-    ".jpg" -> Image
-    ".png" -> Image
+  case T.takeWhileEnd (/='.') . T.takeEnd 5 . T.strip $ link of
+    "gif" -> Image
+    "jpg" -> Image
+    "png" -> Image
+    "webp" -> Image
+    "mp4" -> Video
     _ -> Other
 
 processBech :: T.Text -> Content

@@ -312,6 +312,12 @@
     max-width: 200px;
 }
 
+.link-video {
+    /* some arbitary numbers */
+    max-height:400px;
+    max-width:500px;
+}
+
 .follow-button {
     margin-top: 10px;
 }

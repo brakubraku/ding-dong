@@ -12,6 +12,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 
 module DingDong where
 
@@ -1055,6 +1056,13 @@ displayNoteContent withEmbed m content =
           [ a_
               [href_ link, target_ "_blank"]
               [imgKeyed_ (Key link) [class_ "link-pic", prop "src" link]]
+          ] 
+      displayContent (LinkC Video link) =
+        div_
+          []
+          [ a_
+              [href_ link, target_ "_blank"]
+              [video_ [class_ "link-video", prop @T.Text "controls" " "] [source_ [prop "src" link]]]
           ]
       displayContent (LinkC ContentUtils.Other link) =
         div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
