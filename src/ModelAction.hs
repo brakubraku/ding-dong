@@ -146,7 +146,7 @@ newtype CompactModel = CompactModel Model
 -- Here I define a custom one, so that updates don't happen unnecesarrily.
 instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
-    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew] = False
+    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #errors] = False
     | otherwise =
         if m1 ^. #page /= m2 ^. #page then m1 == m2 
         else 
