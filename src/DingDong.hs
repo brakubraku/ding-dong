@@ -106,7 +106,6 @@ start = do
           Map.empty
           ""
           me
-          (defaultPagedModel (Until now))
   startApp App {initialAction = StartAction, model = initialModel, ..}
   where
     events = defaultEvents
@@ -743,7 +742,7 @@ updateModel nn rl pl lnd action model =
           [ pure $ PreloadProfile (Just $ model ^. #me),
             pure . GoPage $ MyProfilePage
           ]
-     
+
     WriteTextToStorage tid t -> 
       model <# do 
         setLocalStorage tid t
@@ -1293,7 +1292,7 @@ leftPanel m =
              ),
       div_
         [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
-        [backArrow]
+        [backButton]
     ]
   where
     pItem label page =
@@ -1305,7 +1304,7 @@ leftPanel m =
         [class_ "left-panel-item"]
         [div_ [onClick action] [text label]]
     showBack = (> 1) . length $ m ^. #history
-    backArrow = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: T.Text)]
+    backButton = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: T.Text)]
     notifications = 
       div_
        [class_ "left-panel-item"]

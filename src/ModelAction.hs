@@ -137,9 +137,7 @@ data Model = Model
     errors :: [Text],
     fromRelays :: Map Event (Set.Set Relay),
     noteDraft :: Text,
-    me :: XOnlyPubKey,
-
-    
+    me :: XOnlyPubKey
   }
   deriving (Eq, Generic)
 
@@ -163,7 +161,6 @@ instance Eq CompactModel where
             RelaysPage -> allEqual [eq #relaysStats, eq #relaysPage, eq #relaysList]
             MyProfilePage -> allEqual $ [eq #profiles] ++ notesAndStuff
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
-            BookmarksPage -> False
    where 
     eq ls = m1 ^. ls == m2 ^. ls
     allEqual = Prelude.all (==True) 
