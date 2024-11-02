@@ -45,6 +45,7 @@ data Action
   | ActualTime UTCTime
   | DisplayThread Event
   | DisplayReplyThread Event
+  | GotReplyDraft Text
   | ThreadEvents [(Event, Relay)] Page
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
@@ -55,6 +56,7 @@ data Action
   | GoBack
   | UpdateField (Lens' Model Text) Text                      -- TODO: see below
   | UpdateMaybeField (Lens' Model (Maybe Text)) (Maybe Text) -- don't know how to fiddle the type signatures to merge these two
+  | WriteTextToStorage Text Text
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
   | PreloadProfile (Maybe XOnlyPubKey)
@@ -72,7 +74,7 @@ data Action
   | StartFeedLongRunning [DatedFilter]
   | FeedLongRunningProcess [(Event, Relay)]
   | ShowNewNotes
-  | SendReplyTo Event
+  | SendReplyTo Event (JSM Text)
   | ClearWritingReply
   | AllLoaded
   | SendUpdateProfile (JSM Profile)

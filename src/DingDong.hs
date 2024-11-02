@@ -564,10 +564,16 @@ updateModel nn rl pl lnd action model =
           sink . GoPage $ ThreadPage e
           sink . ScrollTo $ "top-top"
 
+    GotReplyDraft draft -> noEff $ model & #noteDraft .~ draft
+
     DisplayReplyThread e -> 
      batchEff
        (model & #writeReplyTo ?~ e)
-       [pure $ DisplayThread e]
+       [pure $ DisplayThread e, readDraft]
+     where 
+      readDraft = do 
+        draft <- getLocalStorage "reply-draft"
+        pure . GotReplyDraft . fromRight "" $ draft
 
     ThreadEvents [] _ -> noEff $ model
     ThreadEvents es screen ->
@@ -668,9 +674,10 @@ updateModel nn rl pl lnd action model =
       model <# do
         liftIO (print what) >> pure NoAction
 
-    SendReplyTo e -> do
-        let replyEventF = 
-             \t -> pure $ createReplyEvent e t (model ^. #me) $ model ^. #noteDraft
+    SendReplyTo e getReplyText -> do
+        let replyEventF = \t -> do
+             reply <- getReplyText
+             pure $ createReplyEvent e t (model ^. #me) reply
             localhost = Relay "localhost" (RelayInfo False False) False
             successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
                 const ClearWritingReply]
@@ -680,8 +687,9 @@ updateModel nn rl pl lnd action model =
               (singleton . const . ReportError $ "Failed sending reply!")
 
     ClearWritingReply -> 
-       noEff $ model & #writeReplyTo .~ Nothing
-                     & #noteDraft .~ ""
+      let updated = model & #writeReplyTo .~ Nothing
+                          & #noteDraft .~ ""
+      in batchEff updated [setLocalStorage @T.Text "reply-draft" "" >> pure NoAction]
   
     SendUpdateProfile getProfile -> do
         let me = model ^. #me
@@ -735,8 +743,12 @@ updateModel nn rl pl lnd action model =
           [ pure $ PreloadProfile (Just $ model ^. #me),
             pure . GoPage $ MyProfilePage
           ]
-  
-   
+     
+    WriteTextToStorage tid t -> 
+      model <# do 
+        setLocalStorage tid t
+        pure NoAction
+
     _ -> noEff model
 
   where
@@ -1399,17 +1411,20 @@ displayThread m e =
                   else "note-no-parent"
             ]
             [displayNote m (e, processContent e)]
+    
+      replyInputEl = "reply-text-area"
+      getReply = getValueOfInput replyInputEl
       writeReplyDisplay = 
         flip (bool Nothing) isWriteReply $ pure $
           div_
             []
             [ textarea_
-                [ class_ "reply-text-area",
-                  onInput $ UpdateField #noteDraft,
-                  prop "content" $ m ^. #noteDraft
+                [ id_ replyInputEl,
+                  defaultValue_ $ m ^. #noteDraft,
+                  onChange $ WriteTextToStorage "reply-draft"
                 ]
                 [],
-              button_ [onClick $ SendReplyTo e] [text "Send"]
+              button_ [onClick $ SendReplyTo e getReply] [text "Send"]
             ]
       repliesDisplay = do
         thread <- m ^. #threads % at reid
