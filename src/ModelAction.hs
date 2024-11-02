@@ -145,7 +145,9 @@ data Model = Model
 
 newtype CompactModel = CompactModel Model
 -- Miso updates views whenever model changes. It uses Eq instance to determine that.
--- Here I define a custom one, so that updates don't happen unnecesarrily.
+-- Here I define a custom one, so that updates don't happen unnecesarrily 
+-- i.e. only data which is relevant for currently displayed page gets compared 
+-- to determine if update is neccessary.
 instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
     | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #errors] = False
