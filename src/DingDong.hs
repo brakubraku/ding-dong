@@ -1425,11 +1425,11 @@ displayReactions m e rcs =
   let howMany = showt . length
       isLikedByMe = fromMaybe False $ Set.member (m ^. #me) <$> rcs ^? _Just % at Like % _Just
       likeCls = bool "like-reaction" "like-reaction-liked" $ isLikedByMe
-      likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like
+      likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like % _Just
       likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [] [text $ " " <> likeCnt]]
-      dislikeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike
+      dislikeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike % _Just
       dislikes = span_ [class_ "dislike-reaction"] [text $ "🖓 " <> dislikeCnt]
-      otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Nostr.Reaction.Other
+      otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Nostr.Reaction.Other % _Just
       others = span_ [class_ "other-reaction"] [text $ "Others: " <> otherCnt]
    in div_
         [class_ "reactions-container"]
