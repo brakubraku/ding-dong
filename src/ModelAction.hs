@@ -181,9 +181,9 @@ data PagedEventsModel = PagedEventsModel
     until :: Until,
     step :: NominalDiffTime,
     factor :: Integer,
-    page :: Int,
-    pageStart :: Map.Map Int UTCTime, -- keep track of when each page starts
-    pageSize :: Int,
+    pg :: Int,
+    pgStart :: Map.Map Int UTCTime, -- keep track of when each page starts
+    pgSize :: Int,
     events :: [(Event, [Content])],
     fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
     parents :: Map.Map EventId (Event, [Content]),
@@ -200,9 +200,9 @@ defaultPagedModel until@(Until t) =
       until = until,
       step = nominalDay / 2,
       factor = 1,
-      page = 0,
-      pageStart = Map.fromList [(0, t)],
-      pageSize = 15,
+      pg = 0,
+      pgStart = Map.fromList [(0, t)],
+      pgSize = 15,
       events = [],
       fromRelays = Map.empty,
       parents = Map.empty,
@@ -212,9 +212,9 @@ defaultPagedModel until@(Until t) =
 -- TODO: alter this
 instance Eq PagedEventsModel where
   f1 == f2 =
-    f1 ^. #page
-      == f2 ^. #page
-      && f1 ^. #pageSize == f2 ^. #pageSize
+    f1 ^. #pg
+      == f2 ^. #pg
+      && f1 ^. #pgSize == f2 ^. #pgSize
       && f1 ^. #step == f2 ^. #step
       && Prelude.length (f1 ^. #events) == Prelude.length (f2 ^. #events)
       && f1 ^. #parents == f2 ^. #parents

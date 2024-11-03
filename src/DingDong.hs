@@ -255,7 +255,7 @@ updateModel nn rl pl lnd action model =
             ]
     
     ShowNotifications -> 
-      let updated = model & #notifs % #page .~ 0 & #notifsNew .~ []
+      let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
           new = model ^. #notifsNew
           hasNew = length new > 0
           saveLast = do 
@@ -315,7 +315,7 @@ updateModel nn rl pl lnd action model =
        in noEff updated
 
     ShowNewNotes ->
-      let updated = model & #feed % #page .~ 0 & #feedNew .~ []
+      let updated = model & #feed % #pg .~ 0 & #feedNew .~ []
        in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew), pure $ ScrollTo "top-top"]
 
     PagedEventsProcess putAtStart pml screen rs ->
@@ -327,7 +327,7 @@ updateModel nn rl pl lnd action model =
             (orderByAgeAsc ecs ++ plm #events) 
             putAtStart
           loadMore =
-            length updatedEvents < plm #pageSize * plm #page + plm #pageSize
+            length updatedEvents < plm #pgSize * plm #pg + plm #pgSize
               && plm #factor < 100 -- TODO: put the number somewhere
           updated =
             model 
@@ -354,7 +354,7 @@ updateModel nn rl pl lnd action model =
 
     ShowPrevious pml ->
       let newModel =
-            model & pml % #page %~ \pn -> if pn > 0 then pn - 1 else pn
+            model & pml % #pg %~ \pn -> if pn > 0 then pn - 1 else pn
        in newModel <# do
             pure . ScrollTo $ "notes-container-bottom"
 
@@ -363,13 +363,13 @@ updateModel nn rl pl lnd action model =
 
     ShowNext pml page ->
       let (Until start) = model ^. pml % #until
-          nextPage = model ^. pml % #page + 1
-          newModel = model & pml % #page .~ nextPage
-                           & pml % #pageStart % at nextPage ?~ start
+          nextPage = model ^. pml % #pg + 1
+          newModel = model & pml % #pg .~ nextPage
+                           & pml % #pgStart % at nextPage ?~ start
           f = newModel ^. pml
           needsSub =
-            f ^. #pageSize * f ^. #page
-              + f ^. #pageSize
+            f ^. #pgSize * f ^. #pg
+              + f ^. #pgSize
               > length (f ^. #events)
        in batchEff
             newModel
@@ -993,7 +993,7 @@ displayPagedEvents showIntervals pw m pml screen =
           bool
             (class_ "remove-element")
             (class_ "visible")
-            (page > 0)
+            (pg > 0)
         ]
         [ span_
             [ class_ "load-previous",
@@ -1015,12 +1015,12 @@ displayPagedEvents showIntervals pw m pml screen =
     ]
   where
     f = m ^. pml
-    pageSize = f ^. #pageSize
-    page = f ^. #page
+    pgSize = f ^. #pgSize
+    pg = f ^. #pg
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
-    notes = take pageSize . drop (page * pageSize) $ f ^. #events
+    notes = take pgSize . drop (pg * pgSize) $ f ^. #events
     (Until until) = f ^. #until
-    since' = f ^. #pageStart % at page
+    since' = f ^. #pgStart % at pg
     since = fromMaybe "" (showt <$> since')
     ps = maybe since (showt . O.view #created_at . fst . fst) $ Prelude.uncons notes
     pu = showt $ maybe until (O.view #created_at . fst . snd) $ Prelude.unsnoc notes
