@@ -61,6 +61,8 @@ import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
 import ProfilesLoader.Types (ProfOrRelays)
 
+import Debug.Trace
+
 start :: JSM ()
 start = do
   keys@(Keys _ me _) <- loadKeys
@@ -99,7 +101,7 @@ start = do
           now
           Map.empty
           Nothing
-          [FeedPage]
+          [(FeedPage,Nothing)]
           Map.empty
           Map.empty
           []
@@ -266,7 +268,7 @@ updateModel nn rl pl lnd action model =
             bool [] 
                  [pure $ PagedEventsProcess True #notifs NotificationsPage new] 
                  hasNew  
-               ++ [pure $ GoPage NotificationsPage, saveLast]
+               ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
     ListenToNotifs since -> 
       effectSub model $ 
@@ -316,7 +318,7 @@ updateModel nn rl pl lnd action model =
 
     ShowNewNotes ->
       let updated = model & #feed % #pg .~ 0 & #feedNew .~ []
-       in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew), pure $ ScrollTo "top-top"]
+       in batchEff updated [pure $ PagedEventsProcess True #feed FeedPage (model ^. #feedNew), pure $ ScrollTo Nothing "top-top"]
 
     PagedEventsProcess putAtStart pml screen rs ->
       let (ecs, enotes, eprofs) = processReceivedEvents rs
@@ -356,10 +358,17 @@ updateModel nn rl pl lnd action model =
       let newModel =
             model & pml % #pg %~ \pn -> if pn > 0 then pn - 1 else pn
        in newModel <# do
-            pure . ScrollTo $ "notes-container-bottom"
+            pure . ScrollTo (Just $ Seconds 0.5) $ "notes-container-bottom"
 
-    ScrollTo here ->
-      model <# (scrollIntoView here >> pure NoAction)
+    ScrollTo delay here ->
+      effectSub model $ \sink -> 
+        do 
+        -- TODO: bit of a hack to introduce delay before scrolling
+        -- so that page is hopefully fully loaded after that delay,
+        -- otherwise it will scroll to elsewhere
+         fromMaybe (pure ()) $ liftIO . sleep <$> delay 
+         scrollIntoView here 
+         liftIO $ sink NoAction
 
     ShowNext pml page ->
       let (Until start) = model ^. pml % #until
@@ -373,7 +382,7 @@ updateModel nn rl pl lnd action model =
               > length (f ^. #events)
        in batchEff
             newModel
-            [ pure $ ScrollTo "top-top",
+            [ pure $ ScrollTo Nothing "top-top",
               pure $ bool NoAction (LoadMoreEvents pml page) needsSub
             ]
 
@@ -526,19 +535,23 @@ updateModel nn rl pl lnd action model =
             _ -> m 
       in noEff $ Prelude.foldr process model rs 
 
-    GoPage page ->
-      let add p ps@(p1 : _) =
-            bool (p : ps) ps (p1 == p)
-          add p [] = [p]
+    GoPage page elementId ->
+      let add p ps@(p1 : rest) = trace ("branko-history:elementId=" <> show elementId <> " p=" <> show p <> " p1=" <> show p1 ) $
+            bool ((p, Nothing) : (fst p1, elementId) : rest) ps (p1 == (p,elementId))
+          add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in noEff updated
+       in noEff $ trace ("branko-history-now:" <> show (updated ^. #history)) updated
 
     GoBack ->
       let updated = do
             (_, xs) <- uncons $ model ^. #history
-            (togo, rest) <- uncons xs
-            pure $ model & #page .~ togo & #history .~ (togo : rest)
-       in noEff $ fromMaybe model updated
+            (prevPage, rest) <- uncons xs
+            pure (model & #page .~ fst prevPage & #history .~ (prevPage : rest), snd prevPage)
+       in maybe (noEff model)
+           (\(updatedModel, scrollToId) -> 
+              -- if there is information about the element to scroll to, then scroll to it
+              updatedModel <# maybe (pure NoAction) (\eid -> pure (ScrollTo (Just $ Seconds 0.5) eid)) scrollToId)
+           updated
 
     Unfollow xo ->
       let updated = model & #contacts % at xo .~ Nothing
@@ -560,8 +573,8 @@ updateModel nn rl pl lnd action model =
        effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
         liftIO $ do
-          sink . GoPage $ ThreadPage e
-          sink . ScrollTo $ "top-top"
+          sink . GoPage (ThreadPage e) . Just $ getNoteElementId e
+          sink . ScrollTo Nothing $ "top-top"
 
     GotReplyDraft draft -> noEff $ model & #noteDraft .~ draft
 
@@ -666,8 +679,8 @@ updateModel nn rl pl lnd action model =
             (model & #fpm .~ fpm) 
             [pure FindProfile]
 
-    DisplayProfilePage mxo ->
-      batchEff model [pure $ PreloadProfile mxo, pure $ GoPage ProfilePage]
+    DisplayProfilePage mid mxo ->
+      batchEff model [pure $ PreloadProfile mxo, pure $ GoPage ProfilePage mid]
 
     LogConsole what ->
       model <# do
@@ -740,7 +753,7 @@ updateModel nn rl pl lnd action model =
     DisplayMyProfilePage -> 
         batchEff model $
           [ pure $ PreloadProfile (Just $ model ^. #me),
-            pure . GoPage $ MyProfilePage
+            pure $ GoPage MyProfilePage Nothing
           ]
 
     WriteTextToStorage tid t -> 
@@ -960,11 +973,11 @@ followingView m@Model {..} =
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
       div_
-        [class_ "profile"]
+        [class_ "profile", id_ $ getProfileElementId xo]
         [ 
           div_
             [class_ "pic-container"]
-            [displayProfilePic xo $ p ^. #picture],
+            [displayProfilePic (Just $ getProfileElementId xo) xo $ p ^. #picture],
           div_
             [class_ "info-container"]
             [ div_ [class_ "name"] [text $ p ^. #username],
@@ -1039,22 +1052,22 @@ footerView Model {..} =
     [class_ "footer"]
     []
 
-displayProfilePic :: XOnlyPubKey -> Maybe Picture -> View Action
-displayProfilePic xo (Just pic) =
+displayProfilePic :: Maybe ElementId  -> XOnlyPubKey -> Maybe Picture -> View Action
+displayProfilePic mid xo (Just pic) =
   imgKeyed_ (Key pic)
     [ class_ "profile-pic",
       prop "src" $ pic,
-      onClick $ DisplayProfilePage (Just xo)
+      onClick $ DisplayProfilePage mid (Just xo)
     ]
-displayProfilePic xo _ = 
+displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
-      onClick $ DisplayProfilePage (Just xo)
+      onClick $ DisplayProfilePage mid (Just xo)
     ]
     []
 
-displayNoteContent :: Bool -> Model -> [Content] -> View Action
-displayNoteContent withEmbed m content =
+displayNoteContent :: Bool -> Model -> (Event, [Content]) -> View Action
+displayNoteContent withEmbed m (e,content) =
   let displayContent (TextC textWords) =
         let pgraphs = uncons . filter (/= "") . T.splitOn "\n\n" $ T.unwords $ textWords
         in div_ [] $ 
@@ -1108,7 +1121,7 @@ displayNoteContent withEmbed m content =
     displayEmbeddedProfile xo p =
       [ div_
           [class_ "pic-container"]
-          [displayProfilePic xo $ p ^. #picture],
+          [displayProfilePic (Just $ getNoteElementId e) xo $ p ^. #picture],
         div_
           [class_ "info-container"]
           [ div_ [class_ "name"] [text $ p ^. #username],
@@ -1120,10 +1133,10 @@ displayEmbeddedNote :: Model -> (Event, [Content]) -> View Action
 displayEmbeddedNote m ec = displayNote' False m ec
 
 displayNoteShort :: Bool -> Model -> (Event, [Content]) -> View Action
-displayNoteShort withEmbed m (e, content) =
+displayNoteShort withEmbed m ec@(e, _) =
   div_
     [class_ "text-note", onClick . LogConsole $ show e]
-    [ displayNoteContent withEmbed m content,
+    [ displayNoteContent withEmbed m ec,
       div_
         [class_ "text-note-properties"]
         ( [showThreadIcon]
@@ -1173,15 +1186,18 @@ displayPagedNotif m pml ec@(e,_) =
         notif [reactInfo, displayNote m reactTo]
       _ -> div_ [] [] 
   where 
-    notif = div_ [class_ "notification"]
+    notif = div_ [class_ "notification", id_ $ getNoteElementId e]
     replyTo = m ^. pml % #parents % at (e ^. #eventId)
     unknown = Profile "" Nothing Nothing Nothing Nothing
     profile = fromMaybe unknown $ getAuthorProfile m e
+    onProfileClick = 
+      onClick $ DisplayProfilePage (Just $ getNoteElementId e) 
+                                   (Just $ e ^. #pubKey)
     profileName = span_ 
-     [class_ "username", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
+     [class_ "username", onProfileClick] 
      [text $ profile ^. #username]
     displayName = span_ 
-     [class_ "displayname", onClick . DisplayProfilePage . Just $ e ^. #pubKey] 
+     [class_ "displayname", onProfileClick] 
      [text . fromMaybe "" $ profile ^. #displayName]
     isReplyToU = maybe False (\(p,_) -> p ^. #pubKey == m ^. #me) replyTo
     notifType = bool
@@ -1199,16 +1215,21 @@ displayPagedNotif m pml ec@(e,_) =
 displayNote :: Model -> (Event, [Content]) -> View Action
 displayNote = displayNote' True 
 
+getProfileElementId :: XOnlyPubKey -> ElementId
+getProfileElementId = T.pack . take 10 . exportXOnlyPubKey 
+
+getNoteElementId :: Event -> ElementId
+getNoteElementId e = T.take 10 . eventIdToText . getEventId $ e ^. #eventId
+
 displayNote' :: Bool -> Model -> (Event, [Content]) -> View Action
 displayNote' withEmbed m ec@(e, _) =
   div_
     [ class_ "note-container",
-      -- TODO: is 10 enough son?
-      id_ (T.take 10 . eventIdToText . getEventId $ e ^. #eventId)
+      id_ $ getNoteElementId e
     ]
     [ div_
         [class_ "profile-pic-container"]
-        [displayProfilePic (e ^. #pubKey) $ picUrl m e],
+        [displayProfilePic (Just $ getNoteElementId e) (e ^. #pubKey) $ picUrl m e],
       div_
         [class_ "text-note-container"]
         [ div_ [class_ "profile-info"] [profileName, displayName, noteAge],
@@ -1266,7 +1287,7 @@ leftPanel m =
           notifications,
           -- pItem "Followers"
           pItem "Following" Following,
-          aItem "Find Profile" (DisplayProfilePage Nothing),
+          aItem "Find Profile" (DisplayProfilePage Nothing Nothing),
           pItem "Relays" RelaysPage,
           aItem "My Profile" DisplayMyProfilePage
           -- pItem "Bookmarks"
@@ -1275,7 +1296,7 @@ leftPanel m =
         [ div_ [] [text "logged in as: "],
           div_
             [ class_ "my-npub",
-              onClick . DisplayProfilePage . Just $ (m ^. #me)
+              onClick $ DisplayProfilePage Nothing (Just $ m ^. #me)
             ]
             [ text
                 . (<> "...")
@@ -1297,7 +1318,7 @@ leftPanel m =
     pItem label page =
       div_
         [class_ "left-panel-item"]
-        [div_ [onClick (GoPage page)] [text label]]
+        [div_ [onClick (GoPage page Nothing)] [text label]]
     aItem label action =
       div_
         [class_ "left-panel-item"]

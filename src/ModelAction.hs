@@ -29,6 +29,7 @@ import Optics
 import StoredRelay
 import ProfilesLoader.Types
 import Miso (JSM)
+import Utils (Seconds)
 
 data Action
   = RelayConnected RelayURI
@@ -38,7 +39,7 @@ data Action
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
   | StartAction
-  | GoPage Page
+  | GoPage Page (Maybe ElementId)
   | Unfollow XOnlyPubKey
   | Follow XOnlyPubKey
   | WriteModel Model
@@ -60,14 +61,14 @@ data Action
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
   | PreloadProfile (Maybe XOnlyPubKey)
-  | DisplayProfilePage (Maybe XOnlyPubKey)
+  | DisplayProfilePage (Maybe ElementId) (Maybe XOnlyPubKey) 
   | AddRelay
   | ShowFeed
   | ShowNext (Lens' Model PagedEventsModel) Page
   | ShowPrevious (Lens' Model PagedEventsModel)
   | LoadMoreEvents (Lens' Model PagedEventsModel) Page
   | LogConsole String
-  | ScrollTo Text
+  | ScrollTo (Maybe Seconds) Text
   | SubscribeForEmbeddedReplies [EventId] Page
   | RepliesRecvNoEmbedLoading [(Event, Relay)]
   | ReportError Text
@@ -111,6 +112,8 @@ newtype CloseCount = CloseCount Int
 --  deriving newtype (Num, Eq)
   deriving Eq
 
+type ElementId = Text
+
 data Model = Model
   { feed :: PagedEventsModel,
     feedNew :: [(Event, Relay)],
@@ -128,7 +131,7 @@ data Model = Model
     now :: UTCTime, -- don't know a better way to supply time
     threads :: Map.Map RootEid Thread,
     writeReplyTo :: Maybe Event, -- event to reply to
-    history :: [Page],
+    history :: [(Page, Maybe ElementId)], -- page and what element to scroll to
     subscriptions ::
       Map.Map
         Page
