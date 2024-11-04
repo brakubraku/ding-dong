@@ -1285,10 +1285,9 @@ leftPanel m =
                 $ m ^. #me
             ]
         ]
-          ++ ( fromMaybe [] $
-                 m ^. #profiles % at (m ^. #me)
-                   >>= \(p, _) ->
-                     pure $ [ div_ [] [text . showt $ p ^. #username]]
+          ++ (maybe [] 
+                (\un -> [div_ [] [text . showt $ un]])
+                (m ^? #profiles % at (m ^. #me) % _Just % _1 % #username)
              ),
       div_
         [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
