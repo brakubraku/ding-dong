@@ -12,6 +12,7 @@ mkdir dist
 cp ./*.html dist/
 cp ./*.css dist/
 cp ./*.svg dist/
+cp -r ./browser_wasi_shim dist/
 
 pushd ../
 if command -v wasm32-wasi-cabal &>/dev/null; then
