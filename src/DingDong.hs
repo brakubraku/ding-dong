@@ -90,7 +90,7 @@ start = do
           []
           ""
           Map.empty
-          (RelaysPageModel "")
+          ""
           relaysList
           (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           (Reactions Map.empty Map.empty)
@@ -177,7 +177,7 @@ updateModel nn rl pl lnd action model =
           pure $ UpdatedRelaysList updated
 
     AddRelay -> 
-      let uri = model ^. #relaysPage % #relay
+      let uri = model ^. #relayInput
           nsr = newActiveRelay . newRelay $ uri
           updated = 
             nsr : filter 
@@ -1587,10 +1587,10 @@ displayRelaysPage m =
               $ bool
                 "incorrect"
                 "correct"
-              $ validateUrl (m ^. #relaysPage % #relay),
-            value_ (m ^. #relaysPage % #relay),
+              $ validateUrl (m ^. #relayInput),
+            value_ (m ^. #relayInput),
             type_ "text",
-            onInput $ UpdateField (#relaysPage % #relay)
+            onInput $ UpdateField (#relayInput)
           ], 
         button_ [onClick AddRelay] [text "Add relay"]]
     validateUrl _ = True -- TODO

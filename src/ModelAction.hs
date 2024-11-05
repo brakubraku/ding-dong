@@ -120,7 +120,7 @@ data Model = Model
     notifsNew :: [(Event, Relay)],
     findWho :: Text,
     profileEvents :: Map.Map XOnlyPubKey PagedEventsModel,
-    relaysPage :: RelaysPageModel,
+    relayInput :: Text,
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
     reactions :: Reactions, -- TODO: what about deleted reactions?
@@ -161,7 +161,7 @@ instance Eq CompactModel where
             Following -> allEqual [eq #profiles, eq #contacts]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
             ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq #profileRelays, eq (#profileEvents % at xo)] ++ notesAndStuff
-            RelaysPage -> allEqual [eq #relaysStats, eq #relaysPage, eq #relaysList]
+            RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
             FindProfilePage -> allEqual $ [eq #findWho]
@@ -239,11 +239,6 @@ instance Eq PagedEventsModel where
       && f1 ^. #reactionEvents == f2 ^. #reactionEvents
 
 data RelayState = Connected | Disconnected | Error
-
-data RelaysPageModel = RelaysPageModel
-  { relay :: Text
-  }
-  deriving (Eq, Generic)
 
 data Thread = Thread
   { -- Mapping from event to it's replies
