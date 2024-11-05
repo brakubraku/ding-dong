@@ -599,8 +599,6 @@ updateModel nn rl pl lnd action model =
 
     UpdateField l v -> noEff $ model & l .~ v
 
-    UpdateMaybeField l v -> noEff $ model & l .~ v
-
     FindProfile ->
       let pagedFilter xos =
             \(Since s) (Until u) ->

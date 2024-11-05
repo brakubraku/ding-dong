@@ -56,7 +56,6 @@ data Action
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
   | UpdateField (Lens' Model Text) Text                      -- TODO: see below
-  | UpdateMaybeField (Lens' Model (Maybe Text)) (Maybe Text) -- don't know how to fiddle the type signatures to merge these two
   | WriteTextToStorage Text Text
   | FindProfile
   | SubState Page (SubscriptionId, SubState)
