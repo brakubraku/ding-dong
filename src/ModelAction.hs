@@ -213,12 +213,12 @@ defaultPagedModel until@(Until t) =
       reactionEvents = Map.empty
     }
 
-defaultProfilesModel :: XOnlyPubKey -> UTCTime -> PagedEventsModel
-defaultProfilesModel xo now  = 
+defProfEvntsModel :: XOnlyPubKey -> UTCTime -> PagedEventsModel
+defProfEvntsModel xo now  = 
   defaultPagedModel (Until now)
       & #filter .~ Just (pagedFilter [xo])
-      & #factor .~ 2
-      & #step .~ 5 * nominalDay
+      & #factor .~ 1
+      & #step .~ nominalDay
  where 
   pagedFilter xos =
     \(Since s) (Until u) ->

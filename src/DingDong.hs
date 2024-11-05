@@ -86,7 +86,7 @@ start = do
         CompactModel $ Model 
           (defaultPagedModel (Until now))
           [] 
-           ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
+          ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
           []
           ""
           Map.empty
@@ -612,7 +612,7 @@ updateModel nn rl pl lnd action model =
           when isLoadNotes $ 
             liftIO . sink $ 
               LoadMoreEvents 
-                (#profileEvents % at xo % non (defaultProfilesModel xo $ model ^. #now)) 
+                (#profileEvents % at xo % non (defProfEvntsModel xo $ model ^. #now)) 
                 page
 
     SubState p st ->
@@ -1335,7 +1335,7 @@ displayProfile isShowNotes m xo =
                 <$> rels)
             relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
             npub = div_ [class_ "npub"] [text . fromMaybe "" $ encodeBechXo xo]
-        let profileEvents = #profileEvents % at xo % non (defaultProfilesModel xo $ m ^. #now)
+        let profileEvents = #profileEvents % at xo % non (defProfEvntsModel xo $ m ^. #now)
         let notesDisplay = 
              if (not isShowNotes) 
              then (div_ [] [])
