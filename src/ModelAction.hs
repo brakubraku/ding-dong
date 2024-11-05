@@ -202,7 +202,7 @@ defaultPagedModel until@(Until t) =
   PagedEventsModel
     { filter = Nothing,
       until = until,
-      step = nominalDay / 2,
+      step = nominalDay / 6,
       factor = 1,
       pg = 0,
       pgStart = Map.fromList [(0, t)],
@@ -218,7 +218,7 @@ defProfEvntsModel xo now  =
   defaultPagedModel (Until now)
       & #filter .~ Just (pagedFilter [xo])
       & #factor .~ 1
-      & #step .~ nominalDay
+      & #step .~ nominalDay/2
  where 
   pagedFilter xos =
     \(Since s) (Until u) ->
