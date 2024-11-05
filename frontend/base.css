@@ -555,3 +555,8 @@ body {
 .update-profile-button {
     margin-bottom: 40px;
 }
+
+.back-button {
+    position:sticky;
+    top: 50px;
+}

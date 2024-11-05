@@ -1309,7 +1309,7 @@ leftPanel m =
                 (m ^? #profiles % at (m ^. #me) % _Just % _1 % #username)
              ),
       div_
-        [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack)]
+        [bool (class_ "invisible") (class_ "visible") showBack, onClick (GoBack), class_ "back-button"]
         [backButton]
     ]
   where
