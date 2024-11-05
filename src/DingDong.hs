@@ -367,7 +367,7 @@ updateModel nn rl pl lnd action model =
         -- so that page is hopefully fully loaded after that delay,
         -- otherwise it will scroll to elsewhere
          fromMaybe (pure ()) $ liftIO . sleep <$> delay 
-         scrollIntoView here 
+         Utils.scrollIntoView here 
          liftIO $ sink NoAction
 
     ShowNext pml page ->

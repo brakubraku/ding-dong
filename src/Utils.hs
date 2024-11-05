@@ -1,7 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Utils where 
 
@@ -12,6 +12,8 @@ import Language.Javascript.JSaddle
 import Data.Time
 import Control.Monad.IO.Class
 import Data.Text 
+import Control.Monad (when)
+import Data.Maybe (isJust)
 
 newtype Seconds = Seconds
   { getSeconds :: Float
@@ -23,7 +25,7 @@ sleep :: Seconds -> IO ()
 sleep (Seconds s) = threadDelay . round $  s * 10^6
 
 loadingBar :: View action
-loadingBar = rawHtml $ 
+loadingBar = rawHtml . pack $ 
  "<div class=\"lb-container\">\
   \<div class=\"lb-progress lb-progress-infinite\">\
     \<div class=\"lb-progress-bar3\">\
@@ -40,7 +42,7 @@ getLocation :: JSM JSVal
 getLocation = jsg ("window" :: String) ! ("location" :: String)
 
 lastNotifStorageId :: Text
-lastNotifStorageId = "last-notif-date"
+lastNotifStorageId = pack "last-notif-date"
 
 loadLastNotif :: JSM UTCTime 
 loadLastNotif = do 
@@ -67,4 +69,12 @@ setValueOfInput :: Text -> Text -> JSM ()
 setValueOfInput inputId t = do
     i <- getElementById inputId 
     v <- toJSVal t
-    setProp "value" v $ Object i
+    setProp (toJSString "value") v $ Object i
+
+scrollIntoView :: Text -> JSM ()
+scrollIntoView elId = do
+  el <- jsg "document" # "getElementById" $ [elId]
+  isNotNull <- isJust <$> maybeNullOrUndefined el
+  when isNotNull $ do 
+    el # "scrollIntoView" $ ()
+    pure ()
