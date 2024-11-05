@@ -57,10 +57,9 @@ data Action
   | GoBack
   | UpdateField (Lens' Model Text) Text                      -- TODO: see below
   | WriteTextToStorage Text Text
-  | FindProfile
+  | LoadProfile Bool XOnlyPubKey Page
   | SubState Page (SubscriptionId, SubState)
-  | PreloadProfile (Maybe XOnlyPubKey)
-  | DisplayProfilePage (Maybe ElementId) (Maybe XOnlyPubKey) 
+  | DisplayProfilePage (Maybe ElementId) XOnlyPubKey 
   | AddRelay
   | ShowFeed
   | ShowNext (Lens' Model PagedEventsModel) Page
@@ -98,7 +97,8 @@ data Page
   = FeedPage
   | Following
   | ThreadPage Event
-  | ProfilePage
+  | ProfilePage XOnlyPubKey
+  | FindProfilePage
   | RelaysPage
   | MyProfilePage 
   | NotificationsPage 
@@ -118,7 +118,8 @@ data Model = Model
     feedNew :: [(Event, Relay)],
     notifs :: PagedEventsModel,
     notifsNew :: [(Event, Relay)],
-    fpm :: FindProfileModel,
+    findWho :: Text,
+    profileEvents :: Map.Map XOnlyPubKey PagedEventsModel,
     relaysPage :: RelaysPageModel,
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
@@ -159,10 +160,11 @@ instance Eq CompactModel where
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
             Following -> allEqual [eq #profiles, eq #contacts]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
-            ProfilePage -> allEqual $ [eq #contacts, eq #fpm, eq #profiles, eq #profileRelays] ++ notesAndStuff
+            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq #profileRelays, eq (#profileEvents % at xo)] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relaysPage, eq #relaysList]
-            MyProfilePage -> allEqual $ [eq #profiles] ++ notesAndStuff
+            MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
+            FindProfilePage -> allEqual $ [eq #findWho]
    where 
     eq ls = m1 ^. ls == m2 ^. ls
     allEqual = Prelude.all (==True) 
@@ -211,6 +213,20 @@ defaultPagedModel until@(Until t) =
       reactionEvents = Map.empty
     }
 
+defaultProfilesModel :: XOnlyPubKey -> UTCTime -> PagedEventsModel
+defaultProfilesModel xo now  = 
+  defaultPagedModel (Until now)
+      & #filter .~ Just (pagedFilter [xo])
+      & #factor .~ 2
+      & #step .~ 5 * nominalDay
+ where 
+  pagedFilter xos =
+    \(Since s) (Until u) ->
+      textNotesWithDeletes
+      (Just s)
+      (Just u)
+      xos
+
 -- TODO: alter this
 instance Eq PagedEventsModel where
   f1 == f2 =
@@ -226,13 +242,6 @@ data RelayState = Connected | Disconnected | Error
 
 data RelaysPageModel = RelaysPageModel
   { relay :: Text
-  }
-  deriving (Eq, Generic)
-
-data FindProfileModel = FindProfileModel
-  { findWho :: Text,
-    lookingFor :: Maybe XOnlyPubKey,
-    events :: PagedEventsModel
   }
   deriving (Eq, Generic)
 

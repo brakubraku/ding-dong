@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
--- {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -89,7 +88,8 @@ start = do
           [] 
            ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
           []
-          (FindProfileModel "" Nothing $ (defaultPagedModel (Until now)) {factor = 2, step = 5 * nominalDay})
+          ""
+          Map.empty
           (RelaysPageModel "")
           relaysList
           (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
@@ -599,37 +599,21 @@ updateModel nn rl pl lnd action model =
 
     UpdateField l v -> noEff $ model & l .~ v
 
-    FindProfile ->
-      let pagedFilter xos =
-            \(Since s) (Until u) ->
-              textNotesWithDeletes
-                (Just s)
-                (Just u)
-                xos
-          xo =
-            decodeNpub $
-              model ^. #fpm % #findWho
-          updated =
-            model 
-              & #fpm % #lookingFor .~ xo
-              & #fpm % #events % #events .~ []
-              & #fpm % #events % #filter .~ (xo >>= \xo' -> Just (pagedFilter [xo']))
-          runSubscriptions = do
-            xo' <- xo
-            pure $
-              effectSub updated $ \sink -> do
-                subscribe
-                  nn
-                  PeriodicUntilEOS
-                  [DatedFilter (MetadataFilter [xo']) Nothing Nothing]
-                  ReceivedProfiles
-                  (Just . SubState $ ProfilePage)
-                  extractProfile
-                  sink
-                liftIO . sink $ LoadMoreEvents (#fpm % #events) ProfilePage
-       in fromMaybe
-            (noEff $ updated)
-            runSubscriptions
+    LoadProfile isLoadNotes xo page ->
+        effectSub model $ \sink -> do
+          subscribe
+            nn
+            PeriodicUntilEOS
+            [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
+            ReceivedProfiles
+            (Just . SubState $ page)
+            extractProfile
+            sink
+          when isLoadNotes $ 
+            liftIO . sink $ 
+              LoadMoreEvents 
+                (#profileEvents % at xo % non (defaultProfilesModel xo $ model ^. #now)) 
+                page
 
     SubState p st ->
       let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
@@ -667,18 +651,8 @@ updateModel nn rl pl lnd action model =
                        <$> erRels
                    )
 
-    PreloadProfile mxo -> 
-      let fpm =
-            FindProfileModel
-              (fromMaybe "" $ encodeBechXo =<< mxo)
-              mxo
-              (defaultPagedModel (Until $ model ^. #now))
-       in batchEff
-            (model & #fpm .~ fpm) 
-            [pure FindProfile]
-
-    DisplayProfilePage mid mxo ->
-      batchEff model [pure $ PreloadProfile mxo, pure $ GoPage ProfilePage mid]
+    DisplayProfilePage mid xo ->
+      batchEff model [pure $ LoadProfile True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
 
     LogConsole what ->
       model <# do
@@ -708,7 +682,7 @@ updateModel nn rl pl lnd action model =
               pure $ setMetadata p me now
         signAndSend 
           newProfileF 
-          (singleton . const . PreloadProfile $ Just me) 
+          (singleton . const . LoadProfile False me $ MyProfilePage) 
           (singleton . const . ReportError $ "Failed updating profile!")
         -- TODO: update profile in #profiles if sending successfull
     SendLike e -> do
@@ -738,19 +712,9 @@ updateModel nn rl pl lnd action model =
       in 
         noEff $ updated
     
-    -- DisplayBookmarks ->
-    --   effectSub model $ 
-    --           subscribe
-    --             nn
-    --             PeriodicUntilEOS
-    --             [DatedFilter (MetadataFilter [xo']) Nothing Nothing]
-    --             ReceivedProfiles
-    --             (Just . SubState $ ProfilePage)
-    --             extractProfile
-
     DisplayMyProfilePage -> 
         batchEff model $
-          [ pure $ PreloadProfile (Just $ model ^. #me),
+          [ pure $ LoadProfile False (model ^. #me) MyProfilePage,
             pure $ GoPage MyProfilePage Nothing
           ]
 
@@ -1050,17 +1014,17 @@ footerView Model {..} =
     [class_ "footer"]
     []
 
-displayProfilePic :: Maybe ElementId  -> XOnlyPubKey -> Maybe Picture -> View Action
+displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
   imgKeyed_ (Key pic)
     [ class_ "profile-pic",
       prop "src" $ pic,
-      onClick $ DisplayProfilePage mid (Just xo)
+      onClick $ DisplayProfilePage mid xo
     ]
 displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
-      onClick $ DisplayProfilePage mid (Just xo)
+      onClick $ DisplayProfilePage mid xo 
     ]
     []
 
@@ -1190,7 +1154,7 @@ displayPagedNotif m pml ec@(e,_) =
     profile = fromMaybe unknown $ getAuthorProfile m e
     onProfileClick = 
       onClick $ DisplayProfilePage (Just $ getNoteElementId e) 
-                                   (Just $ e ^. #pubKey)
+                                   (e ^. #pubKey)
     profileName = span_ 
      [class_ "username", onProfileClick] 
      [text $ profile ^. #username]
@@ -1256,7 +1220,8 @@ middlePanel m =
       FeedPage -> displayFeed m
       Following -> followingView m
       ThreadPage e -> displayThread m e
-      ProfilePage -> displayProfilePage m
+      ProfilePage xo -> displayProfile True m xo
+      FindProfilePage -> displayFindProfilePage m
       RelaysPage -> displayRelaysPage m
       MyProfilePage -> displayMyProfilePage m
       NotificationsPage -> displayNotificationsPage m
@@ -1285,7 +1250,7 @@ leftPanel m =
           notifications,
           -- pItem "Followers"
           pItem "Following" Following,
-          aItem "Find Profile" (DisplayProfilePage Nothing Nothing),
+          pItem "Find Profile" FindProfilePage,
           pItem "Relays" RelaysPage,
           aItem "My Profile" DisplayMyProfilePage
           -- pItem "Bookmarks"
@@ -1294,7 +1259,7 @@ leftPanel m =
         [ div_ [] [text "logged in as: "],
           div_
             [ class_ "my-npub",
-              onClick $ DisplayProfilePage Nothing (Just $ m ^. #me)
+              onClick $ DisplayProfilePage Nothing (m ^. #me)
             ]
             [ text
                 . (<> "...")
@@ -1332,15 +1297,13 @@ leftPanel m =
     hasNewNotifs = length newNotifs > 0
     newNotifsCount = bool "" (" (" <> (showt $ length newNotifs) <> ")") hasNewNotifs
 
-displayProfile :: Model -> XOnlyPubKey -> View Action
-displayProfile m xo =
+displayProfile :: Bool -> Model -> XOnlyPubKey -> View Action
+displayProfile isShowNotes m xo =
   let notFound =
         div_
           []
-          [ text $
-              "Profile of "
-                <> (S.pack $ show xo)
-                <> " not found."
+          [ text 
+              "Looking for profile or profile not found on any of your relays..."
           ]
       profileDisplay = do
         (p, _) <- m ^. #profiles % at xo
@@ -1367,12 +1330,16 @@ displayProfile m xo =
         let relays = m ^. #profileRelays % at xo >>= \(rels,_) -> 
               pure $ div_ [] . concat $ 
                 ((\r -> [span_ [class_ "relay"] [text (r ^. #uri)],
-                        span_ [class_ "relay-info"] 
+                        span_ [class_ "relay-info"]   
                               [text $ rInfoText r]]) 
                 <$> rels)
             relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
-        let notesDisplay =
-              displayPagedEvents True Notes m (#fpm % #events) ProfilePage
+            npub = div_ [class_ "npub"] [text . fromMaybe "" $ encodeBechXo xo]
+        let profileEvents = #profileEvents % at xo % non (defaultProfilesModel xo $ m ^. #now)
+        let notesDisplay = 
+             if (not isShowNotes) 
+             then (div_ [] [])
+             else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
         pure $
           div_
             []
@@ -1382,7 +1349,7 @@ displayProfile m xo =
               div_
                 [class_ "profile-pic-container"]
                 [ fromMaybe profilepicDef profilepic,
-                  div_ [class_ "names"] [profileName, displayName, relaysDisplay],
+                  div_ [class_ "names"] [profileName, displayName, relaysDisplay, npub],
                   div_
                     [class_ "follow-button-container"]
                     [ if isJust $ m ^. #contacts % at xo
@@ -1467,31 +1434,27 @@ displayReactions m e rcs =
         [class_ "reactions-container"]
         $ likes ++ [dislikes, others] 
 
-displayProfilePage :: Model -> View Action
-displayProfilePage m =
-  let npub = m ^. #fpm % #findWho
+displayFindProfilePage :: Model -> View Action
+displayFindProfilePage m =
+  let npub = m ^. #findWho
+      isNotBlank = not . T.null $ npub
+      mxo = decodeNpub npub
+      searchAction = maybe NoAction (\xo -> DisplayProfilePage Nothing xo) mxo
       search =
         input_
           [ class_ "input-xo",
             placeholder_ "Enter npub",
             value_ npub,
             type_ "text",
-            onInput $ UpdateField (#fpm % #findWho),
-            onEnter $ FindProfile
+            onInput $ UpdateField #findWho
           ]
       searchButton =
         button_
-          [class_ "search-box-button", onClick FindProfile]
+          [class_ "search-box-button", onClick searchAction]
           [text "Find"]
-      ppage =
-        singleton
-          . displayProfile m
-          <$> (m ^. #fpm % #lookingFor)
    in div_ [class_ "find-profile"] $
-        [div_ [class_ "search-box"] [search, searchButton]] ++ fromMaybe [] ppage
-  where
-    onEnter :: Action -> Attribute Action
-    onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+        [div_ [class_ "search-box"] [search, searchButton]] 
+         ++ bool [] [div_ [class_ "error-msg"] [text "Invalid NPub"]] ((not . isJust $ mxo) && isNotBlank)
 
 displayNotificationsPage :: Model -> View Action
 displayNotificationsPage m = 
@@ -1543,7 +1506,7 @@ displayMyProfilePage m =
       button_
           [class_ "update-profile-button", onClick $ SendUpdateProfile getProfile]
           [text "Update"],
-      displayProfile m (m ^. #me)
+      displayProfile False m (m ^. #me)
     ]
   where 
     me = fromMaybe def $ fst <$> m ^. #profiles % at (m ^. #me)
