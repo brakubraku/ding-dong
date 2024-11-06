@@ -390,9 +390,9 @@ updateModel nn rl pl lnd action model =
       let pm = model ^. pml
           Until until = pm ^. #until
           newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
-          newModel =
+          updated =
             model & pml % #until .~ Until newSince
-       in effectSub newModel $ \sink -> do
+       in effectSub updated $ \sink -> do
             maybe
               (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
               ( \filter ->
