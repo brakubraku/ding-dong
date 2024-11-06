@@ -32,9 +32,11 @@ whatLink link =
   case T.takeWhileEnd (/='.') . T.takeEnd 5 . T.strip $ link of
     "gif" -> Image
     "jpg" -> Image
+    "jpeg" -> Image
     "png" -> Image
     "webp" -> Image
     "mp4" -> Video
+    "mov" -> Video
     _ -> Other
 
 processBech :: T.Text -> Content
@@ -45,11 +47,11 @@ processContent e
  | e ^. #kind /= TextNote  = []
  | otherwise = 
   let processWord w =
-        let isLink = case T.stripPrefix "http" w of
+        let isLink = case T.stripPrefix "http" . T.strip $ w of
               Just suffix ->
                 T.isPrefixOf "://" suffix || T.isPrefixOf "s://" suffix
               Nothing -> False
-            isBech = T.stripPrefix "nostr:" w
+            isBech = T.stripPrefix "nostr:" . T.strip $ w
             process =
               case (isLink, isBech) of
                 (True, _) -> LinkC (whatLink w) w
