@@ -160,7 +160,7 @@ instance Eq CompactModel where
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
             Following -> allEqual [eq #profiles, eq #contacts]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
-            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq #profileRelays, eq (#profileEvents % at xo)] ++ notesAndStuff
+            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq (#profileRelays % at xo), eq (#profileEvents % at xo)] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
@@ -229,9 +229,9 @@ defProfEvntsModel xo now  =
 
 -- TODO: alter this
 instance Eq PagedEventsModel where
-  f1 == f2 =
-    f1 ^. #pg
-      == f2 ^. #pg
+  f1 == f2 = 
+         f1 ^. #pg == f2 ^. #pg
+      && f1 ^. #factor == f2 ^. #factor
       && f1 ^. #pgSize == f2 ^. #pgSize
       && f1 ^. #step == f2 ^. #step
       && Prelude.length (f1 ^. #events) == Prelude.length (f2 ^. #events)
