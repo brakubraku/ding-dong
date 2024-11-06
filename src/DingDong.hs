@@ -537,7 +537,7 @@ updateModel nn rl pl lnd action model =
 
     GoPage page elementId ->
       let add p ps@(p1 : rest) = trace ("branko-history:elementId=" <> show elementId <> " p=" <> show p <> " p1=" <> show p1 ) $
-            bool ((p, Nothing) : (fst p1, elementId) : rest) ps (p1 == (p,elementId))
+            bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
        in noEff $ trace ("branko-history-now:" <> show (updated ^. #history)) updated
