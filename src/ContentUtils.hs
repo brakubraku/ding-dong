@@ -29,7 +29,7 @@ filterBech cnt =
 
 whatLink :: T.Text -> LinkType
 whatLink link =
-  case T.takeWhileEnd (/='.') . T.takeEnd 5 . T.strip $ link of
+  case T.takeWhileEnd (/='.') . T.takeEnd 5 . T.toLower . T.strip $ link of
     "gif" -> Image
     "jpg" -> Image
     "jpeg" -> Image
