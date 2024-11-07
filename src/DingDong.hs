@@ -1,15 +1,7 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -59,8 +51,6 @@ import Data.Default
 import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
 import ProfilesLoader.Types (ProfOrRelays)
-
-import Debug.Trace
 
 start :: JSM ()
 start = do
@@ -536,11 +526,11 @@ updateModel nn rl pl lnd action model =
       in noEff $ Prelude.foldr process model rs 
 
     GoPage page elementId ->
-      let add p ps@(p1 : rest) = trace ("branko-history:elementId=" <> show elementId <> " p=" <> show p <> " p1=" <> show p1 ) $
+      let add p ps@(p1 : rest) =
             bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in noEff $ trace ("branko-history-now:" <> show (updated ^. #history)) updated
+       in noEff updated
 
     GoBack ->
       let updated = do

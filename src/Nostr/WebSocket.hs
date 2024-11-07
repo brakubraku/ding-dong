@@ -1,11 +1,6 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -154,11 +149,7 @@ connectRelays nn sendMsg sink = do
       WS.addEventListener socket "error" $ \v -> do
         _ <- liftIO . swapMVar socketState $ 4 -- TODO: 4 means error 
         d' <- WS.data' v
-#ifndef ghcjs_HOST_OS
         undef <- ghcjsPure (isUndefined d')
-#else
-        let undef = isUndefined d'
-#endif
         if undef
           then do
             liftIO . sink . sendMsg $ (WebSocketError relay mempty)
