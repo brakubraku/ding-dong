@@ -232,6 +232,7 @@ instance Eq PagedEventsModel where
   f1 == f2 = 
          f1 ^. #pg == f2 ^. #pg
       && f1 ^. #factor == f2 ^. #factor
+      && f1 ^. #until == f2 ^. #until
       && f1 ^. #pgSize == f2 ^. #pgSize
       && f1 ^. #step == f2 ^. #step
       && Prelude.length (f1 ^. #events) == Prelude.length (f2 ^. #events)
