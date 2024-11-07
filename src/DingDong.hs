@@ -577,8 +577,8 @@ updateModel nn rl pl lnd action model =
         draft <- getLocalStorage "reply-draft"
         pure . GotReplyDraft . fromRight "" $ draft
 
-    ThreadEvents [] _ -> noEff $ model
-    ThreadEvents es screen ->
+    ThreadEvents _  [] -> noEff $ model
+    ThreadEvents screen es ->
       let (updated, enotes, eprofs) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in effectSub (model & #threads .~ updated) $ \sink -> do
             load rl $ (eventId . fst <$> es) ++ enotes
@@ -828,7 +828,7 @@ subscribeForWholeThread nn e page sink = do
     nn
     PeriodicUntilEOS
     [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
-    (flip ThreadEvents page)
+    (ThreadEvents page)
     (Just $ SubState page)
     process
     sink
@@ -848,7 +848,7 @@ subscribeForEventsReplies nn eids page sink =
     nn
     PeriodicUntilEOS
     [anytimeF $ LinkedEvents eids]
-    (flip ThreadEvents page)
+    (ThreadEvents page)
     (Just $ SubState page)
     process
     sink

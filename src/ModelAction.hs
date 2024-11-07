@@ -47,7 +47,7 @@ data Action
   | DisplayThread Event
   | DisplayReplyThread Event
   | GotReplyDraft Text
-  | ThreadEvents [(Event, Relay)] Page
+  | ThreadEvents Page [(Event, Relay)]
   | ProfileEvents [(Event, Relay)]
   | SubscribeForReplies [EventId]
   | SubscribeForParentsOf (Lens' Model PagedEventsModel) Page [Event]
