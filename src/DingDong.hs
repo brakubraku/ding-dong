@@ -600,7 +600,11 @@ updateModel nn rl pl lnd action model =
     UpdateField l v -> noEff $ model & l .~ v
 
     LoadProfile isLoadNotes xo page ->
-        effectSub model $ \sink -> do
+      let 
+         empty = defProfEvntsModel xo $ model ^. #now
+         updated = model & #profileEvents % at xo ?~ empty
+      in
+         effectSub updated $ \sink -> do
           subscribe
             nn
             PeriodicUntilEOS
@@ -612,7 +616,7 @@ updateModel nn rl pl lnd action model =
           when isLoadNotes $ 
             liftIO . sink $ 
               LoadMoreEvents 
-                (#profileEvents % at xo % non (defProfEvntsModel xo $ model ^. #now)) 
+                (#profileEvents % at xo % non empty) 
                 page
 
     SubState p st ->
