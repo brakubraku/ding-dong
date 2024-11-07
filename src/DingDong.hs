@@ -1407,7 +1407,7 @@ displayThread m e =
       repliesDisplay = do
         thread <- m ^. #threads % at reid
         let replies = getRepliesFor thread (e ^. #eventId)
-        pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> replies
+        pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> orderByAgeAsc replies
    in div_ [class_ "thread-container"] $
         catMaybes [parentDisplay, noteDisplay, writeReplyDisplay] 
           ++ fromMaybe [] repliesDisplay
