@@ -34,11 +34,17 @@ newActiveRelay r = StoredRelay r True
 
 defaultRelays :: [StoredRelay]
 defaultRelays =
-  newActiveRelay . newRelay
-    <$> [ "wss://relay.nostrdice.com",
-          "wss://lunchbox.sandwich.farm",
-          "wss://relay.nostr.net",
-          "wss://polnostr.xyz",
-          "wss://relay.damus.io",
-          "wss://nostr.at"
-        ]
+  let active = newActiveRelay . newRelay
+        <$> [ "wss://relay.primal.net",
+              "wss://relay.nostr.band",
+              "wss://relay.damus.io",
+              "wss://nostr.wine",
+              "wss://nos.lol"
+            ] 
+      inactive = flip StoredRelay False . newRelay <$> 
+            [ "wss://relay.nostr.net",
+              "wss://polnostr.xyz",
+              "wss://nostr.at"
+            ] 
+  in 
+    active ++ inactive
