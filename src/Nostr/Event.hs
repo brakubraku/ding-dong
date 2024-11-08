@@ -51,6 +51,7 @@ data Tag
   = ETag EventId (Maybe RelayURL) (Maybe Marker)
   | PTag XOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
   | RTag Text (Maybe ReadWrite)
+  | XTag Text
   | NonceTag
   | UnknownTag Array
   deriving (Eq, Show, Ord)
@@ -157,7 +158,9 @@ instance FromJSON Tag where
           String "p" ->
             PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
           String "r" ->
-            RTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2)
+            RTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) 
+          String "x" ->
+            XTag <$> parseJSON (v V.! 1)
           _ ->
             return . UnknownTag $ v
     | otherwise = return . UnknownTag $  v
@@ -193,6 +196,8 @@ instance ToJSON Tag where
           maybe (String "") (\r -> String r) relayURL,
           maybe (String "") (\n -> String n) name
         ]
+  toJSON (XTag t) = 
+    Array . fromList $ [String "x", String t]
   toJSON (UnknownTag v) = Array v
   toJSON _ =
     -- @todo implement nonce tag
@@ -302,7 +307,7 @@ setMetadata profile xo t =
     { pubKey' = xo,
       created_at' = t,
       kind' = Metadata,
-      tags' = [],
+      tags' = [XTag "dingo"], -- just a tatoo
       content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
     }
 

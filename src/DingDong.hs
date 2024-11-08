@@ -54,7 +54,7 @@ import ProfilesLoader.Types (ProfOrRelays)
 
 start :: JSM ()
 start = do
-  keys@(Keys _ me _) <- loadKeys
+  (keys@(Keys _ me _), isNewKey) <- loadKeys
   contacts <- Set.fromList <$> loadContacts
   now <- liftIO getCurrentTime
   relaysList <- loadRelays
@@ -98,7 +98,7 @@ start = do
           Map.empty
           ""
           me
-  startApp App {initialAction = StartAction, model = initialModel, ..}
+  startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
     events = defaultEvents
     view (CompactModel m) = appView m
@@ -188,7 +188,7 @@ updateModel nn rl pl lnd action model =
       model <# do 
         reloadPage >> pure NoAction
 
-    StartAction ->
+    StartAction isNew ->
       effectSub
         model
         $ \sink ->
@@ -221,11 +221,13 @@ updateModel nn rl pl lnd action model =
             -- check for connection status periodically and reload after 
             -- connection is reestablished after being lost
             forkJSM $ reloadAfterReconnect nn sink
-            -- start showing feed
-            liftIO . sink $ ShowFeed
-            -- start notifications
-            liftIO . sink $ LoadMoreEvents #notifs NotificationsPage
-            liftIO . sink $ ListenToNotifs lnd
+            liftIO $ do 
+              when isNew $ sink CreateInitialProfile
+              -- start showing feed
+              sink $ ShowFeed
+              -- start notifications
+              sink $ LoadMoreEvents #notifs NotificationsPage
+              sink $ ListenToNotifs lnd
 
     ShowFeed ->
       let contacts = (Set.toList $ model ^. #contacts)
@@ -669,6 +671,21 @@ updateModel nn rl pl lnd action model =
                           & #noteDraft .~ ""
       in batchEff updated [setLocalStorage @T.Text "reply-draft" "" >> pure NoAction]
   
+    CreateInitialProfile -> do
+        let me = model ^. #me
+            p = def 
+             {username="Fresh Dingo",
+              picture=
+                Just $ 
+                "https://howtodrawforkids.com/wp-content/\
+                \uploads/2022/04/how-to-draw-a-cute-frog.jpg"}
+            newProfileF = \now -> do 
+              pure $ setMetadata p me now
+        signAndSend 
+          newProfileF 
+          []
+          []
+
     SendUpdateProfile getProfile -> do
         let me = model ^. #me
         let newProfileF = \now -> do 
@@ -1598,16 +1615,16 @@ picUrl m e = do
   Profile {..} <- getAuthorProfile m e
   picture
 
-loadKeys :: JSM Keys
+loadKeys :: JSM (Keys, Bool)
 loadKeys = do
   let identifier = "my-keys"
   keys <- getLocalStorage identifier
   case keys of
-    Right k -> pure k
+    Right k -> pure (k, False)
     Left _ -> do
       newKeys <- liftIO $ generateKeys
       setLocalStorage identifier newKeys
-      pure newKeys
+      pure (newKeys, True)
 
 eventAge :: UTCTime -> Event -> String
 eventAge now e =

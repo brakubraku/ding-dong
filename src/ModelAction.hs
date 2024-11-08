@@ -38,7 +38,7 @@ data Action
   | ReceivedProfiles [ProfOrRelays]
   | ReceivedReactions [(ReactionEvent, Relay)]
   | NoAction
-  | StartAction
+  | StartAction Bool
   | GoPage Page (Maybe ElementId)
   | Unfollow XOnlyPubKey
   | Follow XOnlyPubKey
@@ -89,6 +89,7 @@ data Action
   | SendLike Event
   | LikeSent Event
   | DisplayMyProfilePage
+  | CreateInitialProfile
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
