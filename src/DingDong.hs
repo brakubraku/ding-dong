@@ -1470,7 +1470,7 @@ displayNotificationsPage :: Model -> View Action
 displayNotificationsPage m = 
   div_
     [class_ "notifications"]
-    [displayPagedEvents False Notifications m #notifs NotificationsPage]
+    [displayPagedEvents True Notifications m #notifs NotificationsPage]
 
 displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =
