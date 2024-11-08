@@ -38,8 +38,8 @@ instance FromJSON Response where
         isSuccess <- parseJSON $ arr V.! 2
         failureReason <- parseJSON $ arr V.! 3
         pure $ OK eid isSuccess failureReason
-      _ ->
-        mzero
+      unknown ->
+        fail $ "Uknown response" <> show unknown
 
 getEvent :: Response -> Maybe Event
 getEvent (EventReceived _ e) = Just e

@@ -41,7 +41,7 @@ newtype EventId = EventId
   }
   deriving (Eq, Ord)
 
-data Marker = Reply | Root | Mention
+data Marker = Reply | Root | Mention | OtherMarker Text
   deriving (Eq, Show, Ord)
 
 data ReadWrite = Read | Write
@@ -183,15 +183,7 @@ instance ToJSON Tag where
         [ String "e",
           String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId,
           maybe (String "") (\r -> String r) relayURL,
-          case marker of
-            Just Reply ->
-              String "reply"
-            Just Root ->
-              String "root"
-            Just Mention ->
-              String "mention"
-            Nothing ->
-              String ""
+          toJSON marker
         ]
   toJSON (PTag xo relayURL name) =
     Array $
@@ -212,12 +204,13 @@ instance FromJSON Marker where
       "reply" -> return Reply
       "root" -> return Root
       "mention" -> return Mention
-      _ -> mzero
+      other -> return $ OtherMarker other
 
 instance ToJSON Marker where
   toJSON (Reply) = String "reply"
   toJSON (Root) = String "root"
   toJSON (Mention) = String "mention"
+  toJSON (OtherMarker m) = String m
 
 decodeEventId :: Text -> Maybe EventId
 decodeEventId t = do

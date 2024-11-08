@@ -85,13 +85,13 @@ connectRelays nn sendMsg sink = do
         msg <- valToStr =<< WS.data' v
         resp <-
           pure
-            . decode @Response
+            . eitherDecode @Response
             . fromStrict
             . encodeUtf8
             . strToText
             $ msg
         case resp of
-          Just (EventReceived subId event) -> do
+          Right (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
             case (verifySignature event) of -- TODO: verify hash of event as well
               False -> 
@@ -116,14 +116,16 @@ connectRelays nn sendMsg sink = do
                         <> " not found in responseChannels. Event received="
                         <> show event
 
-          Just (Nostr.Response.EOSE subId) -> do
+          Right (Nostr.Response.EOSE subId) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
-          Just (Nostr.Response.OK eid True _) -> do
+          Right (Nostr.Response.OK eid True _) -> do
             liftIO . flip runReaderT nn $ setResultSuccess eid relay
-          Just (Nostr.Response.OK eid False reason) -> do
+          Right (Nostr.Response.OK eid False reason) -> do
             liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
-          _ -> do 
-               liftIO . logRelayError relay . pack $ "Could not decode server response: " <> show msg
+          Right _ -> do 
+               liftIO . logRelayError relay . pack $ "Uknown response: " <> show msg 
+          Left errMsg -> do 
+               liftIO . logRelayError relay . pack $ "Decoding failed with: " <> show errMsg <> " for response=" <> show msg
 
       WS.addEventListener socket "close" $ \e -> do
         code <- codeToCloseCode <$> WS.code e

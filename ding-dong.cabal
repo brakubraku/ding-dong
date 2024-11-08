@@ -70,6 +70,7 @@ library
                       , entropy
                       , bech32
                       , extra
+                      , scientific
     hs-source-dirs:   src
     default-language: Haskell2010
     extra-lib-dirs:/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled

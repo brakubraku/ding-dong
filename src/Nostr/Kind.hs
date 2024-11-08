@@ -1,7 +1,8 @@
 module Nostr.Kind where
 
-import Control.Monad (mzero)
 import Data.Aeson
+import Data.Maybe
+import Data.Scientific
 
 data Kind
   = Metadata
@@ -15,23 +16,25 @@ data Kind
   | CalendarRSVP
   | RelayList
   | Reaction
-  deriving (Eq, Show, Enum, Bounded, Ord)
+  | UnknownKind Int
+  deriving (Eq, Show, Ord)
 
 instance FromJSON Kind where
   parseJSON = withScientific "kind" $ \k -> do
-    case k of
-      0 -> return Metadata
-      1 -> return TextNote
-      3 -> return Contacts
-      5 -> return Delete
-      6 -> return Boost
-      7 -> return Reaction
-      31922 -> return CalendarTime
-      31923 -> return CalendarDay
-      31924 -> return Calendar
-      31925 -> return CalendarRSVP
-      10002 -> return RelayList
-      _ -> mzero
+    pure $
+      case k of
+        0 -> Metadata
+        1 -> TextNote
+        3 -> Contacts
+        5 -> Delete
+        6 -> Boost
+        7 -> Reaction
+        31922 -> CalendarTime
+        31923 -> CalendarDay
+        31924 -> Calendar
+        31925 -> CalendarRSVP
+        10002 -> RelayList
+        k -> UnknownKind . fromMaybe (-1) . toBoundedInteger $ k
 
 instance ToJSON Kind where
   toJSON Metadata = Number 0
@@ -45,3 +48,4 @@ instance ToJSON Kind where
   toJSON Calendar = Number 31924
   toJSON CalendarRSVP = Number 31925
   toJSON RelayList = Number 10002
+  toJSON (UnknownKind k) = Number . fromRational . toRational $ k -- TODO: wtf
