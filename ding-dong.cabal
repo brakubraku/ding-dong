@@ -6,8 +6,7 @@ synopsis:           Nostr web client
 license:            MIT
 license-file:       LICENSE
 
-author:             branko@branko
-maintainer:         branko@branko
+author:             Branislav branko1755@proton.me
 
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
