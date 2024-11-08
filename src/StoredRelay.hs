@@ -38,12 +38,12 @@ defaultRelays =
         <$> [ "wss://relay.primal.net",
               "wss://relay.nostr.band",
               "wss://relay.damus.io",
-              "wss://nostr.wine",
               "wss://nos.lol"
             ] 
       inactive = flip StoredRelay False . newRelay <$> 
             [ "wss://relay.nostr.net",
               "wss://polnostr.xyz",
+              "wss://nostr.wine",
               "wss://nostr.at"
             ] 
   in 
