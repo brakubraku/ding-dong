@@ -232,14 +232,14 @@ updateModel nn rl pl lnd action model =
     ShowFeed ->
       let contacts = (Set.toList $ model ^. #contacts)
           Until t = model ^. #feed % #until
-          pagedFilter xos =
+          pagedFilter =
             \(Since s) (Until u) ->
               textNotesWithDeletes
                 (Just s)
                 (Just u)
-                xos
+                contacts
           updated =
-            model & #feed % #filter ?~ pagedFilter contacts
+            model & #feed % #filter ?~ pagedFilter
        in batchEff
             updated
             [ pure $ LoadMoreEvents #feed FeedPage,
