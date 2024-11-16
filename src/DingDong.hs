@@ -10,7 +10,7 @@ module DingDong where
 import BechUtils
 import ContentUtils
 import Control.Concurrent
-import Control.Monad (when, unless)
+import Control.Monad (when)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Bifunctor (second)
@@ -71,7 +71,7 @@ start = do
             \(Since s) (Until u) ->
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
-      update = (\a (CompactModel m) -> CompactModel <$> updateModel nn reactionsLoader profilesLoader lastNotifDate a m)
+      update = (\a (CompactModel m) -> CompactModel <$> updateModel nn reactionsLoader profilesLoader a m)
       initialModel =
         CompactModel $ Model 
           (defaultPagedModel (Until now))
@@ -105,36 +105,14 @@ start = do
     mountPoint = Nothing
     logLevel = Off
 
-reloadAfterReconnect :: NostrNetwork -> Sub Action
-reloadAfterReconnect nn sink  = do 
-    let checkState isReload = do
-          someConnected <- areSomeConnected
-          if someConnected && isReload 
-          then do
-            sleep . Seconds $ 2
-            sink Reload
-          else do
-            isDisconnected <- areAllDisconnected
-            sleep . Seconds $ 1
-            checkState $ if isReload then True else isDisconnected
-    liftIO $ checkState False
-  where
-    areSomeConnected = do
-       relays <- Map.elems <$> readMVar (nn ^. #relays)
-       pure $ any (==True) $ relays ^.. folded % #connected 
-    areAllDisconnected = do
-      relays <- Map.elems <$> readMVar (nn ^. #relays)
-      pure $ all (==False) $ relays ^.. folded % #connected 
-    
 updateModel ::
   NostrNetwork ->
   PeriodicLoader EventId (ReactionEvent, Relay) ->
   PeriodicLoader XOnlyPubKey ProfOrRelays ->
-  UTCTime ->
   Action ->
   Model ->
   Effect Action Model
-updateModel nn rl pl lnd action model =
+updateModel nn rl pl action model =
   case action of
     HandleWebSocket (WebSocketOpen r) -> 
       noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
@@ -149,11 +127,11 @@ updateModel nn rl pl lnd action model =
         model & #relaysStats % at (r ^. #uri) % _Just % _3 %~ (\(CloseCount cc) -> CloseCount (cc+1))
               & #relaysStats % at (r ^. #uri) % _Just % _1 .~ False
 
-    ReportError er ->
-      let addError e es = e : take 20 es -- TODO: 20
+    Report reportType msg ->
+      let add msgs = (reportType, msg) : take 20 msgs -- TODO: 20
        in noEff $
-            model & #errors %~ addError er
-
+            model & #reports %~ add 
+            
     UpdatedRelaysList rl -> 
       noEff $ model & #relaysList .~ rl
 
@@ -218,16 +196,13 @@ updateModel nn rl pl lnd action model =
                     loop
                in loop
 
-            -- check for connection status periodically and reload after 
-            -- connection is reestablished after being lost
-            forkJSM $ reloadAfterReconnect nn sink
             liftIO $ do 
               when isNew $ sink CreateInitialProfile
               -- start showing feed
               sink $ ShowFeed
               -- start notifications
               sink $ LoadMoreEvents #notifs NotificationsPage
-              sink $ ListenToNotifs lnd
+              sink ListenToNotifs
 
     ShowFeed ->
       let contacts = (Set.toList $ model ^. #contacts)
@@ -242,11 +217,7 @@ updateModel nn rl pl lnd action model =
             model & #feed % #filter ?~ pagedFilter
        in batchEff
             updated
-            [ pure $ LoadMoreEvents #feed FeedPage,
-              pure $
-                StartFeedLongRunning
-                  (textNotesWithDeletes (Just t) Nothing contacts)
-            ]
+            [pure $ LoadMoreEvents #feed FeedPage, pure $ StartFeedLongRunning t contacts]
     
     ShowNotifications -> 
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
@@ -262,16 +233,28 @@ updateModel nn rl pl lnd action model =
                  hasNew  
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
-    ListenToNotifs since -> 
-      effectSub model $ 
-        subscribe
-          nn
-          PeriodicForever
-          [sinceF since $ Mentions [model ^. #me]]
-          ProcessNewNotifs
-          Nothing
-          getEventRelayEither
-
+    ListenToNotifs -> 
+      effectSub model runLoop
+       where 
+        doSubscribe lnd = 
+          subscribe
+            nn
+            PeriodicForever
+            [sinceF lnd $ Mentions [model ^. #me]]
+            ProcessNewNotifs
+            Nothing
+            getEventRelayEither
+        runLoop sink = 
+          do
+            lnd <- loadLastNotif
+            doSubscribe lnd sink 
+            -- subscription will terminate when any relay returns an error
+            -- and new one will be created instead. you want this with 
+            -- "forever running" subscriptions, in this case to constantly check for 
+            -- notifications
+            liftIO . waitForReconnect $ sink
+            runLoop sink            
+          
     ProcessNewNotifs ers -> 
        let update er@(e, r) m =
               m & #fromRelays % at e 
@@ -285,15 +268,22 @@ updateModel nn rl pl lnd action model =
            updated = Prelude.foldr update model ers
        in noEff updated
 
-    StartFeedLongRunning f ->
-      effectSub model $
-        subscribe
+    StartFeedLongRunning since contacts ->
+       effectSub model runLoop
+       where 
+        doSubscribe = 
+          subscribe
           nn
           PeriodicForever
-          f
+          (textNotesWithDeletes (Just since) Nothing contacts)
           FeedLongRunningProcess
           Nothing
           getEventRelayEither
+        runLoop sink = 
+          do
+            doSubscribe sink
+            liftIO . waitForReconnect $ sink
+            runLoop sink   
 
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
@@ -636,7 +626,7 @@ updateModel nn rl pl lnd action model =
               . fromMaybe [st]
               . fmap (updateListWith st)
        in batchEff updatedModel $
-            pure . ReportError
+            pure . Report ErrorReport
               <$> ((\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels)
                 ++ ( ( \(r, er) ->
                          "Relay "
@@ -664,7 +654,7 @@ updateModel nn rl pl lnd action model =
         signAndSend 
               replyEventF 
               successActs
-              (singleton . const . ReportError $ "Failed sending reply!")
+              (singleton . const . Report ErrorReport $ "Failed sending reply!")
 
     ClearWritingReply -> 
       let updated = model & #writeReplyTo .~ Nothing
@@ -694,7 +684,7 @@ updateModel nn rl pl lnd action model =
         signAndSend 
           newProfileF 
           (singleton . const . LoadProfile False me $ MyProfilePage) 
-          (singleton . const . ReportError $ "Failed updating profile!")
+          (singleton . const . Report ErrorReport $ "Failed updating profile!")
         -- TODO: update profile in #profiles if sending successfull
     SendLike e -> do
         let me = model ^. #me
@@ -709,7 +699,7 @@ updateModel nn rl pl lnd action model =
           signAndSend 
             sendLike 
             (singleton . const . LikeSent $ e) 
-            (singleton . const . ReportError $ "Failed sending like!")
+            (singleton . const . Report ErrorReport $ "Failed sending like!")
        
     LikeSent e -> 
       let me = model ^. #me
@@ -745,7 +735,7 @@ updateModel nn rl pl lnd action model =
           let Keys _ xo _ = keys $ nn
               signed = signEvent e key xo
           maybe
-            (liftIO . sink $ ReportError "Failed sending: Event signing failed")
+            (liftIO . sink $ Report ErrorReport "Failed sending: Event signing failed")
             ( \se -> liftIO $ do
                 isSuccess <- runInNostr $ sendAndWait se (Seconds 1)
                 sequence_ . fmap (\f -> sink (f se)) 
@@ -833,6 +823,14 @@ updateModel nn rl pl lnd action model =
               (ts & at reid ?~ updatedWithRelayAndEvent, enotes ++ eids, eprofs ++ xos)
 
     runInNostr = runNostr nn
+
+    waitForReconnect sink = 
+      do 
+        unconnected <- runNostr nn $ RP.waitForActiveConnections (Seconds 10)
+        when (length unconnected > 1) $ 
+          sink . Report ErrorReport $ 
+            "Unable to connect to these relays: " 
+            <> showt (unconnected ^.. folded % #uri)
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
@@ -1238,18 +1236,18 @@ middlePanel m =
       NotificationsPage -> displayNotificationsPage m
 
 rightPanel :: Model -> View Action
-rightPanel m = ul_ [class_ "right-panel"] errors
+rightPanel m = ul_ [class_ "right-panel"] reports
   where
-    errors =
-      ( \(i, e) ->
+    reports =
+      ( \(i, (reportType, report)) ->
           liKeyed_
             (Key . showt $ i) -- so that Miso diff algoritm displays it in the correct order
-            [ class_ "error",
+            [ class_ $ bool "error" "success" (reportType ==  SuccessReport),
               class_ "hide-after-period"
             ]
-            [text e]
+            [text report]
       )
-        <$> zip [1 ..] (m ^. #errors)
+        <$> zip [1 ..] (m ^. #reports)
 
 leftPanel :: Model -> View Action
 leftPanel m =

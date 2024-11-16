@@ -121,10 +121,14 @@ sendEvent e = do
       pure $ rr & at (e ^. #eventId) ?~ (Map.fromList (zip cr (repeat ResultUnknown)), now)
   send . SendEvent $ e
 
-waitForActiveConnections :: Seconds -> NostrNetworkT ()
+-- returns unconnected relays
+waitForActiveConnections :: Seconds -> NostrNetworkT [Relay]
 waitForActiveConnections (Seconds timeout) = do
   nn <- ask
   rels <- lift . readMVar $ (nn ^. #relays)
-  unless (all connected rels || timeout <= 0) $ do
+  if all connected rels || timeout <= 0
+  then pure $ rels ^.. folded % filtered (not . connected)
+  else do
     lift . sleep . Seconds $ 0.5
     waitForActiveConnections $ Seconds (timeout - 0.5)
+  

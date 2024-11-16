@@ -69,8 +69,8 @@ data Action
   | ScrollTo (Maybe Seconds) Text
   | SubscribeForEmbeddedReplies [EventId] Page
   | RepliesRecvNoEmbedLoading [(Event, Relay)]
-  | ReportError Text
-  | StartFeedLongRunning [DatedFilter]
+  | Report ReportType Text
+  | StartFeedLongRunning UTCTime [XOnlyPubKey]
   | FeedLongRunningProcess [(Event, Relay)]
   | ShowNewNotes
   | SendReplyTo Event (JSM Text)
@@ -81,7 +81,7 @@ data Action
   | UpdatedRelaysList [StoredRelay]
   | RemoveRelay Text
   | Reload 
-  | ListenToNotifs UTCTime
+  | ListenToNotifs 
   | ProcessNewNotifs [(Event, Relay)]
   | ShowNotifications
   | SubscribeForPagedReactionsTo (Lens' Model PagedEventsModel) Page [ReactionEvent]
@@ -92,6 +92,9 @@ data Action
   | CreateInitialProfile
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
+ deriving Eq
+
+data ReportType = ErrorReport | SuccessReport
  deriving Eq
 
 data Page
@@ -138,7 +141,7 @@ data Model = Model
         Page
         [(SubscriptionId, SubState)],
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
-    errors :: [Text],
+    reports :: [(ReportType, Text)],
     fromRelays :: Map Event (Set.Set Relay),
     noteDraft :: Text,
     me :: XOnlyPubKey
@@ -152,7 +155,7 @@ newtype CompactModel = CompactModel Model
 -- to determine if update is neccessary.
 instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
-    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #errors] = False
+    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #reports] = False
     | otherwise =
         if m1 ^. #page /= m2 ^. #page then m1 == m2 
         else 

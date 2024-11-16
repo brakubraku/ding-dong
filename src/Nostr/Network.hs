@@ -65,6 +65,15 @@ isSubFinished sid ss =
     subState <- Map.lookup sid ss
     pure . notElem Running . elems $ subState ^. #relaysState
 
+isAnyRelayError :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
+isAnyRelayError sid ss =
+  fromMaybe False $ do
+    subState <- Map.lookup sid ss
+    pure . Prelude.any isError . elems $ subState ^. #relaysState
+  where 
+    isError (Error _) = True
+    isError _ = False
+
 ratioOfFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Float
 ratioOfFinished sid ss = fromMaybe 1 $ do
   rs <- Map.elems . view #relaysState <$> Map.lookup sid ss

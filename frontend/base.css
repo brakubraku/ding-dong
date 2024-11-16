@@ -433,6 +433,10 @@
     color: red
 }
 
+.success {
+    color: #15ee15
+}
+
 .new-notes {
     text-align: center;
     position: sticky;

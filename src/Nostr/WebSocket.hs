@@ -68,17 +68,30 @@ connectRelays nn sendMsg sink = do
   where
     conRelay :: (Int, UTCTime) -> Relay -> JSM ()
     conRelay (recnt, lastReconnect) relay = do
+      isReconnectingMVar <- liftIO $ newMVar False
       socket <- createWebSocket (relay ^. #uri) []
-      socketState <- liftIO $ newMVar 0
 
-      let markConnected r=  
-           modifyMVar_ (nn ^. #relays) $ \rels ->
-              pure $ rels & at (r ^. #uri) %~ fmap (Optics.set #connected True)
-  
+      let 
+        reconnect =
+          do
+            isReconnecting <- liftIO $ readMVar isReconnectingMVar
+            unless isReconnecting $ do
+              liftIO $ markIsConnected False relay
+              liftIO $ modifyMVar_ isReconnectingMVar (const . pure $ True)
+              now <- liftIO getCurrentTime
+              liftIO . print $ show now <> "reconnecting " <> show relay
+              let diff = (round $ diffUTCTime now lastReconnect)
+              case (recnt > 3, diff > 1) of -- TODO: take time into account?
+                (True, _) -> do
+                  liftIO . sleep . Seconds $ 5
+                  conRelay (0, now) relay
+                (False, _) -> do
+                  liftIO . sleep . Seconds $ 0.5
+                  conRelay (recnt + 1, now) relay
+
       WS.addEventListener socket "open" $ \_ -> do
         liftIO $ do
-          markConnected relay
-          _ <- swapMVar socketState 1
+          markIsConnected True relay
           sink . sendMsg $ WebSocketOpen relay
 
       WS.addEventListener socket "message" $ \v -> do
@@ -133,23 +146,9 @@ connectRelays nn sendMsg sink = do
         clean <- WS.wasClean e
         liftIO . sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
-        status <- WS.socketState socket
-        _ <- liftIO . swapMVar socketState $ status
-        now <- liftIO getCurrentTime
-        when (status == 3) $
-          unless (code == CLOSE_NORMAL || code == CLOSE_NO_STATUS) $ do
-            liftIO . print $ show now <> "reconnecting " <> show relay
-            let diff = (round $ diffUTCTime now lastReconnect)
-            case (recnt > 3, diff > 1) of -- TODO: take time into account?
-              (True,_) -> do 
-                liftIO . sleep . Seconds $ 5
-                conRelay (0,now) relay 
-              (False, _) -> do 
-                liftIO . sleep . Seconds $ 0.5 
-                conRelay (recnt+1,now) relay 
-
+        reconnect
+ 
       WS.addEventListener socket "error" $ \v -> do
-        _ <- liftIO . swapMVar socketState $ 4 -- TODO: 4 means error 
         d' <- WS.data' v
         undef <- ghcjsPure (isUndefined d')
         if undef
@@ -158,39 +157,37 @@ connectRelays nn sendMsg sink = do
           else do
             Just d <- fromJSVal d'
             liftIO . sink . sendMsg $ (WebSocketError relay d)
+        reconnect
 
       rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
-      -- listen for requests to send
       let doLoop =
             do
-              status <- liftIO $ readMVar socketState
-              case status of
+              state <- WS.socketState socket
+              case state of
                 0 -> do
                   -- not ready yet
                   liftIO . sleep . Seconds $ 0.1
                   doLoop
                 1 -> do
                   -- ready
-                  request <- liftIO . atomically . readTChan $ rc
-                  sendJson' socket request -- TODO: if the socket is porked at this point this will pork up
+                  -- try reading requests to send
+                  requests <- liftIO . collectJustM . atomically . tryReadTChan $ rc
+                  mapM_ (sendJson' socket) requests
+                  liftIO . sleep $ Seconds 0.05 -- TODO: 
                   doLoop
-                2 -> markAllError relay "Relay closed connection"
+                2 -> markAllError relay "Relay closing connection"
                 3 -> markAllError relay "Relay closed connection"
                 _ -> markAllError relay "Error received from relay"
       doLoop
-      WS.close socket
+
+    markIsConnected isCon r =  
+        modifyMVar_ (nn ^. #relays) $ \rels ->
+          pure $ rels & at (r ^. #uri) % _Just % #connected .~ isCon
 
     markAllError relay eText = do 
-      liftIO . runNostr nn $ do 
-        markDisconnected relay
-        changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
-
-markDisconnected :: Relay -> NostrNetworkT ()
-markDisconnected r = do 
-  nn <- ask 
-  liftIO . modifyMVar_ (nn ^. #relays) $ 
-    \rels -> do 
-        pure $ rels & at (r ^. #uri) %~ fmap (Optics.set #connected False)
+      liftIO $ do 
+        markIsConnected False relay 
+        runNostr nn $ changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
 sendJson' socket m = do

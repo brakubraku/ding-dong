@@ -78,3 +78,12 @@ scrollIntoView elId = do
   when isNotNull $ do 
     el # "scrollIntoView" $ ()
     pure ()
+
+collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
+collectJustM action = do
+  x <- action
+  case x of
+    Nothing -> pure []
+    Just x -> do
+      xs <- collectJustM action
+      return (x : xs)

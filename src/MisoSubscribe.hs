@@ -30,6 +30,7 @@ import Optics
 import ModelAction (SubState (..))
 import Data.Bool (bool)
 import Utils
+import Control.Monad (unless)
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -87,7 +88,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let finished = isSubFinished subId subStates
+        let isAnyErrored = isAnyRelayError subId subStates
+        let finished = isSubFinished subId subStates 
         let ratio = ratioOfFinished subId subStates
         let reportRunning = liftIO $ reportSubState False actOnSubState subId subStates
         let reportFinished = liftIO $ reportSubState True actOnSubState subId subStates
@@ -121,23 +123,15 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
-            continue
+            -- if any relay has closed connection, end the subscription
+            unless isAnyErrored continue
 
   liftIO $ do 
      (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout)
-     print $ "branko-Unsubscribing " <> show subFilter <> "; msgs-received: " <> show msgsRecvd
+     print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
      flip runReaderT nn $ RP.unsubscribe subId
 
   where
-    collectJustM :: (MonadIO m) => m (Maybe a) -> m [a]
-    collectJustM action = do
-      x <- action
-      case x of
-        Nothing -> pure []
-        Just x -> do
-          xs <- collectJustM action
-          return (x : xs)
-
     processMsgs :: [(Response, Relay)] -> IO ()
     processMsgs rrs = do
       let processed = extractResults <$> rrs
