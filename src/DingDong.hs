@@ -1075,7 +1075,7 @@ displayNoteContent withEmbed m (e,content) =
                       embdEvnt
                   ]
           False ->
-            text . ("smash:" <>) . fromMaybe "Failed encoding nevent" . encodeBechEvent $ eid
+            text . ("nevent:" <>) . fromMaybe "Failed encoding nevent" . encodeBechEvent $ eid
       displayContent (NostrC (NPub xo)) =
         case withEmbed of
           True ->
