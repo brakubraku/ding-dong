@@ -60,34 +60,34 @@ data RelaySubState = Running | EOSE | Error Text deriving (Eq, Show)
 
 -- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
-isSubFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
-isSubFinished sid ss =
+isSubFinished :: Maybe SubscriptionState -> Bool
+isSubFinished mss =
   fromMaybe True $ do
-    subState <- Map.lookup sid ss
+    subState <- mss
     pure . notElem Running . elems $ subState ^. #relaysState
 
-isAnyRelayError :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Bool
-isAnyRelayError sid ss =
+isAnyRelayError :: Maybe SubscriptionState -> Bool
+isAnyRelayError mss =
   fromMaybe False $ do
-    subState <- Map.lookup sid ss
+    subState <- mss
     pure . Prelude.any isError . elems $ subState ^. #relaysState
   where 
     isError (Error _) = True
     isError _ = False
 
 -- check if a subscription is being "run" on all connected relays
-isNotRunningOnAll :: SubscriptionId -> Map SubscriptionId SubscriptionState -> [Relay] -> Bool
-isNotRunningOnAll sid ss rels = 
+isNotRunningOnAll :: Maybe SubscriptionState -> [Relay] -> Bool
+isNotRunningOnAll mss rels = 
   let connectedRels = rels ^.. folded % filtered connected % #uri
       subRelays = fromMaybe [] $ do
-         subState <- Map.lookup sid ss
+         subState <- mss
          pure . Map.keys $ subState ^. #relaysState
   in 
     Set.fromList connectedRels /= Set.fromList (subRelays ^.. folded % #uri)
 
-ratioOfFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Float
-ratioOfFinished sid ss = fromMaybe 1 $ do
-  rs <- Map.elems . view #relaysState <$> Map.lookup sid ss
+ratioOfFinished :: Maybe SubscriptionState -> Float
+ratioOfFinished mss = fromMaybe 1 $ do
+  rs <- Map.elems . view #relaysState <$> mss
   let (running, other) = partition (== Running) rs
       (eose, _) = partition (== EOSE) other
       length = toInteger . Prelude.length

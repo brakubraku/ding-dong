@@ -85,15 +85,15 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
       RP.subscribeForFilter subFilter
 
   let collectResponses = do
-        subStates <- liftIO . readMVar $ (nn ^. #subscriptions)
+        subState <- liftIO $ Map.lookup subId <$> readMVar (nn ^. #subscriptions)
         relays <- liftIO $ Map.elems <$> readMVar (nn ^. #relays)
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let finished = isSubFinished subId subStates 
-        let ratio = ratioOfFinished subId subStates
-        let reportRunning = liftIO $ reportSubState False actOnSubState subId subStates
-        let reportFinished = liftIO $ reportSubState True actOnSubState subId subStates
+        let finished = isSubFinished subState 
+        let ratio = ratioOfFinished subState
+        let reportRunning = liftIO $ reportSubState False actOnSubState subId subState
+        let reportFinished = liftIO $ reportSubState True actOnSubState subId subState
         let continue = do
               reportRunning 
               liftIO $ sleep period
@@ -126,8 +126,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             liftIO . processMsgs $ rrs
             -- has any relay has closed connection or is the subscription not running on all connected relays?
             let isRestartLongRunning = 
-                 isAnyRelayError subId subStates 
-                  || isNotRunningOnAll subId subStates relays
+                 isAnyRelayError subState 
+                  || isNotRunningOnAll subState relays
             unless isRestartLongRunning continue
 
   liftIO $ do 
@@ -145,8 +145,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
     -- inform about subscription state changes if
     -- function actOnSubState is provided
     reportSubState _ Nothing _ _ = pure ()
-    reportSubState isFinished (Just act) subId subStates = do
-      let relState = subStates ^? at subId % _Just % #relaysState
+    reportSubState isFinished (Just act) subId subState = do
+      let relState = subState ^? _Just % #relaysState
           state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
       maybe
         ( logError $
