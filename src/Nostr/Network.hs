@@ -15,6 +15,7 @@ import Control.Monad.Reader
 import Data.List (partition)
 import Data.Map hiding (partition)
 import qualified Data.Map as Map hiding (partition)
+import qualified Data.Set as Set
 import Data.Maybe
 import Data.Text hiding (partition, zip)
 import GHC.Float
@@ -73,6 +74,16 @@ isAnyRelayError sid ss =
   where 
     isError (Error _) = True
     isError _ = False
+
+-- check if a subscription is being "run" on all connected relays
+isNotRunningOnAll :: SubscriptionId -> Map SubscriptionId SubscriptionState -> [Relay] -> Bool
+isNotRunningOnAll sid ss rels = 
+  let connectedRels = rels ^.. folded % filtered connected % #uri
+      subRelays = fromMaybe [] $ do
+         subState <- Map.lookup sid ss
+         pure . Map.keys $ subState ^. #relaysState
+  in 
+    Set.fromList connectedRels /= Set.fromList (subRelays ^.. folded % #uri)
 
 ratioOfFinished :: SubscriptionId -> Map SubscriptionId SubscriptionState -> Float
 ratioOfFinished sid ss = fromMaybe 1 $ do

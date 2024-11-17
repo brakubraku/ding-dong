@@ -31,6 +31,7 @@ import ModelAction (SubState (..))
 import Data.Bool (bool)
 import Utils
 import Control.Monad (unless)
+import qualified Data.Map as Map
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -85,10 +86,10 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
 
   let collectResponses = do
         subStates <- liftIO . readMVar $ (nn ^. #subscriptions)
+        relays <- liftIO $ Map.elems <$> readMVar (nn ^. #relays)
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        let isAnyErrored = isAnyRelayError subId subStates
         let finished = isSubFinished subId subStates 
         let ratio = ratioOfFinished subId subStates
         let reportRunning = liftIO $ reportSubState False actOnSubState subId subStates
@@ -123,8 +124,11 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
-            -- if any relay has closed connection, end the subscription
-            unless isAnyErrored continue
+            -- has any relay has closed connection or is the subscription not running on all connected relays?
+            let isRestartLongRunning = 
+                 isAnyRelayError subId subStates 
+                  || isNotRunningOnAll subId subStates relays
+            unless isRestartLongRunning continue
 
   liftIO $ do 
      (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout)
