@@ -58,7 +58,7 @@ startLoader nn pl act sink =
                 & #loading .~ Set.empty, 
                 toLoad
             )
-        traceM $ "toLoad=" <> (show $ toLoad)
+        -- traceM $ "toLoad=" <> (show $ toLoad)
         when (not . Set.null $ toLoad) $ do
           forkJSM $ subscribe
             nn
