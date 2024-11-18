@@ -8,7 +8,6 @@
 {-# LANGUAGE TupleSections #-}
 
 module MisoSubscribe where
-
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
@@ -92,8 +91,21 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
             tryReadTChan respChan
         let finished = isSubFinished subState 
         let ratio = ratioOfFinished subState
-        let reportRunning = liftIO $ reportSubState False actOnSubState subId subState
-        let reportFinished = liftIO $ reportSubState True actOnSubState subId subState
+        -- inform about subscription state changes if
+        -- function actOnSubState is provided 
+        let reportSubState _ Nothing = pure ()
+            reportSubState isFinished (Just act) = liftIO $ do 
+              let relState = subState ^? _Just % #relaysState
+                  state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
+              maybe
+                ( logError $
+                    "Could not find relays state for subId="
+                      <> (T.pack . show $ subId)
+                )
+                (sink . act)
+                state
+        let reportRunning = reportSubState False actOnSubState 
+        let reportFinished = reportSubState True actOnSubState
         let continue = do
               reportRunning 
               liftIO $ sleep period
@@ -141,20 +153,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
       let processed = extractResults <$> rrs
       mapM_ logError $ lefts processed
       sink . actOnResults . rights $ processed
-
-    -- inform about subscription state changes if
-    -- function actOnSubState is provided
-    reportSubState _ Nothing _ _ = pure ()
-    reportSubState isFinished (Just act) subId subState = do
-      let relState = subState ^? _Just % #relaysState
-          state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
-      maybe
-        ( logError $
-            "Could not find relays state for subId="
-              <> (T.pack . show $ subId)
-        )
-        (sink . act)
-        state
 
     addStats :: (Monad a) => Int -> StateT SubData a ()
     addStats n = do
