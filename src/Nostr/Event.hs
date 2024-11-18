@@ -422,13 +422,17 @@ getSingleETag e =
         1 -> fst <$> Data.List.uncons etags
         _ -> Nothing
 
+-- if you find Root tag, then return that. 
+-- if no Root tag but you find Reply tag, then return that.
+-- otherwise Nothing
 findRootEid :: Event -> Maybe EventId
 findRootEid e =
-  find' (getETags e)
+  find' (getETags e) Nothing
   where
-    find' (ETag eid _ (Just Root) : _) = Just eid
-    find' (_ : tags) = find' tags
-    find' [] = Nothing
+    find' (ETag rid _ (Just Root) : _) _ = Just rid
+    find' (ETag eid _ (Just Reply) : tags) _ = find' tags (Just eid)
+    find' (_ : tags) mReplyEid = find' tags mReplyEid
+    find' [] mReplyEid = mReplyEid
 
 orderByAgeAsc :: [(Event, b)] -> [(Event,b)]
 orderByAgeAsc es =
