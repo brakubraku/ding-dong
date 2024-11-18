@@ -55,7 +55,7 @@ data Action
   | SubscribeForEmbedded [EventId]
   | EmbeddedEventsProcess [(Event, Relay)]
   | GoBack
-  | UpdateField (Lens' Model Text) Text                      -- TODO: see below
+  | UpdateField (Lens' Model Text) Text
   | WriteTextToStorage Text Text
   | LoadProfile Bool XOnlyPubKey Page
   | SubState Page (SubscriptionId, SubState)
@@ -157,7 +157,7 @@ instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
     | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #reports] = False
     | otherwise =
-        if m1 ^. #page /= m2 ^. #page then m1 == m2 
+        if m1 ^. #page /= m2 ^. #page then False
         else 
           case m1 ^. #page of  
             -- TODO: would need heterogenous lists to get rid of eq 
