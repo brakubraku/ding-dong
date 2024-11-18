@@ -17,7 +17,6 @@
     background: #d3d3d3a3;;
     border-radius: 15px;
     padding-left: 10px;
-    margin-bottom:10px;
     border: 1px solid black;
     overflow:scroll;
 }
@@ -177,6 +176,7 @@
 
 .thread-container .note {
     margin-left: 30px;
+    margin-top:5px;
 }
 
 .thread-container .note-no-parent {
@@ -184,7 +184,14 @@
 }
 
 .thread-container .reply {
-    margin-left: 100px;
+    margin-left: 30px;
+    margin-top: 5px;
+}
+
+.thread-container .reply-box {
+    margin-left: 30px;
+    margin-top: 5px;
+    margin-bottom:5px;
 }
 
 .text-note-properties {
@@ -453,8 +460,8 @@
 }
 
 .parent {
-    /* background-color: #baf1a6; */
-    display:flex
+    display:flex;
+    margin-bottom: 5px;
 }
 
 .child {
@@ -565,4 +572,12 @@ body {
 .back-button {
     position:sticky;
     top: 50px;
+}
+
+.parent-child-complex {
+  padding-left: 50px;
+  padding-right: 50px;
+  border-bottom: 2px dashed #f73131;
+  padding-bottom: 15px;
+  padding-top: 15px;
 }

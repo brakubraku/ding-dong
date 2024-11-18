@@ -1144,7 +1144,7 @@ displayPagedNote m pml ec@(e,_)
            [div_ [class_ "parent"] [maybe emptyParent (\p -> displayNote m p) mp]
            ,div_ [class_ "child"] [displayNote m ec]]
     | otherwise = 
-        displayNote m ec
+        div_ [class_ "parent-child-complex"] [displayNote m ec]
   where 
     emptyParent = div_ [] [text "Loading parent event"]
 
@@ -1387,29 +1387,25 @@ displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
       isWriteReply = Just e == m ^. #writeReplyTo
-      parentNotFound = div_ [class_ "parent-not-found"] [text "Loading parent or parent not found on connected relays..."]
-      parentDisplay = maybe  (bool Nothing (Just parentNotFound) $ isReply e) Just $ do
+      parentNotFound = div_ [class_ "parent-not-found"] 
+        [text "Loading parent or parent not found on connected relays..."]
+      parentDisplay = maybe (bool Nothing (Just parentNotFound) $ isReply e) Just $ do
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
         parent <- thread ^. #events % at parentId
         pure $ div_ [class_ "parent"] [displayNote m parent]
 
-      noteDisplay =
-        Just $
-          div_
-            [ class_ $
-                if isJust parentDisplay
-                  then "note"
-                  else "note-no-parent"
-            ]
-            [displayNote m (e, processContent e)]
-    
+      repliesDisplay = do
+        thread <- m ^. #threads % at reid
+        let replies = getRepliesFor thread (e ^. #eventId)
+        pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> orderByAgeAsc replies
+
       replyInputEl = "reply-text-area"
       getReply = getValueOfInput replyInputEl
       writeReplyDisplay = 
         flip (bool Nothing) isWriteReply $ pure $
           div_
-            []
+            [class_ "reply-box"]
             [ textarea_
                 [ id_ replyInputEl,
                   defaultValue_ $ m ^. #noteDraft,
@@ -1418,13 +1414,19 @@ displayThread m e =
                 [],
               button_ [onClick $ SendReplyTo e getReply] [text "Send"]
             ]
-      repliesDisplay = do
-        thread <- m ^. #threads % at reid
-        let replies = getRepliesFor thread (e ^. #eventId)
-        pure $ (\r -> (div_ [class_ "reply"] [displayNote m r])) <$> orderByAgeAsc replies
+      noteDisplay =
+        Just $
+          div_
+            [ class_ $
+                if isJust parentDisplay
+                  then "note"
+                  else "note-no-parent"
+            ] $
+             [displayNote m (e, processContent e)]
+             ++ maybe [] singleton writeReplyDisplay
+             ++ fromMaybe [] repliesDisplay
    in div_ [class_ "thread-container"] $
-        catMaybes [parentDisplay, noteDisplay, writeReplyDisplay] 
-          ++ fromMaybe [] repliesDisplay
+        catMaybes [parentDisplay, noteDisplay]
 
 displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View Action
 -- displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
