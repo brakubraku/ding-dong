@@ -1,7 +1,7 @@
 
 # DingDong - Nostr web client in Haskell
 
-Try it here (https://brakubraku.github.io/dingydongy/). I have ever only run it on Firefox, so have no idea how it behaves in other browsers.
+Try it here (https://brakubraku.github.io/dingydongy/). I have ever only run it on Firefox (124.0.1), so have no idea how it behaves in other browsers.
 
 Seeing that badass full Haskell web development has been enabled by GHC WASM backend and looking for a project to flex my Haskell muscle on, I came across the idea of social media based on simple exchange of messages, signed by account's private key - Nostr. 
 
