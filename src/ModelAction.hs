@@ -271,26 +271,17 @@ addToThread ec@(e, _) t =
   let replyToEid = findIsReplyTo e
    in case replyToEid of
         Just eid ->
-          t
-            & #events
-            % at (e ^. #eventId)
-            ?~ ec
-            & #parents
-            % at (e ^. #eventId)
-            .~ Just eid
-            & #replies
-            % at eid
-            %~ \mset -> Just $
-              case mset of
-                Just set ->
-                  Set.insert (e ^. #eventId) set
-                Nothing ->
-                  Set.singleton (e ^. #eventId)
+          t & #events % at (e ^. #eventId) ?~ ec
+            & #parents % at (e ^. #eventId) .~ Just eid
+            & #replies % at eid %~ 
+              \mset -> Just $
+                case mset of
+                  Just set ->
+                    Set.insert (e ^. #eventId) set
+                  Nothing ->
+                    Set.singleton (e ^. #eventId)
         Nothing -> -- it's a root event if it's not a reply to anything.
-          t
-            & #events
-            % at (e ^. #eventId)
-            ?~ ec
+          t & #events % at (e ^. #eventId) ?~ ec
 
 getRepliesFor :: Thread -> EventId -> [(Event, [Content])]
 getRepliesFor t eid = fromMaybe [] $
