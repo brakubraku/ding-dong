@@ -28,6 +28,7 @@ That being said, by Nostr being open, you run into all kinds of content. The pow
 Get inspired by more mature Nostr clients out there, and bring those features here!
 
 # General
+* Check out Nostr protocol [specs](https://github.com/nostr-protocol/nips/)
 * The crypto part has not gone through any review, let alone audit. It's fine for playing, but just to be safe, assume the generated keys to be weak and leak easily.
 * Your secret keys are sitting in browser's local storage unencrypted. For now. Once you wipe those, you will no longer be able to post with that identity again. Gone. If somebody else takes a hold of them, they will be able to post under this identity.
 * Parts of this project (mostly data records and their *JSON instances) are taken from [prolic](https://github.com/prolic/)'s Futr project.
