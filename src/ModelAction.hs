@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
 module ModelAction where
@@ -31,65 +32,84 @@ import ProfilesLoader.Types
 import Miso (JSM)
 import Utils (Seconds)
 
-data Action
-  = RelayConnected RelayURI
-  | PagedEventsProcess Bool (Lens' Model PagedEventsModel) Page [(Event, Relay)]
-  | HandleWebSocket WebSocketAction
-  | ReceivedProfiles [ProfOrRelays]
-  | ReceivedReactions [(ReactionEvent, Relay)]
-  | NoAction
-  | StartAction Bool
-  | GoPage Page (Maybe ElementId)
-  | Unfollow XOnlyPubKey
-  | Follow XOnlyPubKey
-  | WriteModel Model
-  | ActualTime UTCTime
-  | DisplayThread Event
-  | DisplayReplyThread Event
-  | GotReplyDraft Text
-  | ThreadEvents Page [(Event, Relay)]
-  | ProfileEvents [(Event, Relay)]
-  | SubscribeForReplies [EventId]
-  | SubscribeForParentsOf (Lens' Model PagedEventsModel) Page [Event]
-  | FeedEventParentsProcess (Map.Map EventId (Set.Set EventId)) (Lens' Model PagedEventsModel) Page [(Event, Relay)]
-  | SubscribeForEmbedded [EventId]
-  | EmbeddedEventsProcess [(Event, Relay)]
-  | GoBack
-  | UpdateField (Lens' Model Text) Text
-  | WriteTextToStorage Text Text
-  | LoadProfile Bool XOnlyPubKey Page
-  | SubState Page (SubscriptionId, SubState)
-  | DisplayProfilePage (Maybe ElementId) XOnlyPubKey 
-  | AddRelay
-  | ShowFeed
-  | ShowNext (Lens' Model PagedEventsModel) Page
-  | ShowPrevious (Lens' Model PagedEventsModel)
-  | LoadMoreEvents (Lens' Model PagedEventsModel) Page
-  | LogConsole String
-  | ScrollTo (Maybe Seconds) Text
-  | SubscribeForEmbeddedReplies [EventId] Page
-  | RepliesRecvNoEmbedLoading [(Event, Relay)]
-  | Report ReportType Text
-  | StartFeedLongRunning UTCTime [XOnlyPubKey]
-  | FeedLongRunningProcess [(Event, Relay)]
-  | ShowNewNotes
-  | SendReplyTo Event (JSM Text)
-  | ClearWritingReply
-  | AllLoaded
-  | SendUpdateProfile (JSM Profile)
-  | ChangeRelayActive Text Bool
-  | UpdatedRelaysList [StoredRelay]
-  | RemoveRelay Text
-  | Reload 
-  | ListenToNotifs 
-  | ProcessNewNotifs [(Event, Relay)]
-  | ShowNotifications
-  | SubscribeForPagedReactionsTo (Lens' Model PagedEventsModel) Page [ReactionEvent]
-  | PagedReactionsToProcess (Lens' Model PagedEventsModel) Page [(Event, Relay)]
-  | SendLike Event
-  | LikeSent Event
-  | DisplayMyProfilePage
-  | CreateInitialProfile
+data Action where
+  RelayConnected :: RelayURI -> Action
+  PagedEventsProcess :: Bool ->
+                          (Lens' Model PagedEventsModel) ->
+                          Page ->
+                          [(Event, Relay)] ->
+                          Action
+  HandleWebSocket :: WebSocketAction -> Action
+  ReceivedProfiles :: [ProfOrRelays] -> Action
+  ReceivedReactions :: [(ReactionEvent, Relay)] -> Action
+  NoAction :: Action
+  StartAction :: Bool -> Action
+  GoPage :: Page -> (Maybe ElementId) -> Action
+  Unfollow :: XOnlyPubKey -> Action
+  Follow :: XOnlyPubKey -> Action
+  WriteModel :: Model -> Action
+  ActualTime :: UTCTime -> Action
+  DisplayThread :: Event -> Action
+  DisplayReplyThread :: Event -> Action
+  GotReplyDraft :: Text -> Action
+  ThreadEvents :: Page -> [(Event, Relay)] -> Action
+  ProfileEvents :: [(Event, Relay)] -> Action
+  SubscribeForReplies :: [EventId] -> Action
+  SubscribeForParentsOf :: (Lens' Model PagedEventsModel) ->
+                             Page ->
+                             [Event] ->
+                             Action
+  FeedEventParentsProcess :: (Map.Map EventId (Set.Set EventId)) ->
+                               (Lens' Model PagedEventsModel) ->
+                               Page ->
+                               [(Event, Relay)] ->
+                               Action
+  SubscribeForEmbedded :: [EventId] -> Action
+  EmbeddedEventsProcess :: [(Event, Relay)] -> Action
+  GoBack :: Action
+  UpdateField :: (Lens' Model a) -> a -> Action
+  WriteTextToStorage :: Text -> Text -> Action
+  LoadProfile :: Bool -> Bool -> XOnlyPubKey -> Page -> Action
+  SubState :: Page -> (SubscriptionId, SubState) -> Action
+  DisplayProfilePage :: (Maybe ElementId) -> XOnlyPubKey -> Action
+  AddRelay :: Action
+  ShowFeed :: Action
+  ShowNext :: (Lens' Model PagedEventsModel) -> Page -> Action
+  ShowPrevious :: (Lens' Model PagedEventsModel) -> Action
+  LoadMoreEvents :: (Lens' Model PagedEventsModel) -> Page -> Action
+  LogConsole :: String -> Action
+  ScrollTo :: (Maybe Seconds) -> Text -> Action
+  SubscribeForEmbeddedReplies :: [EventId] -> Page -> Action
+  RepliesRecvNoEmbedLoading :: [(Event, Relay)] -> Action
+  Report :: ReportType -> Text -> Action
+  StartFeedLongRunning :: UTCTime -> [XOnlyPubKey] -> Action
+  FeedLongRunningProcess :: [(Event, Relay)] -> Action
+  ShowNewNotes :: Action
+  SendReplyTo :: Event -> (JSM Text) -> Action
+  ClearWritingReply :: Action
+  AllLoaded :: Action
+  SendUpdateProfile :: (JSM Profile) -> Action
+  ChangeRelayActive :: Text -> Bool -> Action
+  UpdatedRelaysList :: [StoredRelay] -> Action
+  RemoveRelay :: Text -> Action
+  Reload :: Action
+  ListenToNotifs :: Action
+  ProcessNewNotifs :: [(Event, Relay)] -> Action
+  ShowNotifications :: Action
+  SubscribeForPagedReactionsTo :: (Lens' Model PagedEventsModel) ->
+                                    Page ->
+                                    [ReactionEvent] ->
+                                    Action
+  PagedReactionsToProcess :: (Lens' Model PagedEventsModel) ->
+                               Page ->
+                               [(Event, Relay)] ->
+                               Action
+  SendLike :: Event -> Action
+  LikeSent :: Event -> Action
+  DisplayMyProfilePage :: Action
+  CreateInitialProfile :: Action
+  ShowModal :: Action
+  LoadContactsOf :: XOnlyPubKey -> Page -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -170,6 +190,7 @@ instance Eq CompactModel where
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
             FindProfilePage -> allEqual $ [eq #findWho]
    where 
+    eq :: Eq a => Lens' Model a -> Bool
     eq ls = m1 ^. ls == m2 ^. ls
     allEqual = Prelude.all (==True) 
     notesAndStuff = [eq #threads, eq #reactions, eq #embedded]
