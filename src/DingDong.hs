@@ -87,6 +87,7 @@ start = do
           contacts
           Map.empty
           Map.empty
+          Map.empty
           FeedPage
           now
           Map.empty
@@ -581,7 +582,37 @@ updateModel nn rl pl action model =
 
     UpdateField l v -> noEff $ model & l .~ v
 
-    LoadProfile isLoadNotes xo page ->
+    LoadContactsOf xo page -> 
+      effectSub model $
+          subscribe
+            nn
+            AllAtEOS
+            [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
+            (UpdateField (#profileContacts % at xo) . Just . processReceived)
+            (Just . SubState $ page)
+            getEventRelayEither
+     where 
+      processReceived :: [(Event, Relay)] -> [XOnlyPubKey]
+      processReceived ers = 
+        let latest =
+                 -- take the latest event from each relay
+              Prelude.maximumBy (\x y -> compare (x ^. #created_at) (y ^. #created_at) ) <$> fmap fst <$>
+                 -- group by relays
+               (Prelude.groupBy (\x y -> snd x == snd y) $
+                 -- remove duplicate events received from differet relays 
+                 Prelude.nubBy (\x y -> fst x == fst y) ers)
+        in 
+          -- extract contacts from the events
+          Set.toList . Set.fromList . Prelude.concat $ extractContacts <$> latest 
+      extractContacts :: Event -> [XOnlyPubKey]
+      extractContacts event = 
+         let isPTag (PTag _ _ _) = True
+             isPTag _ = False    
+             extractXo (PTag xo _ _) = Just xo 
+             extractXo _ = Nothing
+         in catMaybes $ extractXo <$> event ^.. #tags % folded % filtered isPTag
+
+    LoadProfile isLoadNotes isLoadFollowing xo page ->
       let 
          empty = defProfEvntsModel xo $ model ^. #now
          updated = model & #profileEvents % at xo ?~ empty
@@ -599,6 +630,11 @@ updateModel nn rl pl action model =
             liftIO . sink $ 
               LoadMoreEvents 
                 (#profileEvents % at xo % non empty) 
+                page
+          when isLoadFollowing $ 
+            liftIO . sink $ 
+              LoadContactsOf 
+                xo
                 page
 
     SubState p st ->
@@ -638,7 +674,7 @@ updateModel nn rl pl action model =
                    )
 
     DisplayProfilePage mid xo ->
-      batchEff model [pure $ LoadProfile True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
+      batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
 
     LogConsole what ->
       model <# do
@@ -683,7 +719,7 @@ updateModel nn rl pl action model =
               pure $ setMetadata p me now
         signAndSend 
           newProfileF 
-          (singleton . const . LoadProfile False me $ MyProfilePage) 
+          (singleton . const . LoadProfile False False me $ MyProfilePage) 
           (singleton . const . Report ErrorReport $ "Failed updating profile!")
         -- TODO: update profile in #profiles if sending successfull
     SendLike e -> do
@@ -715,7 +751,7 @@ updateModel nn rl pl action model =
     
     DisplayMyProfilePage -> 
         batchEff model $
-          [ pure $ LoadProfile False (model ^. #me) MyProfilePage,
+          [ pure $ LoadProfile False False (model ^. #me) MyProfilePage,
             pure $ GoPage MyProfilePage Nothing
           ]
 
@@ -1349,6 +1385,8 @@ displayProfile isShowNotes m xo =
              if (not isShowNotes) 
              then (div_ [] [])
              else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
+        let following = fromMaybe [] $ m ^. #profileContacts % at xo
+        let follows = div_ [] [text $ "follows " <> showt (length following) <> " profiles"]
         pure $
           div_
             []
@@ -1358,7 +1396,7 @@ displayProfile isShowNotes m xo =
               div_
                 [class_ "profile-pic-container"]
                 [ fromMaybe profilepicDef profilepic,
-                  div_ [class_ "names"] [profileName, displayName, relaysDisplay, npub],
+                  div_ [class_ "names"] [profileName, displayName, relaysDisplay, npub, follows],
                   div_
                     [class_ "follow-button-container"]
                     [ if isJust $ m ^. #contacts % at xo

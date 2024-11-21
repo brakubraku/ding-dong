@@ -150,6 +150,7 @@ data Model = Model
     reactions :: Reactions, -- TODO: what about deleted reactions?
     contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
+    profileContacts :: Map.Map XOnlyPubKey [XOnlyPubKey],
     profileRelays :: Map.Map XOnlyPubKey ([Relay], UTCTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
@@ -184,7 +185,7 @@ instance Eq CompactModel where
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
             Following -> allEqual [eq #profiles, eq #contacts]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
-            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq (#profileRelays % at xo), eq (#profileEvents % at xo)] ++ notesAndStuff
+            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq (#profileRelays % at xo), eq (#profileEvents % at xo), eq (#profileContacts % at xo)] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
