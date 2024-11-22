@@ -110,6 +110,7 @@ data Action where
   CreateInitialProfile :: Action
   ShowModal :: Action
   LoadContactsOf :: XOnlyPubKey -> Page -> Action
+  DisplayProfileContacts :: XOnlyPubKey -> Page -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -119,7 +120,7 @@ data ReportType = ErrorReport | SuccessReport
 
 data Page
   = FeedPage
-  | Following
+  | Following XOnlyPubKey
   | ThreadPage Event
   | ProfilePage XOnlyPubKey
   | FindProfilePage
@@ -182,7 +183,7 @@ instance Eq CompactModel where
           case m1 ^. #page of  
             -- TODO: would need heterogenous lists to get rid of eq 
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
-            Following -> allEqual [eq #profiles, eq myContacts]
+            Following xo -> allEqual [eq #profiles, eq (#profileContacts % at xo)]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
             ProfilePage xo -> 
               allEqual $ [eq (#profileContacts % at (m1 ^. #me)), 

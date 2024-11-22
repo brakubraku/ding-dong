@@ -614,6 +614,11 @@ updateModel nn rl pl action model =
              extractXo _ = Nothing
          in catMaybes $ extractXo <$> event ^.. #tags % folded % filtered isPTag
 
+    DisplayProfileContacts xo page -> 
+      model <# do 
+        load pl $ maybe [] Set.toList $ model ^. #profileContacts % at xo
+        pure $ GoPage (Following xo) Nothing
+
     LoadProfile isLoadNotes isLoadFollowing xo page ->
       let 
          empty = defProfEvntsModel xo $ model ^. #now
@@ -1265,7 +1270,7 @@ middlePanel m =
   where
     displayPage = case m ^. #page of
       FeedPage -> displayFeed m
-      Following -> displayFollowingView m (m ^. #me)
+      Following xo -> displayFollowingView m xo
       ThreadPage e -> displayThread m e
       ProfilePage xo -> displayProfile True m xo
       FindProfilePage -> displayFindProfilePage m
@@ -1296,7 +1301,7 @@ leftPanel m =
         [ pItem "Following Feed" FeedPage,
           notifications,
           -- pItem "Followers"
-          pItem "Following" Following,
+          pItem "Following" $ Following (m ^. #me),
           pItem "Find Profile" FindProfilePage,
           pItem "Relays" RelaysPage,
           aItem "My Profile" DisplayMyProfilePage
@@ -1388,7 +1393,9 @@ displayProfile isShowNotes m xo =
              then (div_ [] [])
              else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
         let following = maybe [] Set.toList $ m ^. #profileContacts % at xo
-        let follows = div_ [] [text $ "follows " <> showt (length following) <> " profiles"]
+        let follows = div_ 
+               [class_ "profile-follows", onClick $ DisplayProfileContacts xo (Following xo)] 
+               [text $ "follows " <> showt (length following) <> " profiles"]
         let myContacts = #profileContacts % at (m ^. #me)
         pure $
           div_
