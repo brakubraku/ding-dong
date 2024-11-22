@@ -59,6 +59,7 @@ start = do
   now <- liftIO getCurrentTime
   relaysList <- loadRelays
   let activeRelays = relay <$> filter active relaysList
+  let profileContacts = Map.empty & at me ?~ contacts
   nn <-
     liftIO $
       initNetwork
@@ -84,9 +85,8 @@ start = do
           relaysList
           (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           (Reactions Map.empty Map.empty)
-          contacts
           Map.empty
-          Map.empty
+          profileContacts
           Map.empty
           FeedPage
           now
@@ -176,7 +176,7 @@ updateModel nn rl pl action model =
             liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
             forkJSM $ startLoader nn rl ReceivedReactions sink
             forkJSM $ startLoader nn pl ReceivedProfiles sink
-            load pl $ [model ^. #me] ++ Set.toList (model ^. #contacts) -- fetch my and my contacts' profiles
+            load pl $ [model ^. #me] ++ (maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)) -- fetch my and my contacts' profiles
             forkJSM $ -- put actual time to model every 60 seconds
               let loop = do
                     now <- liftIO getCurrentTime
@@ -206,7 +206,7 @@ updateModel nn rl pl action model =
               sink ListenToNotifs
 
     ShowFeed ->
-      let contacts = (Set.toList $ model ^. #contacts)
+      let contacts = maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)
           Until t = model ^. #feed % #until
           pagedFilter =
             \(Since s) (Until u) ->
@@ -537,14 +537,16 @@ updateModel nn rl pl action model =
            updated
 
     Unfollow xo ->
-      let updated = model & #contacts % at xo .~ Nothing
+      let myContacts = #profileContacts % at (model ^. #me)
+          updated = model & myContacts % _Just % at xo .~ Nothing
        in updated
-            <# (updateContacts (updated ^. #contacts) >> pure NoAction)
+            <# (updateContacts (fromMaybe Set.empty $ updated ^. myContacts) >> pure NoAction)
 
     Follow xo ->
-      let updated = model & #contacts % at xo .~ Just ()
+      let myContacts = #profileContacts % at (model ^. #me)
+          updated = model & myContacts % _Just % at xo .~ Just ()
        in updated
-            <# (updateContacts (updated ^. #contacts) >> pure NoAction)
+            <# (updateContacts (fromMaybe Set.empty $ updated ^. myContacts) >> pure NoAction)
 
     WriteModel m ->
       model <# (writeModelToStorage m >> pure NoAction)
@@ -592,7 +594,7 @@ updateModel nn rl pl action model =
             (Just . SubState $ page)
             getEventRelayEither
      where 
-      processReceived :: [(Event, Relay)] -> [XOnlyPubKey]
+      processReceived :: [(Event, Relay)] -> Set.Set XOnlyPubKey
       processReceived ers = 
         let latest =
                  -- take the latest event from each relay
@@ -603,7 +605,7 @@ updateModel nn rl pl action model =
                  Prelude.nubBy (\x y -> fst x == fst y) ers)
         in 
           -- extract contacts from the events
-          Set.toList . Set.fromList . Prelude.concat $ extractContacts <$> latest 
+          Set.fromList . Prelude.concat $ extractContacts <$> latest 
       extractContacts :: Event -> [XOnlyPubKey]
       extractContacts event = 
          let isPTag (PTag _ _ _) = True
@@ -960,8 +962,8 @@ appView m =
             ]
         ]
 
-followingView :: Model -> View Action
-followingView m@Model {..} =
+displayFollowingView :: Model -> XOnlyPubKey -> View Action
+displayFollowingView m followersOf =
   div_
     [class_ "following-container"]
     $ displayProfile <$> loadedProfiles
@@ -972,7 +974,7 @@ followingView m@Model {..} =
           let p = fromMaybe (emptyP xo) $ fst <$> (m ^. #profiles % at xo)
            in (xo, p)
       )
-        <$> Set.toList contacts
+        <$> maybe [] Set.toList (m ^. #profileContacts % at followersOf)
       where
         -- in case profile was not found on any relay display pubKey in about
         emptyP xo = Profile "" Nothing (encodeBechXo xo) Nothing Nothing
@@ -1263,7 +1265,7 @@ middlePanel m =
   where
     displayPage = case m ^. #page of
       FeedPage -> displayFeed m
-      Following -> followingView m
+      Following -> displayFollowingView m (m ^. #me)
       ThreadPage e -> displayThread m e
       ProfilePage xo -> displayProfile True m xo
       FindProfilePage -> displayFindProfilePage m
@@ -1385,8 +1387,9 @@ displayProfile isShowNotes m xo =
              if (not isShowNotes) 
              then (div_ [] [])
              else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
-        let following = fromMaybe [] $ m ^. #profileContacts % at xo
+        let following = maybe [] Set.toList $ m ^. #profileContacts % at xo
         let follows = div_ [] [text $ "follows " <> showt (length following) <> " profiles"]
+        let myContacts = #profileContacts % at (m ^. #me)
         pure $
           div_
             []
@@ -1399,7 +1402,7 @@ displayProfile isShowNotes m xo =
                   div_ [class_ "names"] [profileName, displayName, relaysDisplay, npub, follows],
                   div_
                     [class_ "follow-button-container"]
-                    [ if isJust $ m ^. #contacts % at xo
+                    [ if isJust $ m ^? myContacts % _Just % at xo % _Just
                         then
                           div_ [] [span_ [class_ "follow-button"] [text "Following"],
                           button_ [class_ "unfollow-button", onClick (Unfollow xo)] [text "Unfollow"]]

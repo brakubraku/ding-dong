@@ -148,9 +148,8 @@ data Model = Model
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
     reactions :: Reactions, -- TODO: what about deleted reactions?
-    contacts :: Set.Set XOnlyPubKey,
     profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
-    profileContacts :: Map.Map XOnlyPubKey [XOnlyPubKey],
+    profileContacts :: Map.Map XOnlyPubKey (Set.Set XOnlyPubKey),
     profileRelays :: Map.Map XOnlyPubKey ([Relay], UTCTime),
     page :: Page,
     now :: UTCTime, -- don't know a better way to supply time
@@ -183,9 +182,14 @@ instance Eq CompactModel where
           case m1 ^. #page of  
             -- TODO: would need heterogenous lists to get rid of eq 
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
-            Following -> allEqual [eq #profiles, eq #contacts]
+            Following -> allEqual [eq #profiles, eq myContacts]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
-            ProfilePage xo -> allEqual $ [eq #contacts, eq #profiles, eq (#profileRelays % at xo), eq (#profileEvents % at xo), eq (#profileContacts % at xo)] ++ notesAndStuff
+            ProfilePage xo -> 
+              allEqual $ [eq (#profileContacts % at (m1 ^. #me)), 
+                          eq #profiles, eq (#profileRelays % at xo), 
+                          eq (#profileEvents % at xo), 
+                          eq (#profileContacts % at xo),
+                          eq myContacts] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
@@ -195,6 +199,7 @@ instance Eq CompactModel where
     eq ls = m1 ^. ls == m2 ^. ls
     allEqual = Prelude.all (==True) 
     notesAndStuff = [eq #threads, eq #reactions, eq #embedded]
+    myContacts = #profileContacts % at (m1 ^. #me)
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
