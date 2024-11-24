@@ -18,13 +18,13 @@ pushd ../
 if command -v wasm32-wasi-cabal &>/dev/null; then
     wasm32-wasi-cabal build --allow-newer
 else
- echo "porked"
-    # cabal \
-    #     --with-compiler=wasm32-wasi-ghc \
-    #     --with-hc-pkg=wasm32-wasi-ghc-pkg \
-    #     --with-hsc2hs=wasm32-wasi-hsc2hs \
-    #     --ghc-option=-L/home/branko/Documents/building-nostr-wasm/secp-wasm-compiled/lib \
-    #     build ghc-wasm-miso-examples
+    cabal \
+        build \
+        --with-compiler=wasm32-wasi-ghc \
+        --with-ghc-pkg=wasm32-wasi-ghc-pkg \
+        --with-hsc2hs=wasm32-wasi-hsc2hs \
+        --with-gcc=wasm32-wasi-clang \
+        --with-ld=wasm-ld
 fi
 popd
 

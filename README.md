@@ -51,6 +51,61 @@ Get inspired by more mature Nostr clients out there, and bring those features he
 * At the moment, the feed is only displaying original posts and replies from the accounts you follow (i.e. you will not see content from accounts you are not following, unless any of the accounts you follow reply to such content).
 
 # Building
+
+## Via Cabal and GHCup
+
+Set up the wasm toolchain somewhere, following [the GHCup cross guide](https://www.haskell.org/ghcup/guide/#ghc-wasm-cross-bindists-experimental), e.g.:
+
+```sh
+git clone https://gitlab.haskell.org/ghc/ghc-wasm-meta.git
+cd ghc-wasm-meta/
+export SKIP_GHC=yes
+./setup.sh
+source ~/.ghc-wasm/env
+```
+
+Make sure you don't change the shell, because we need the adjusted environment that we
+evoked via `source ~/.ghc-wasm/env`.
+
+Now install WASM GHC:
+
+```sh
+ghcup config add-release-channel https://raw.githubusercontent.com/haskell/ghcup-metadata/master/ghcup-cross-0.0.8.yaml
+ghcup install ghc --set wasm32-wasi-9.10.1.20241021 -- --host=x86_64-linux --with-intree-gmp --with-system-libffi
+ghcup install cabal --set 3.15.0.0.2024.10.3
+```
+
+Build and install the libsecp256k1 C library dependency:
+
+```hs
+git clone https://github.com/bitcoin-core/secp256k1.git
+cd secp256k1/
+# you need to specify 'some_directory' for the prefix, we'll need it later
+./configure --prefix=some_directory CC=wasm32-wasi-clang --host=wasm32-wasi --enable-module-schnorrsig CPPFLAGS=-D__OpenBSD__ SECP_CFLAGS="$CONF_CC_OPTS_STAGE2 -fPIC -fvisibility=default"
+make
+make install
+```
+
+Build this repository:
+
+```sh
+# export the pkg-config dir where you installed secp256k1
+export PKG_CONFIG_PATH=some_directory/lib/pkgconfig
+cd frontend/
+./build.sh
+```
+
+Now serve the app (e.g. via python):
+
+```sh
+cd dist/
+python3 -m http.server
+```
+
+Now visit [http://0.0.0.0:8000/](http://0.0.0.0:8000/).
+
+## Via Nix
+
 * start nix shell with haskell WASM buildtools 
     * I am using this one (thanks [terrorJack](https://github.com/TerrorJack/))
          https://gitlab.haskell.org/ghc/ghc-wasm-meta/-/archive/wasm-th-tmp/ghc-wasm-meta-wasm-th-tmp.tar.gz 
