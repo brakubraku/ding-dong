@@ -58,7 +58,6 @@ library
                       , base16
                       , data-default
                       , text
-                      , modern-uri
                       , time
                       , containers
                       , string-conversions
