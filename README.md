@@ -50,7 +50,10 @@ Get inspired by more mature Nostr clients out there, and bring those features he
 
 * At the moment, the feed is only displaying original posts and replies from the accounts you follow (i.e. you will not see content from accounts you are not following, unless any of the accounts you follow reply to such content).
 
-# Building
+# Building 
+Build either via GHCup or Nix.
+
+It has not been widely tested so feel free to create an issue if you cannot build it with these instructions.
 
 ## Via Cabal and GHCup
 
@@ -115,20 +118,33 @@ Now visit [http://0.0.0.0:8000/](http://0.0.0.0:8000/).
      nix shell https://gitlab.haskell.org/ghc/ghc-wasm-meta/-/archive/wasm-th-tmp/ghc-wasm-meta-wasm-th-tmp.tar.gz      --extra-experimental-features nix-command --extra-experimental-features flakes
      ```
  All the next steps assume you are inside the above shell
-* you need to build libsecp256k1 C library for WASM platform first
+* Build libsecp256k1 C library for WASM platform first
     * download or clone from here https://github.com/bitcoin-core/secp256k1/
-    * configure and install  (change  `some-directory` to where you want to library to land after make install)
-     ```
-     ./autogen.sh
-     ./configure --prefix=some_directory CC=wasm32-wasi-clang --host=wasm32-unknown-wasi --enable-module-schnorrsig  CPPFLAGS=-D__OpenBSD__ CFLAGS="$CONF_CC_OPTS_STAGE2"
-     ./make
-     ./make install
-     ```
-* open ding-dong.cabal and change `extra-lib-dirs:` to `some_directory` (or wherever you installed libsecp256k1 to)
-* go to `frontend` directory and do 
-    * ```./build.sh && pushd dist; NIXPKGS_ALLOW_INSECURE=1 nix-shell -p python --run 'python -m SimpleHTTPServer'; popd```
-         * this will build and deploy to localhost:8000
-* Firefox will cache "bin.wasm" so remember to reload with Ctrl+Shift+r (in firefox) to wipe the caches, otherwise it will load the old version of the app. Same goes for CSS files.
+    * configure and install 
+        ```sh
+        # you need to specify 'some_directory' for the prefix, we'll need it later
+        ./autogen.sh
+        ./configure --prefix=some_directory CC=wasm32-wasi-clang --host=wasm32-wasi --enable-module-schnorrsig CPPFLAGS=-D__OpenBSD__ SECP_CFLAGS="$CONF_CC_OPTS_STAGE2 -fPIC -fvisibility=default"
+        ./make
+        ./make install
+        ```
+
+* Build this repository:
+
+    ```sh
+    # export the pkg-config dir where you installed secp256k1
+    export PKG_CONFIG_PATH=some_directory/lib/pkgconfig
+    cd frontend/
+    ./build.sh
+    ```
+
+* Now serve the app (e.g. via python):
+
+    ```sh
+    cd dist/
+    python3 -m http.server
+    ```
+* Firefox will cache "bin.wasm" and css files, so remember to reload with Ctrl+Shift+r (in firefox) to wipe the caches, otherwise it will load the old version of the app.
 * Note: I have only tested it on Firefox
 
 # Architecture
