@@ -660,15 +660,15 @@ updateModel nn rl pl action model =
                     ers = filter (isError . snd) (Map.toList rs)
                  in (trs, second extract <$> ers)
               _ -> ([], [])
-          updateListWith (sid, ss) list =
+          updateSubStates (sid, ss) substates =
             -- update "sub state" for sid and remove all finished "sub states"
-            (sid, ss) : filter (\(sid2, ss1) -> sid2 /= sid && isRunning ss1) list
-          updatedModel =
+            (sid, ss) : filter (\(sid2, ss2) -> sid2 /= sid && isRunning ss2) substates
+          updated =
             model & #subscriptions % at p
               %~ Just
               . fromMaybe [st]
-              . fmap (updateListWith st)
-       in batchEff updatedModel $
+              . fmap (updateSubStates st)
+       in batchEff updated $
             pure . Report ErrorReport
               <$> ((\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels)
                 ++ ( ( \(r, er) ->
