@@ -186,8 +186,8 @@ instance Eq CompactModel where
             Following xo -> allEqual [eq #profiles, eq (#profileContacts % at xo)]
             ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
             ProfilePage xo -> 
-              allEqual $ [eq (#profileContacts % at (m1 ^. #me)), 
-                          eq #profiles, eq (#profileRelays % at xo), 
+              allEqual $ [eq #profiles, 
+                          eq (#profileRelays % at xo), 
                           eq (#profileEvents % at xo), 
                           eq (#profileContacts % at xo),
                           eq myContacts] ++ notesAndStuff
