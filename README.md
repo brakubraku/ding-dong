@@ -5,6 +5,8 @@ Try it here (https://brakubraku.github.io/dingydongy/). I have ever only run it 
 
 Seeing that badass full Haskell web development has been enabled by GHC WASM backend and looking for a project to flex my Haskell muscle on, I came across the idea of social media based on simple exchange of messages, signed by account's private key - Nostr. 
 
+Imagine Nostr as Twitter, where every user has full read/write access to the whole Twitter database, but nobody can change/delete existing data. Read everything and append only, sort of. Plus you know who authored which data, because it's always signed by their private key.
+
 "Privatized" social media suffer many ailments:
 * You don't decide how your feed looks like...
 * You don't own your identity, because it can be arbitarily banned...
