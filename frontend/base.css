@@ -1,137 +1,119 @@
-.float-container {
-    border: 3px solid #fff;
-    padding: 20px;
+:root {
+    --primary: #7209b7;
+    --surface: #121212;
+    --on-surface: #fafafa;
+    --border: rgba(255, 255, 255, 0.16);
+    --space-xs: 0.5rem;
+    --space-sm: 0.75rem;
+    --space: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
 }
-
-.float-child {
+        .float-container {
+    border: 3px solid #fff;
+    padding: var(--space-xl);
+    }
+        .float-child {
     width: 50%;
     float: left;
-    padding: 20px;
-    border: 2px solid red;
-}
-
-.note-container {
+    padding: var(--space-xl);
+        border: 2px solid var(--primary);
+    }
+        .note-container {
     display: flex;
-    flex: 8 0 0;
-
-    background: #d3d3d3a3;;
-    border-radius: 15px;
-    padding-left: 10px;
-    border: 1px solid black;
-    overflow:scroll;
-}
-
-.note-content {
-    padding-top: 5px;
-}
-
-.text-note-container {
-    flex: 10 0 0;
+    flex: 1;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding-left: var(--space);
+        border: 1px solid var(--border);
+        overflow: auto;
+    }
+        .note-content {
+            padding-top: var(--space-xs);
+        }
+    
+        .text-note-container {
+    flex: 10;
     text-align: left;
-    /* border-bottom: 1px solid #e1e1e1; */
-    overflow: scroll;
+    overflow: auto;
     display: flex;
     flex-direction: column;
-    padding-top: 10px;
-    padding-bottom: 10px;
-
-}
-
-.text-note {
-    margin-left: 10px
-}
-
-.text-note-right-panel {
-    flex: 1;
-    text-align: left
-}
-
-@keyframes blink {
-    50% {
-        opacity: 0.0;
+    padding: var(--space) 0;
     }
-}
-
-.reactions-container {
+        .text-note {
+            margin-left: var(--space)
+        }
+    
+        .text-note-right-panel {
+            flex: 1;
+            text-align: left
+        }
+    
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+    
+        .reactions-container {
     margin-top: auto;
     animation: blink 1s linear 2;
-}
-
-.profile-pic {
+        }
+        .profile-pic {
     height: 50px;
     width: 50px;
-    border-radius: 70%;
-    margin-right: 20px;
-    margin-top: 15px;
+    border-radius: 50%;
+        margin: var(--space-lg) var(--space-xl) 0 0;
     cursor: pointer;
-    background-color: grey;
-
-}
-
-.profile-page .note-container .embedded-event .profile-pic {
-    height: 50px;
-    width: 50px;
-    border-radius: 70%;
-    margin-right: 20px;
-    margin-top: 15px;
-    cursor: pointer;
-    display: initial;
-    position: initial;
-    background-color: grey;
-}
-
-.main-container {
-    display: flex
-}
-
-.left-panel {
-    flex: 2 0 0;
+    background: grey;
+        transition: transform 0.2s ease;
+    }
+        .profile-pic:hover {
+            transform: scale(1.05);
+        }
+    
+        .main-container {
+    display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+        .left-panel {
+    flex: 2;
+        position: sticky;
+        top: 0;
     display: flex;
     flex-direction: column;
-
     align-items: center;
-    padding-top: 40px;
-    padding-right: 40px;
-}
-
-.left-panel-item {
-    /* width: 100px; */
-    color: #951b95;
-    font-size: 20px;
-    text-align: center;
-    font-weight: bold;
+    padding: var(--space-xl) var(--space-xl) 0 0;
+    }
+        .left-panel-item {
+    color: var(--on-surface);
+        font-size: 1.25rem;
+        font-weight: 500;
     cursor: pointer;
-}
-
-.middle-panel {
-    flex: 6 0 0;
+    transition: color 0.2s ease; }
+        
+    
+        .left-panel-item:hover {
+            color: var(--primary);
+        }
+    
+        .middle-panel {
+    flex: 6;
     overflow: hidden;
-    padding-left: 5px;
-    padding-right: 15px;
-    padding-top: 40px;
-}
-
-.right-panel {
-    flex: 2 0 0;
-    padding-top:40px;
-}
-
-.left-panel-item button {
-    background-color: white;
-    color: black;
-    width: 100%;
-    /* text-align: left; */
-}
-
-.left-panel-item button:hover {
-
-    background-color: #e7e7e7;
-}
-
-.username {
-    color: #951b95;
-    font-size: 12px;
-}
+    padding: var(--space-xl) var(--space);
+    }
+        .right-panel {
+            flex: 2;
+            padding-top: var(--space-xl);
+        }
+    
+        .username,
+        .displayname {
+            color: var(--primary);
+            font-size: 0.875rem;
+            margin-left: var(--space-xs);
+        }
 
 .notification .username {
     cursor:pointer
@@ -593,4 +575,25 @@ body {
     width: 100%;
     height: 300px;
     border: 1px solid black;
+}
+.tabs {
+    display: flex;
+    gap: var(--space);
+    transition: transform 0.3s;
+}
+
+.tab {
+    flex: 1;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+}
+
+.tab.active {
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .tabs {
+        flex-direction: column;
+    }
 }

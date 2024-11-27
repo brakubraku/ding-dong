@@ -6,27 +6,26 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Nostr.WebSocket
-  ( -- * Types
-    WebSocketAction (..),
-    URL (..),
-    Protocols (..),
-    SocketState (..),
-    CloseCode (..),
-    WasClean (..),
-    Reason (..),
-
-    -- * Subscription
-    connectRelays,
-  )
-where
+  ( WebSocketAction(..)
+  , URL(..)
+  , Protocols(..)
+  , SocketState(..)
+  , CloseCode(..)
+  , WasClean(..)
+  , Reason(..)
+  , WSError(..)
+  , connectRelays
+  ) where
 
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.Exception (bracket, try, finally)
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.Except (throwError)
 import Data.Aeson
 import Data.ByteString (fromStrict)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Text.Encoding (encodeUtf8)
 import GHCJS.Foreign
@@ -51,147 +50,163 @@ import Data.Time
 import Nostr.Event (verifySignature)
 import Utils
 
-data WebSocketAction = 
-  WebSocketOpen Relay | 
-  WebSocketClose Relay Text | 
-  WebSocketError Relay Text
+data WSError 
+  = ConnectionError Text
+  | DecodingError Text
+  | VerificationError Text
+  deriving (Show, Eq)
 
-connectRelays ::
-  NostrNetwork ->
-  (WebSocketAction -> action) ->
-  Sub action
+data WebSocketAction 
+  = WebSocketOpen Relay
+  | WebSocketClose Relay Text 
+  | WebSocketError Relay Text
+
+throwError :: WSError -> Text -> JSM a
+throwError err msg = error $ show err <> ": " <> show msg
+
+-- | Safe resource management for event listeners
+withEventListener :: Socket -> Text -> (a -> JSM ()) -> JSM () -> JSM ()
+withEventListener socket event handler cleanup = 
+  bracket 
+    (WS.addEventListener socket event handler)
+    (\_ -> cleanup) 
+    (\_ -> return ())
+
+-- | Safe JSON sending with error handling
+sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
+sendJson' socket msg = do
+  result <- try $ WS.send socket =<< stringify msg
+  case result of
+    Left err -> logError $ "Failed to send: " <> show err
+    Right _ -> return ()
+
+-- | Exponential backoff for reconnection
+reconnectWithBackoff :: NostrNetwork -> Int -> UTCTime -> Relay -> JSM ()
+reconnectWithBackoff nn times lastAttempt relay = do
+  now <- liftIO getCurrentTime
+  let delay = min (2^times * 500) 5000  -- Cap at 5 seconds
+  liftIO $ threadDelay (delay * 1000)
+  connectRelay nn (times + 1, now) relay
+
+-- | Clean up subscription resources
+cleanupSubscription :: NostrNetwork -> Text -> IO ()
+cleanupSubscription nn subId = do
+  subs <- readMVar (nn ^. #subscriptions)
+  forM_ (Map.lookup subId subs) $ \sub -> do
+    atomically $ closeTChan (sub ^. #responseCh)
+    modifyMVar_ (nn ^. #subscriptions) (pure . Map.delete subId)
+
+connectRelays :: NostrNetwork -> (WebSocketAction -> action) -> Sub action
 connectRelays nn sendMsg sink = do
-  -- connect a relay
   relays <- liftIO $ readMVar (nn ^. #relays)
   now <- liftIO getCurrentTime
-  mapM_ (forkJSM . conRelay (0, now)) relays
-  where
-    conRelay :: (Int, UTCTime) -> Relay -> JSM ()
-    conRelay (recnt, lastReconnect) relay = do
-      isReconnectingMVar <- liftIO $ newMVar False
-      socket <- createWebSocket (relay ^. #uri) []
+  mapM_ (forkJSM . connectRelay nn (0, now)) relays
 
-      let 
-        reconnect =
-          do
-            isReconnecting <- liftIO $ readMVar isReconnectingMVar
-            unless isReconnecting $ do
-              liftIO $ markIsConnected False relay
-              liftIO $ modifyMVar_ isReconnectingMVar (const . pure $ True)
-              now <- liftIO getCurrentTime
-              liftIO . print $ show now <> "reconnecting " <> show relay
-              let diff = (round $ diffUTCTime now lastReconnect)
-              case (recnt > 3, diff > 1) of -- TODO: take time into account?
-                (True, _) -> do
-                  liftIO . sleep . Seconds $ 5
-                  conRelay (0, now) relay
-                (False, _) -> do
-                  liftIO . sleep . Seconds $ 0.5
-                  conRelay (recnt + 1, now) relay
+-- | Main connection logic with proper resource management
+connectRelay :: NostrNetwork -> (Int, UTCTime) -> Relay -> JSM ()
+connectRelay nn (recnt, lastReconnect) relay = do
+  reconnectingRef <- liftIO $ newMVar False
+  
+  socket <- createWebSocket (relay ^. #uri) []
+  requestChan <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
 
-      WS.addEventListener socket "open" $ \_ -> do
-        liftIO $ do
-          markIsConnected True relay
-          sink . sendMsg $ WebSocketOpen relay
-
-      WS.addEventListener socket "message" $ \v -> do
-        msg <- valToStr =<< WS.data' v
-        resp <-
-          pure
-            . eitherDecode @Response
-            . fromStrict
-            . encodeUtf8
-            . strToText
-            $ msg
-        case resp of
-          Right (EventReceived subId event) -> do
-            subs <- liftIO . readMVar $ (nn ^. #subscriptions)
-            case (verifySignature event) of -- TODO: verify hash of event as well
-              False -> 
-                liftIO
-                  . logRelayError relay
-                  . pack
-                  $ "Failed signature verification of eventId=" <> show event
-              True -> 
-                case Map.lookup subId subs of
-                  Just subscription -> do
-                    liftIO $
-                      atomically $
-                        writeTChan
-                          (subscription ^. #responseCh)
-                          (EventReceived subId event, relay)
-                  Nothing -> do
-                    liftIO
-                      . logRelayError relay
-                      . pack
-                      $ "SubId="
-                        <> show subId
-                        <> " not found in responseChannels. Event received="
-                        <> show event
-
-          Right (Nostr.Response.EOSE subId) -> do
-            liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
-          Right (Nostr.Response.OK eid True _) -> do
-            liftIO . flip runReaderT nn $ setResultSuccess eid relay
-          Right (Nostr.Response.OK eid False reason) -> do
-            liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
-          Right _ -> do 
-               liftIO . logRelayError relay . pack $ "Uknown response: " <> show msg 
-          Left errMsg -> do 
-               liftIO . logRelayError relay . pack $ "Decoding failed with: " <> show errMsg <> " for response=" <> show msg
-
-      WS.addEventListener socket "close" $ \e -> do
-        code <- codeToCloseCode <$> WS.code e
-        reason <- WS.reason e
-        clean <- WS.wasClean e
-        liftIO . sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
-        liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
-        reconnect
- 
-      WS.addEventListener socket "error" $ \v -> do
-        d' <- WS.data' v
-        undef <- ghcjsPure (isUndefined d')
-        if undef
-          then do
-            liftIO . sink . sendMsg $ (WebSocketError relay mempty)
+  -- Atomic reconnection check
+  let tryReconnect = modifyMVar reconnectingRef $ \isReconnecting ->
+        if isReconnecting 
+          then return (isReconnecting, False)
           else do
-            Just d <- fromJSVal d'
-            liftIO . sink . sendMsg $ (WebSocketError relay d)
-        reconnect
+            markIsConnected nn False relay
+            return (True, True)
 
-      rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
-      let doLoop =
-            do
-              state <- WS.socketState socket
-              case state of
-                0 -> do
-                  -- not ready yet
-                  liftIO . sleep . Seconds $ 0.1
-                  doLoop
-                1 -> do
-                  -- ready
-                  -- try reading requests to send
-                  requests <- liftIO . collectJustM . atomically . tryReadTChan $ rc
-                  mapM_ (sendJson' socket) requests
-                  liftIO . sleep $ Seconds 0.05 -- TODO: 
-                  doLoop
-                2 -> markAllError relay "Relay closing connection"
-                3 -> markAllError relay "Relay closed connection"
-                _ -> markAllError relay "Error received from relay"
-      doLoop
+  -- Event handlers with cleanup
+  let setupHandlers = do
+        withEventListener socket "open" $ \_ -> 
+          liftIO $ do
+            markIsConnected nn True relay
+            sink . sendMsg $ WebSocketOpen relay
+        messageLoop  -- Execute the message loop here
 
-    markIsConnected isCon r =  
-        modifyMVar_ (nn ^. #relays) $ \rels ->
-          pure $ rels & at (r ^. #uri) % _Just % #connected .~ isCon
+        withEventListener socket "message" $ \v -> do
+          msg <- valToStr =<< WS.data' v
+          handleMessage nn msg relay
 
-    markAllError relay eText = do 
-      liftIO $ do 
-        markIsConnected False relay 
-        runNostr nn $ changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
+        withEventListener socket "close" $ \e -> do
+          code <- codeToCloseCode <$> WS.code e
+          reason <- WS.reason e
+          clean <- WS.wasClean e
+          liftIO $ do
+            sink . sendMsg $ WebSocketClose relay (decodeError code clean reason)
+            shouldReconnect <- tryReconnect
+            when shouldReconnect $ reconnectWithBackoff nn recnt lastReconnect relay
 
-sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
-sendJson' socket m = do
-  WS.send socket =<< stringify m
+        withEventListener socket "error" $ \v -> do
+          d' <- WS.data' v
+          errMsg <- if isUndefined d'
+            then return mempty
+            else fromMaybe mempty <$> fromJSVal d'
+          liftIO $ do
+            sink . sendMsg $ WebSocketError relay errMsg
+            shouldReconnect <- tryReconnect
+            when shouldReconnect $ reconnectWithBackoff nn recnt lastReconnect relay
+
+  -- Message loop with proper state handling
+  let messageLoop = forever $ do
+        state <- WS.socketState socket
+        case state of
+          0 -> liftIO $ threadDelay 100000  -- Not ready
+          1 -> do -- Ready
+            reqs <- liftIO . atomically $ tryReadTChan requestChan
+            mapM_ (sendJson' socket) reqs
+            liftIO $ threadDelay 50000
+          _ -> do -- Error states
+            liftIO $ markAllError nn relay "Connection error"
+            throwError ConnectionError "Socket in error state"
+
+  -- Cleanup on exit
+  finally setupHandlers $ do
+    liftIO $ do
+      atomically $ closeTChan requestChan
+      markIsConnected nn False relay
+
+-- | Safe message handling with proper error handling
+handleMessage :: NostrNetwork -> Text -> Relay -> JSM ()
+handleMessage nn msg relay = do
+  case eitherDecode @Response . fromStrict . encodeUtf8 . strToText $ msg of
+    Right resp -> handleResponse nn resp relay
+    Left err -> logRelayError relay $ "Decode error: " <> pack (show err)
+
+handleResponse :: NostrNetwork -> Response -> Relay -> JSM ()
+handleResponse nn resp relay = case resp of
+  EventReceived subId event 
+    | not (verifySignature event) -> 
+        logRelayError relay $ "Invalid signature: " <> pack (show event)
+    | otherwise -> do
+        subs <- liftIO $ readMVar (nn ^. #subscriptions)
+        forM_ (Map.lookup subId subs) $ \sub ->
+          liftIO . atomically $ writeTChan 
+            (sub ^. #responseCh) 
+            (EventReceived subId event, relay)
+            
+  EOSE subId -> 
+    liftIO $ runReaderT (changeState subId relay (fmap . const $ Network.EOSE)) nn
+    
+  OK eid True _ ->
+    liftIO $ runReaderT (setResultSuccess eid relay) nn
+    
+  OK eid False reason ->
+    liftIO $ runReaderT (setResultError (fromMaybe "" reason) eid relay) nn
+    
+  _ -> logRelayError relay $ "Unknown response: " <> pack (show resp)
+
+markIsConnected :: NostrNetwork -> Bool -> Relay -> IO ()
+markIsConnected nn isCon r =  
+    modifyMVar_ (nn ^. #relays) $ \rels ->
+      pure $ rels & at (r ^. #uri) % _Just % #connected .~ isCon
+
+markAllError :: NostrNetwork -> Relay -> Text -> IO ()
+markAllError nn relay eText = do 
+  markIsConnected nn False relay 
+  runNostr nn $ changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
 {-# INLINE createWebSocket #-}
@@ -217,4 +232,5 @@ codeToCloseCode = go
     go 1015 = TLS_Handshake
     go n = OtherCode n
 
-decodeError code clean reason = "Connection closed" -- TODO
+decodeError :: CloseCode -> WasClean -> Reason -> Text
+decodeError _ _ _ = "Connection closed" -- TODO: Implement proper error decoding
