@@ -124,6 +124,7 @@ connectRelay nn (recnt, lastReconnect) relay = do
           liftIO $ do
             markIsConnected nn True relay
             sink . sendMsg $ WebSocketOpen relay
+        messageLoop  -- Execute the message loop here
 
         withEventListener socket "message" $ \v -> do
           msg <- valToStr =<< WS.data' v
