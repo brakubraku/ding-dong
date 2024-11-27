@@ -98,6 +98,7 @@ start = do
           []
           Map.empty
           ""
+          ""
           me
   startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
@@ -561,16 +562,14 @@ updateModel nn rl pl action model =
           sink . GoPage (ThreadPage e) . Just $ getNoteElementId e
           sink . ScrollTo Nothing $ "top-top"
 
-    GotReplyDraft draft -> noEff $ model & #noteDraft .~ draft
-
     DisplayReplyThread e -> 
-     batchEff
-       (model & #writeReplyTo ?~ e)
-       [pure $ DisplayThread e, readDraft]
-     where 
-      readDraft = do 
-        draft <- getLocalStorage "reply-draft"
-        pure . GotReplyDraft . fromRight "" $ draft
+     effectSub (model & #writeReplyTo ?~ e) $ 
+      \sink -> 
+        do 
+         draft <- fromRight "" <$> getLocalStorage "reply-draft"
+         liftIO $ do 
+          sink . UpdateField #replyDraft $ draft
+          sink $ DisplayThread e
 
     ThreadEvents _  [] -> noEff $ model
     ThreadEvents screen es ->
@@ -687,23 +686,49 @@ updateModel nn rl pl action model =
       model <# do
         liftIO (print what) >> pure NoAction
 
-    SendReplyTo e getReplyText -> do
-        let replyEventF = \t -> do
-             reply <- getReplyText
-             pure $ createReplyEvent e t (model ^. #me) reply
-            localhost = Relay "localhost" (RelayInfo False False) False
-            successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
-                const ClearWritingReply]
-        signAndSend 
-              replyEventF 
-              successActs
-              (singleton . const . Report ErrorReport $ "Failed sending reply!")
+    UpdateModel updateF actions -> do 
+      batchEff (updateF model) actions
 
-    ClearWritingReply -> 
-      let updated = model & #writeReplyTo .~ Nothing
-                          & #noteDraft .~ ""
-      in batchEff updated [setLocalStorage @T.Text "reply-draft" "" >> pure NoAction]
-  
+    SendReplyTo e getReplyText -> do
+      let replyEventF = \t -> do
+            reply <- getReplyText
+            pure $ createReplyEvent e t (model ^. #me) reply
+          localhost = Relay "localhost" (RelayInfo False False) False
+          successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
+              const (UpdateModel clearReplyInModel [clearReplyInStorage]),
+              const (Report SuccessReport $ "Reply sent!")]
+      signAndSend 
+            replyEventF 
+            successActs
+            (singleton . const . Report ErrorReport $ "Failed sending reply!")
+      where 
+        clearReplyInModel :: Model -> Model
+        clearReplyInModel m = m & #writeReplyTo .~ Nothing & #replyDraft .~ ""
+        clearReplyInStorage = 
+          do 
+            setLocalStorage @T.Text "reply-draft" ""
+            pure NoAction
+
+    SendPost getPostText -> do 
+      let createPost = 
+           \t -> do 
+            content <- getPostText
+            pure $ textNote content (model ^. #me) t
+          successActs = [const $ UpdateModel clearPostInModel [clearPostInStorage], 
+                         const (Report SuccessReport $ "Post sent!"),
+                         DisplayThread]
+      signAndSend 
+          createPost 
+          successActs
+          (singleton . const . Report ErrorReport $ "Failed sending post!")
+     where 
+      clearPostInModel :: Model -> Model
+      clearPostInModel m = m & #postDraft .~ ""
+      clearPostInStorage = 
+        do 
+          setLocalStorage @T.Text "post-draft" ""
+          pure NoAction
+        
     CreateInitialProfile -> do
         let me = model ^. #me
             p = def 
@@ -761,7 +786,14 @@ updateModel nn rl pl action model =
           [ pure $ LoadProfile False False (model ^. #me) MyProfilePage,
             pure $ GoPage MyProfilePage Nothing
           ]
-
+    
+    DisplayWritePostPage ->
+      effectSub model $ \sink -> do 
+        draft <- fromRight "" <$> getLocalStorage "post-draft" 
+        liftIO $ do 
+          sink $ UpdateField (#postDraft) draft 
+          sink $ GoPage WritePostPage Nothing
+    
     WriteTextToStorage tid t -> 
       model <# do 
         setLocalStorage tid t
@@ -1277,9 +1309,10 @@ middlePanel m =
       RelaysPage -> displayRelaysPage m
       MyProfilePage -> displayMyProfilePage m
       NotificationsPage -> displayNotificationsPage m
+      WritePostPage -> displayWritePostPage m
 
 rightPanel :: Model -> View Action
-rightPanel m = ul_ [class_ "right-panel"] reports
+rightPanel m = div_ [class_ "right-panel"] [ul_ [] reports]
   where
     reports =
       ( \(i, (reportType, report)) ->
@@ -1304,7 +1337,8 @@ leftPanel m =
           pItem "Following" $ Following (m ^. #me),
           pItem "Find Profile" FindProfilePage,
           pItem "Relays" RelaysPage,
-          aItem "My Profile" DisplayMyProfilePage
+          aItem "My Profile" DisplayMyProfilePage,
+          aItem "Write Post" DisplayWritePostPage
           -- pItem "Bookmarks"
         ],
       div_ [class_ "logged-in-profile"] $
@@ -1456,7 +1490,7 @@ displayThread m e =
             [class_ "reply-box"]
             [ textarea_
                 [ id_ replyInputEl,
-                  defaultValue_ $ m ^. #noteDraft,
+                  defaultValue_ $ m ^. #replyDraft,
                   onChange $ WriteTextToStorage "reply-draft"
                 ]
                 [],
@@ -1654,6 +1688,21 @@ displayRelaysPage m =
     validateUrl _ = True -- TODO
     onEnter :: Action -> Attribute Action
     onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+
+displayWritePostPage :: Model -> View Action
+displayWritePostPage m = 
+    div_
+      [class_ "new-post-page"]
+      [ textarea_ 
+          [ id_ "new-post-text-area",
+            defaultValue_ $ m ^. #postDraft,
+            onChange $ WriteTextToStorage "post-draft"
+          ]
+          [],
+        button_ [onClick $ SendPost getPost] [text "Send"]
+      ]
+    where
+      getPost = getValueOfInput "new-post-text-area"
 
 getAuthorProfile :: Model -> Event -> Maybe Profile
 getAuthorProfile m e = fst <$> m ^. #profiles % at (e ^. #pubKey)

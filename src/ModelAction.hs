@@ -51,7 +51,6 @@ data Action where
   ActualTime :: UTCTime -> Action
   DisplayThread :: Event -> Action
   DisplayReplyThread :: Event -> Action
-  GotReplyDraft :: Text -> Action
   ThreadEvents :: Page -> [(Event, Relay)] -> Action
   ProfileEvents :: [(Event, Relay)] -> Action
   SubscribeForReplies :: [EventId] -> Action
@@ -86,7 +85,6 @@ data Action where
   FeedLongRunningProcess :: [(Event, Relay)] -> Action
   ShowNewNotes :: Action
   SendReplyTo :: Event -> (JSM Text) -> Action
-  ClearWritingReply :: Action
   AllLoaded :: Action
   SendUpdateProfile :: (JSM Profile) -> Action
   ChangeRelayActive :: Text -> Bool -> Action
@@ -107,10 +105,13 @@ data Action where
   SendLike :: Event -> Action
   LikeSent :: Event -> Action
   DisplayMyProfilePage :: Action
+  DisplayWritePostPage :: Action
   CreateInitialProfile :: Action
   ShowModal :: Action
   LoadContactsOf :: XOnlyPubKey -> Page -> Action
   DisplayProfileContacts :: XOnlyPubKey -> Page -> Action
+  SendPost :: (JSM Text) -> Action
+  UpdateModel :: (Model -> Model) -> [JSM Action] -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -127,6 +128,7 @@ data Page
   | RelaysPage
   | MyProfilePage 
   | NotificationsPage 
+  | WritePostPage
   deriving (Show, Eq, Generic, Ord)
 
 newtype ErrorCount = ErrorCount Int 
@@ -164,7 +166,8 @@ data Model = Model
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     reports :: [(ReportType, Text)],
     fromRelays :: Map Event (Set.Set Relay),
-    noteDraft :: Text,
+    replyDraft :: Text,
+    postDraft :: Text,
     me :: XOnlyPubKey
   }
   deriving (Eq, Generic)
@@ -184,7 +187,7 @@ instance Eq CompactModel where
             -- TODO: would need heterogenous lists to get rid of eq 
             FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
             Following xo -> allEqual [eq #profiles, eq (#profileContacts % at xo)]
-            ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #noteDraft] ++ notesAndStuff
+            ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #replyDraft] ++ notesAndStuff
             ProfilePage xo -> 
               allEqual $ [eq #profiles, 
                           eq (#profileRelays % at xo), 
@@ -195,6 +198,7 @@ instance Eq CompactModel where
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
             FindProfilePage -> allEqual $ [eq #findWho]
+            WritePostPage -> True
    where 
     eq :: Eq a => Lens' Model a -> Bool
     eq ls = m1 ^. ls == m2 ^. ls
