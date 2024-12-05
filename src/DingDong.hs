@@ -697,10 +697,11 @@ updateModel nn rl pl action model =
           successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
               const (UpdateModel clearReplyInModel [clearReplyInStorage]),
               const (Report SuccessReport $ "Reply sent!")]
-      signAndSend 
-            replyEventF 
-            successActs
-            (singleton . const . Report ErrorReport $ "Failed sending reply!")
+      effectSub model $ 
+       signAndSend 
+        replyEventF 
+        successActs
+        (singleton . const . Report ErrorReport $ "Failed sending reply!")
       where 
         clearReplyInModel :: Model -> Model
         clearReplyInModel m = m & #writeReplyTo .~ Nothing & #replyDraft .~ ""
@@ -717,7 +718,8 @@ updateModel nn rl pl action model =
           successActs = [const $ UpdateModel clearPostInModel [clearPostInStorage], 
                          const (Report SuccessReport $ "Post sent!"),
                          DisplayThread]
-      signAndSend 
+      effectSub model $ 
+        signAndSend 
           createPost 
           successActs
           (singleton . const . Report ErrorReport $ "Failed sending post!")
@@ -739,7 +741,8 @@ updateModel nn rl pl action model =
                 \uploads/2022/04/how-to-draw-a-cute-frog.jpg"}
             newProfileF = \now -> do 
               pure $ setMetadata p me now
-        signAndSend 
+        effectSub model $ 
+         signAndSend 
           newProfileF 
           []
           []
@@ -749,7 +752,8 @@ updateModel nn rl pl action model =
         let newProfileF = \now -> do 
               p <- getProfile
               pure $ setMetadata p me now
-        signAndSend 
+        effectSub model $ 
+         signAndSend 
           newProfileF 
           (singleton . const . LoadProfile False False me $ MyProfilePage) 
           (singleton . const . Report ErrorReport $ "Failed updating profile!")
@@ -764,7 +768,8 @@ updateModel nn rl pl action model =
         if isLikedByMe 
         then doNothing
         else 
-          signAndSend 
+          effectSub model $ 
+           signAndSend 
             sendLike 
             (singleton . const . LikeSent $ e) 
             (singleton . const . Report ErrorReport $ "Failed sending like!")
@@ -802,8 +807,8 @@ updateModel nn rl pl action model =
     _ -> noEff model
 
   where
-    signAndSend makeEvent successActs failureActs = 
-      effectSub model $ \sink -> do
+    signAndSend makeEvent successActs failureActs sink = 
+       do
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
           e <- makeEvent now
