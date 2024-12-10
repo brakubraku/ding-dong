@@ -64,11 +64,3 @@ someKeys =
     "c6f7077f1699d50cf92a9652bfebffac05fc6842b9ee391089d959b8ad5d48fd"
   ]
 
-saveContacts :: [(XOnlyPubKey, Maybe Username)] -> NostrNetworkT ()
-saveContacts contacts = do
-  (Keys sk xo _) <- asks keys
-  now <- liftIO getCurrentTime
-  let unsigned = setContacts contacts xo now
-  case signEvent unsigned sk xo of
-    Just signed -> send . SendEvent $ signed
-    Nothing -> liftIO . logError $ "Failed signing event!"

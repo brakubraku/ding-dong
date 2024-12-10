@@ -318,13 +318,13 @@ readProfile event = case kind event of
   _ ->
     Nothing
 
-setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
+setContacts :: [XOnlyPubKey] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo,
       created_at' = t,
       kind' = Contacts,
-      tags' = map (\c -> PTag (fst c) (Just "") (snd c)) contacts,
+      tags' = map (\c -> PTag c (Just "") Nothing) contacts,
       content' = ""
     }
 

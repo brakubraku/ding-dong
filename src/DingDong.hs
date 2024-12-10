@@ -55,11 +55,9 @@ import ProfilesLoader.Types (ProfOrRelays)
 start :: JSM ()
 start = do
   (keys@(Keys _ me _), isNewKey) <- loadKeys
-  contacts <- Set.fromList <$> loadContacts
   now <- liftIO getCurrentTime
   relaysList <- loadRelays
   let activeRelays = relay <$> filter active relaysList
-  let profileContacts = Map.empty & at me ?~ contacts
   nn <-
     liftIO $
       initNetwork
@@ -86,7 +84,7 @@ start = do
           (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
           (Reactions Map.empty Map.empty)
           Map.empty
-          profileContacts
+          Map.empty
           Map.empty
           FeedPage
           now
@@ -177,7 +175,8 @@ updateModel nn rl pl action model =
             liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
             forkJSM $ startLoader nn rl ReceivedReactions sink
             forkJSM $ startLoader nn pl ReceivedProfiles sink
-            load pl $ [model ^. #me] ++ (maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)) -- fetch my and my contacts' profiles
+            -- fetch my profile
+            load pl $ [model ^. #me] 
             forkJSM $ -- put actual time to model every 60 seconds
               let loop = do
                     now <- liftIO getCurrentTime
@@ -185,7 +184,7 @@ updateModel nn rl pl action model =
                     liftIO . sleep . Seconds $ 60
                     loop
                in loop
-
+            
             forkJSM $
               let loop = do
                     liftIO $ do
@@ -197,15 +196,22 @@ updateModel nn rl pl action model =
                     liftIO . sleep . Seconds $ 5
                     loop
                in loop
-
+          
+            storageContacts <- Set.fromList <$> loadContactsFromStorage
+            forkJSM . liftIO . sink $ loadContactsFromNostr storageContacts
+           
             liftIO $ do 
               when isNew $ sink CreateInitialProfile
-              -- start showing feed
-              sink $ ShowFeed
               -- start notifications
               sink $ LoadMoreEvents #notifs NotificationsPage
               sink ListenToNotifs
 
+          where 
+            loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
+            uploadIfNoContacts :: Set.Set XOnlyPubKey -> Maybe (Set.Set XOnlyPubKey) -> Action
+            uploadIfNoContacts toUpload Nothing = UploadMyContacts toUpload
+            uploadIfNoContacts _ (Just cs) = ContactsLoaded cs
+  
     ShowFeed ->
       let contacts = maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)
           Until t = model ^. #feed % #until
@@ -540,14 +546,12 @@ updateModel nn rl pl action model =
     Unfollow xo ->
       let myContacts = #profileContacts % at (model ^. #me)
           updated = model & myContacts % _Just % at xo .~ Nothing
-       in updated
-            <# (updateContacts (fromMaybe Set.empty $ updated ^. myContacts) >> pure NoAction)
+       in batchEff model [pure $ UploadMyContacts (fromMaybe Set.empty $ updated ^. myContacts)]
 
     Follow xo ->
       let myContacts = #profileContacts % at (model ^. #me)
           updated = model & myContacts % _Just % at xo .~ Just ()
-       in updated
-            <# (updateContacts (fromMaybe Set.empty $ updated ^. myContacts) >> pure NoAction)
+       in batchEff model [pure $ UploadMyContacts (fromMaybe Set.empty $ updated ^. myContacts)]
 
     WriteModel m ->
       model <# (writeModelToStorage m >> pure NoAction)
@@ -583,17 +587,38 @@ updateModel nn rl pl action model =
 
     UpdateField l v -> noEff $ model & l .~ v
 
-    LoadContactsOf xo page -> 
+    UploadMyContacts cs -> 
+      effectSub model $ 
+       \sink -> 
+         do
+          signAndSend 
+            (pure . setContacts (Set.toList cs) (model ^. #me))
+            [ const $ Report SuccessReport $ "Contacts uploaded"
+            ,const $ ContactsLoaded cs]
+            [const $ Report ErrorReport $ "Failed uploading my contacts!"]
+            sink
+          safeUpdateLocalContacts cs
+
+    ContactsLoaded cs -> 
+      updated <# 
+        do 
+          load pl (Set.toList cs)
+          pure ShowFeed
+      where 
+        updated = model & #profileContacts % at (model ^. #me) ?~ cs
+
+    LoadContactsOf xo page takeAction -> 
       effectSub model $
           subscribe
             nn
             AllAtEOS
             [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
-            (UpdateField (#profileContacts % at xo) . Just . processReceived)
+            (takeAction . processReceived)
             (Just . SubState $ page)
             getEventRelayEither
      where 
-      processReceived :: [(Event, Relay)] -> Set.Set XOnlyPubKey
+      processReceived :: [(Event, Relay)] -> Maybe (Set.Set XOnlyPubKey)
+      processReceived [] = Nothing
       processReceived ers = 
         let latest =
                  -- take the latest event from each relay
@@ -604,7 +629,7 @@ updateModel nn rl pl action model =
                  Prelude.nubBy (\x y -> fst x == fst y) ers)
         in 
           -- extract contacts from the events
-          Set.fromList . Prelude.concat $ extractContacts <$> latest 
+          Just . Set.fromList . Prelude.concat $ extractContacts <$> latest 
       extractContacts :: Event -> [XOnlyPubKey]
       extractContacts event = 
          let isPTag (PTag _ _ _) = True
@@ -642,6 +667,7 @@ updateModel nn rl pl action model =
               LoadContactsOf 
                 xo
                 page
+                (UpdateField (#profileContacts % at xo))
 
     SubState p st ->
       let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
@@ -956,12 +982,18 @@ subscribeForEventsReplies nn eids page sink =
 writeModelToStorage :: Model -> JSM ()
 writeModelToStorage m = pure ()
 
-updateContacts :: Set.Set XOnlyPubKey -> JSM ()
-updateContacts xos = do
-  setLocalStorage "my-contacts" $ Set.toList xos
+safeUpdateLocalContacts :: Set.Set XOnlyPubKey -> JSM ()
+safeUpdateLocalContacts newCs = do
+  oldCs <- Set.fromList <$> loadContactsFromStorage
+  -- in case difference is more than one contact, refuse updating locally stored contacts
+  -- it's expected that if you follow/unfollow more than one contact at a time something is borked
+  if (Set.size $ oldCs `Set.difference` newCs) <= 1 
+   then setLocalStorage "my-contacts" $ Set.toList newCs 
+   else liftIO . print $ "Not updating local contacts!"
 
-loadContacts :: JSM [XOnlyPubKey]
-loadContacts = fromRight defaultContacts <$> getLocalStorage "my-contacts"
+
+loadContactsFromStorage :: JSM [XOnlyPubKey]
+loadContactsFromStorage = fromRight defaultContacts <$> getLocalStorage "my-contacts"
 
 defaultContacts :: [XOnlyPubKey]
 defaultContacts = someContacts

@@ -136,7 +136,7 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
           PeriodicForever -> do
             addStats (length rrs)
             liftIO . processMsgs $ rrs
-            -- has any relay has closed connection or is the subscription not running on all connected relays?
+            -- has any relay closed connection or is the subscription not running on all connected relays?
             let isRestartLongRunning = 
                  isAnyRelayError subState 
                   || isNotRunningOnAll subState relays

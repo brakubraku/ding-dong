@@ -108,10 +108,12 @@ data Action where
   DisplayWritePostPage :: Action
   CreateInitialProfile :: Action
   ShowModal :: Action
-  LoadContactsOf :: XOnlyPubKey -> Page -> Action
+  LoadContactsOf :: XOnlyPubKey -> Page -> (Maybe (Set.Set XOnlyPubKey) -> Action) -> Action
   DisplayProfileContacts :: XOnlyPubKey -> Page -> Action
   SendPost :: (JSM Text) -> Action
   UpdateModel :: (Model -> Model) -> [JSM Action] -> Action
+  UploadMyContacts :: Set.Set XOnlyPubKey -> Action
+  ContactsLoaded :: Set.Set XOnlyPubKey -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
