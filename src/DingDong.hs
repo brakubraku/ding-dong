@@ -948,10 +948,14 @@ updateModel nn rl pl action model =
     waitForReconnect sink = 
       do 
         unconnected <- runNostr nn $ RP.waitForActiveConnections (Seconds 10)
-        when (length unconnected > 1) $ 
-          sink . Report ErrorReport $ 
-            "Unable to connect to these relays: " 
-            <> showt (unconnected ^.. folded % #uri)
+        case (length unconnected > 0) of 
+          True ->
+            sink . Report ErrorReport $ 
+              "Unable to connect to these relays: " 
+              <> showt (unconnected ^.. folded % #uri)
+          False ->
+            sink . Report SuccessReport $ 
+              "Reconnected to all relays" 
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
