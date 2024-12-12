@@ -166,7 +166,8 @@ data Model = Model
         Page
         [(SubscriptionId, SubState)],
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
-    reports :: [(ReportType, Text)],
+    reports :: [(Int, ReportType, Text)],
+    reportCounter :: Int,
     fromRelays :: Map Event (Set.Set Relay),
     replyDraft :: Text,
     postDraft :: Text,

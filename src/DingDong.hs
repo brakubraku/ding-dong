@@ -94,6 +94,7 @@ start = do
           Map.empty
           Map.empty
           []
+          0
           Map.empty
           ""
           ""
@@ -127,10 +128,20 @@ updateModel nn rl pl action model =
         model & #relaysStats % at (r ^. #uri) % _Just % _3 %~ (\(CloseCount cc) -> CloseCount (cc+1))
               & #relaysStats % at (r ^. #uri) % _Just % _1 .~ False
 
-    Report reportType msg ->
-      let add msgs = (reportType, msg) : take 20 msgs -- TODO: 20
-       in noEff $
+    Report reportType report ->
+      let counter = model ^. #reportCounter
+          add rs = (counter, reportType, report) : rs
+          updated = 
             model & #reports %~ add 
+                  & #reportCounter %~ (+1)
+       in effectSub updated $ \sink -> 
+            liftIO $ 
+             do 
+              sleep $ Seconds 15
+              sink $ UpdateModel (removeReport counter) []
+      where 
+        removeReport which model = 
+          model & #reports %~ filter (\(c,_,_) -> c /= which)
             
     UpdatedRelaysList rl -> 
       noEff $ model & #relaysList .~ rl
@@ -1352,15 +1363,15 @@ rightPanel :: Model -> View Action
 rightPanel m = div_ [class_ "right-panel"] [ul_ [] reports]
   where
     reports =
-      ( \(i, (reportType, report)) ->
+      ( \(i, reportType, report) ->
           liKeyed_
             (Key . showt $ i) -- so that Miso diff algoritm displays it in the correct order
-            [ class_ $ bool "error" "success" (reportType ==  SuccessReport),
+            [ class_ $ bool "error" "success" (reportType == SuccessReport),
               class_ "hide-after-period"
             ]
             [text report]
       )
-        <$> zip [1 ..] (m ^. #reports)
+        <$> m ^. #reports
 
 leftPanel :: Model -> View Action
 leftPanel m =
