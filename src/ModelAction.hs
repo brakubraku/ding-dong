@@ -31,6 +31,7 @@ import StoredRelay
 import ProfilesLoader.Types
 import Miso (JSM)
 import Utils (Seconds)
+import Control.Concurrent (MVar)
 
 data Action where
   RelayConnected :: RelayURI -> Action
@@ -172,7 +173,7 @@ data Model = Model
     replyDraft :: Text,
     postDraft :: Text,
     me :: XOnlyPubKey,
-    showingFeed :: Bool -- TODO: remove
+    subCancelButtons :: Map Text (MVar ())
   }
   deriving (Eq, Generic)
 

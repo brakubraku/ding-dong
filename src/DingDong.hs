@@ -10,7 +10,7 @@ module DingDong where
 import BechUtils
 import ContentUtils
 import Control.Concurrent
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Bifunctor (second)
@@ -26,7 +26,7 @@ import Data.Time
 import Miso hiding (at, now, send, WebSocket(..))
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe)
+import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe, isSubCanceled, cancelSub)
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -99,7 +99,7 @@ start = do
           ""
           ""
           me
-          False
+          Map.empty
   startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
     events = defaultEvents
@@ -225,7 +225,6 @@ updateModel nn rl pl action model =
   
     ShowFeed ->
       let contacts = maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)
-          Until t = model ^. #feed % #until
           pagedFilter =
             \(Since s) (Until u) ->
               textNotesWithDeletes
@@ -233,11 +232,12 @@ updateModel nn rl pl action model =
                 (Just u)
                 contacts
           updated =
-            model & #feed % #filter ?~ pagedFilter
+            model & #feed .~ defaultPagedModel (Until $ model ^. #now)
+                  & #feed % #filter ?~ pagedFilter
        in batchEff
             updated
             [ pure $ LoadMoreEvents #feed FeedPage
-            , pure $ StartFeedLongRunning t contacts]
+            , pure $ StartFeedLongRunning (model ^. #now) contacts]
     
     ShowNotifications -> 
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
@@ -290,9 +290,18 @@ updateModel nn rl pl action model =
        in noEff updated
 
     StartFeedLongRunning since contacts ->
-       effectSub model runLoop
+       effectSub model $ \sink -> 
+        do
+          -- cancel the existing subscription
+          sequence_ $ cancelSub <$> (model ^. #subCancelButtons % at "feed-long-running")
+          -- create cancel button for the new subscription
+          cb <- liftIO newEmptyMVar
+          let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
+          -- save cancel button for the new subscription
+          liftIO . sink $ UpdateModel updateCBs []
+          runLoop cb sink
        where 
-        doSubscribe cancelButton = 
+        doSubscribe cb = 
           subscribe
             nn
             PeriodicForever
@@ -300,13 +309,15 @@ updateModel nn rl pl action model =
             FeedLongRunningProcess
             Nothing
             getEventRelayEither
-            (Just cancelButton)
-        runLoop sink = 
+            (Just cb)
+        runLoop cb sink = 
           do
-            cancelButton <- liftIO newEmptyMVar
-            doSubscribe cancelButton sink
-            liftIO . waitForReconnect $ sink
-            runLoop sink   
+            doSubscribe cb sink
+            isCancelled <- isSubCanceled cb
+            unless isCancelled $ 
+             do 
+              liftIO . waitForReconnect $ sink
+              runLoop cb sink   
 
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
@@ -614,7 +625,7 @@ updateModel nn rl pl action model =
           signAndSend 
             (pure . setContacts (Set.toList cs) (model ^. #me))
             [ const $ Report SuccessReport $ "Contacts uploaded"
-            ,const $ ContactsLoaded cs]
+            , const $ ContactsLoaded cs]
             [const $ Report ErrorReport $ "Failed uploading my contacts!"]
             sink
           safeUpdateLocalContacts cs
@@ -623,12 +634,9 @@ updateModel nn rl pl action model =
       updated <# 
         do 
           load pl (Set.toList cs)
-          pure $ if not $ model ^. #showingFeed -- TODO: temporary. remove
-                 then ShowFeed
-                 else NoAction
+          pure ShowFeed
       where 
         updated = model & #profileContacts % at (model ^. #me) ?~ cs
-                        & #showingFeed .~ True
 
     LoadContactsOf xo page takeAction -> 
       effectSub model $

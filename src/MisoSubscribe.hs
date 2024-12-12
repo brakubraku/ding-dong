@@ -79,7 +79,7 @@ subscribe ::
   ((Response, Relay) -> Either Text e) ->
   Maybe (MVar ()) ->
   Sub action
-subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelSub sink = do
+subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelButton sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
@@ -107,11 +107,10 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelS
                 state
         let reportRunning = reportSubState False actOnSubState 
         let reportFinished = reportSubState True actOnSubState
-        let seeIfCancelled mvar = liftIO $ (maybe False (const True)) <$> tryReadMVar mvar
         let continue = do
               reportRunning 
               liftIO $ sleep period
-              isCanceled <- maybe (pure False) seeIfCancelled cancelSub
+              isCanceled <- maybe (pure False) isSubCanceled cancelButton
               unless isCanceled collectResponses
         case subType of
           AllAtEOS -> do
@@ -169,3 +168,9 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelS
 
     -- don't want Num instance
     subtract (Seconds s1) (Seconds s2) = Seconds (s2-s1)
+
+isSubCanceled :: MonadIO m => MVar () -> m Bool
+isSubCanceled cancelButton = liftIO $ (maybe False (const True)) <$> tryReadMVar cancelButton
+
+cancelSub :: MonadIO m => MVar () -> m ()
+cancelSub cancelButton = liftIO $ putMVar cancelButton ()
