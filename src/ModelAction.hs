@@ -171,7 +171,8 @@ data Model = Model
     fromRelays :: Map Event (Set.Set Relay),
     replyDraft :: Text,
     postDraft :: Text,
-    me :: XOnlyPubKey
+    me :: XOnlyPubKey,
+    showingFeed :: Bool -- TODO: remove
   }
   deriving (Eq, Generic)
 

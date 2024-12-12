@@ -99,6 +99,7 @@ start = do
           ""
           ""
           me
+          False
   startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
     events = defaultEvents
@@ -209,9 +210,8 @@ updateModel nn rl pl action model =
                in loop
           
             storageContacts <- Set.fromList <$> loadContactsFromStorage
-            forkJSM . liftIO . sink $ loadContactsFromNostr storageContacts
-           
             liftIO $ do 
+              sink $ loadContactsFromNostr storageContacts
               when isNew $ sink CreateInitialProfile
               -- start notifications
               sink $ LoadMoreEvents #notifs NotificationsPage
@@ -236,7 +236,8 @@ updateModel nn rl pl action model =
             model & #feed % #filter ?~ pagedFilter
        in batchEff
             updated
-            [pure $ LoadMoreEvents #feed FeedPage, pure $ StartFeedLongRunning t contacts]
+            [ pure $ LoadMoreEvents #feed FeedPage
+            , pure $ StartFeedLongRunning t contacts]
     
     ShowNotifications -> 
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
@@ -614,9 +615,12 @@ updateModel nn rl pl action model =
       updated <# 
         do 
           load pl (Set.toList cs)
-          pure ShowFeed
+          pure $ if not $ model ^. #showingFeed -- TODO: temporary. remove
+                 then ShowFeed
+                 else NoAction
       where 
         updated = model & #profileContacts % at (model ^. #me) ?~ cs
+                        & #showingFeed .~ True
 
     LoadContactsOf xo page takeAction -> 
       effectSub model $
