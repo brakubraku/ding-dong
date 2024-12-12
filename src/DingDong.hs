@@ -264,6 +264,7 @@ updateModel nn rl pl action model =
             ProcessNewNotifs
             Nothing
             getEventRelayEither
+            Nothing
         runLoop sink = 
           do
             lnd <- loadLastNotif
@@ -291,17 +292,19 @@ updateModel nn rl pl action model =
     StartFeedLongRunning since contacts ->
        effectSub model runLoop
        where 
-        doSubscribe = 
+        doSubscribe cancelButton = 
           subscribe
-          nn
-          PeriodicForever
-          (textNotesWithDeletes (Just since) Nothing contacts)
-          FeedLongRunningProcess
-          Nothing
-          getEventRelayEither
+            nn
+            PeriodicForever
+            (textNotesWithDeletes (Just since) Nothing contacts)
+            FeedLongRunningProcess
+            Nothing
+            getEventRelayEither
+            (Just cancelButton)
         runLoop sink = 
           do
-            doSubscribe sink
+            cancelButton <- liftIO newEmptyMVar
+            doSubscribe cancelButton sink
             liftIO . waitForReconnect $ sink
             runLoop sink   
 
@@ -405,6 +408,7 @@ updateModel nn rl pl action model =
                     (PagedEventsProcess False pml page)
                     (Just $ SubState page)
                     getEventRelayEither
+                    Nothing
                     sink
               )
               (pm ^. #filter)
@@ -423,6 +427,7 @@ updateModel nn rl pl action model =
           RepliesRecvNoEmbedLoading 
           (Just $ SubState page)
           getEventRelayEither
+          Nothing
 
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -438,6 +443,7 @@ updateModel nn rl pl action model =
           (PagedReactionsToProcess pml screen)
           (Just $ SubState screen)
           getEventRelayEither
+          Nothing
 
     PagedReactionsToProcess pml _ ers -> 
       let process (e,_) m = 
@@ -468,6 +474,7 @@ updateModel nn rl pl action model =
           (FeedEventParentsProcess pmap pml screen)
           (Just $ SubState screen)
           getEventRelayEither
+          Nothing
 
     FeedEventParentsProcess pmap pml screen rs -> 
        let  (notes, enotes, eprofs) = processReceivedEvents rs 
@@ -498,6 +505,7 @@ updateModel nn rl pl action model =
           EmbeddedEventsProcess
           (Just $ SubState FeedPage)
           getEventRelayEither
+          Nothing
           
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
@@ -631,6 +639,7 @@ updateModel nn rl pl action model =
             (takeAction . processReceived)
             (Just . SubState $ page)
             getEventRelayEither
+            Nothing
      where 
       processReceived :: [(Event, Relay)] -> Maybe (Set.Set XOnlyPubKey)
       processReceived [] = Nothing
@@ -671,6 +680,7 @@ updateModel nn rl pl action model =
             ReceivedProfiles
             (Just . SubState $ page)
             extractProfile
+            Nothing
             sink
           when isLoadNotes $ 
             liftIO . sink $ 
@@ -971,6 +981,7 @@ subscribeForWholeThread nn e page sink = do
     (ThreadEvents page)
     (Just $ SubState page)
     process
+    Nothing
     sink
   where
     process (resp, rel) =
@@ -991,6 +1002,7 @@ subscribeForEventsReplies nn eids page sink =
     (ThreadEvents page)
     (Just $ SubState page)
     process
+    Nothing
     sink
   where
     process (resp, rel) =

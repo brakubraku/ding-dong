@@ -77,8 +77,9 @@ subscribe ::
   ([e] -> action) ->
   Maybe ((SubscriptionId, SubState) -> action) ->
   ((Response, Relay) -> Either Text e) ->
+  Maybe (MVar ()) ->
   Sub action
-subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = do
+subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelSub sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
@@ -106,10 +107,12 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults sink = 
                 state
         let reportRunning = reportSubState False actOnSubState 
         let reportFinished = reportSubState True actOnSubState
+        let seeIfCancelled mvar = liftIO $ (maybe False (const True)) <$> tryReadMVar mvar
         let continue = do
               reportRunning 
               liftIO $ sleep period
-              collectResponses
+              isCanceled <- maybe (pure False) seeIfCancelled cancelSub
+              unless isCanceled collectResponses
         case subType of
           AllAtEOS -> do
             addMessages rrs

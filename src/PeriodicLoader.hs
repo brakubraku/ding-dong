@@ -67,6 +67,7 @@ startLoader nn pl act sink =
             act 
             Nothing
             (pl ^. #extract)
+            Nothing
             sink
         liftIO . sleep $ pl ^. #period
         loop
