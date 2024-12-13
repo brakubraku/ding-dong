@@ -48,8 +48,9 @@ import Nostr.Response
 import Optics
 import Prelude hiding (map)
 import Data.Time
-import Nostr.Event (verifySignature)
+import Nostr.Event (verifySignature, validateEventId)
 import Utils
+import Debug.Trace (traceM)
 
 data WebSocketAction = 
   WebSocketOpen Relay | 
@@ -106,6 +107,8 @@ connectRelays nn sendMsg sink = do
         case resp of
           Right (EventReceived subId event) -> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
+            when (not $ validateEventId event) $ 
+             traceM ("branko-failed-hash-validation: " <> show msg)
             case (verifySignature event) of -- TODO: verify hash of event as well
               False -> 
                 liftIO

@@ -52,7 +52,6 @@ data Tag
   | PTag XOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
   | RTag Text (Maybe ReadWrite)
   | XTag Text
-  | NonceTag
   | UnknownTag Array
   deriving (Eq, Show, Ord)
 
@@ -108,6 +107,13 @@ instance FromJSON ReadWrite where
       "read"-> pure Read
       "write"-> pure Write
       _ -> fail "invalid ReadWrite"
+
+instance ToJSON ReadWrite where
+  toJSON rw = 
+    String $ 
+     case rw of
+      Read -> "read"
+      Write -> "write"
 
 eventIdToText :: ByteString -> Text
 eventIdToText =  B16.extractBase16 . B16.encodeBase16
@@ -167,42 +173,35 @@ instance FromJSON Tag where
   parseJSON _ = fail "DingyDongy: Unexpected format for Tag"
 
 instance ToJSON Tag where
-  toJSON (ETag eventId Nothing Nothing) =
+  toJSON (ETag eventId relayURL marker) =
     Array $
-      fromList
+      fromList $ 
         [ String "e",
           String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
         ]
-  toJSON (ETag eventId relayURL Nothing) =
-    Array $
-      fromList
-        [ String "e",
-          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId,
-          maybe (String "") (\r -> String r) relayURL
-        ]
-  toJSON (ETag eventId relayURL marker) =
-    Array $
-      fromList
-        [ String "e",
-          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId,
-          maybe (String "") (\r -> String r) relayURL,
-          toJSON marker
-        ]
+        ++ maybe [] (singleton . String) relayURL
+        ++ maybe [] (singleton . toJSON) marker
+
   toJSON (PTag xo relayURL name) =
     Array $
-      fromList
-        [ String "p",
-          toJSON xo,
-          maybe (String "") (\r -> String r) relayURL,
-          maybe (String "") (\n -> String n) name
-        ]
+      fromList $
+        [String "p", toJSON xo]
+        ++ maybe [] (singleton . String) relayURL
+        ++ maybe [] (singleton . String) name
+        
   toJSON (XTag t) = 
-    Array . fromList $ [String "x", String t]
-  toJSON (UnknownTag v) = Array v
-  toJSON _ =
-    -- @todo implement nonce tag
-    Array $ fromList []
+    Array $
+      fromList $ 
+       [String "x", String t] 
 
+  toJSON (RTag t rw) = 
+    Array $
+      fromList $ 
+       [String "r", String t] 
+       ++ maybe [] (singleton . toJSON) rw
+
+  toJSON (UnknownTag v) = Array v
+  
 instance FromJSON Marker where
   parseJSON = withText "Marker" $ \m -> do
     case toLower m of
