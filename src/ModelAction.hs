@@ -305,7 +305,7 @@ type ProcessedEvents = Map.Map EventId (Event, [Content])
 
 addToThread :: (Event, [Content]) -> Thread -> Thread
 addToThread ec@(e, _) t =
-  let replyToEid = findIsReplyTo e
+  let replyToEid = findParentEventOf e
    in case replyToEid of
         Just eid ->
           t & #events % at (e ^. #eventId) ?~ ec

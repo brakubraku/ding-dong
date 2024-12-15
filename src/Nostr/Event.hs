@@ -371,8 +371,8 @@ event `isReplyTo` parent = any checkTag . tags $ event
 -- If event has Etag with Reply marker then choose that
 -- otherwise if it has Etag with Root marker then choose that
 -- otherwise the event is not a response to anything
-findIsReplyTo :: Event -> Maybe EventId
-findIsReplyTo event =
+findParentEventOf :: Event -> Maybe EventId
+findParentEventOf event =
   let find' _ (Just eid, _) = Just eid
       find' [] (_, Just rid) = Just rid
       find' [] (Nothing, Nothing) = Nothing

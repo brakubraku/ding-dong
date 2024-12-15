@@ -468,7 +468,7 @@ updateModel nn rl pl action model =
     SubscribeForParentsOf pml screen replies -> 
       let insert e (pmap, pids) = 
            fromMaybe (pmap, pids) $ do 
-              parentEid <- findIsReplyTo e
+              parentEid <- findParentEventOf e
               let eid = e ^. #eventId
               pure $ 
                (pmap & at parentEid %~ -- record which parent goes with which child/children
@@ -981,7 +981,7 @@ updateModel nn rl pl action model =
 subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
 subscribeForWholeThread nn e page sink = do
   let eids = [(e ^. #eventId)]
-      replyTo = maybe [] singleton $ findIsReplyTo e 
+      replyTo = maybe [] singleton $ findParentEventOf e 
   subscribe
     nn
     PeriodicUntilEOS
@@ -1288,7 +1288,7 @@ displayNoteShort withEmbed m ec@(e, _) =
 
 displayPagedNote :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
 displayPagedNote m pml ec@(e,_) 
-    | isJust (findIsReplyTo e) =
+    | isJust (findParentEventOf e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
         in 
           div_ [class_ "parent-child-complex"] 
