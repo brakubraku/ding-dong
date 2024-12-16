@@ -76,6 +76,11 @@ decodeNpub bech = case decodeBech bech of
   Just (NPub xo) -> Just xo
   _ -> Nothing
 
+decodeBechEvent :: Text -> Maybe EventId
+decodeBechEvent bech = case decodeBech bech of
+  Just (NEvent eid) -> Just eid
+  _ -> Nothing
+
 encodeBechXo :: XOnlyPubKey -> Maybe Text
 encodeBechXo xo = do
   prefix <- either (const Nothing) Just $ humanReadablePartFromText "npub"
@@ -84,6 +89,13 @@ encodeBechXo xo = do
 
 encodeBechEvent :: EventId -> Maybe Text
 encodeBechEvent eid = do
-  prefix <- either (const Nothing) Just $ humanReadablePartFromText "nevent"
+  prefix <- either (const Nothing) Just $ humanReadablePartFromText "note"
   let dataPart = dataPartFromBytes . getEventId $ eid
   either (const Nothing) Just $ encode prefix dataPart
+
+
+-- >>> encodeBechEvent . fromJust .  decodeEventId  $ "74f16cab0e2a11840ff298dd4fb534d20483724928e02d27b04bbe37af5c6aa2"
+-- Just "note1wncke2cw9ggcgrljnrw5ldf56gzgxujf9rsz6fasfwlr0t6ud23quqf99t"
+
+-- >>> decodeNEvent $ "note1wncke2cw9ggcgrljnrw5ldf56gzgxujf9rsz6fasfwlr0t6ud23quqf99t"
+-- Just "74f16cab0e2a11840ff298dd4fb534d20483724928e02d27b04bbe37af5c6aa2"
