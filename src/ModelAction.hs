@@ -6,6 +6,7 @@
 {-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
 module ModelAction where
@@ -115,6 +116,7 @@ data Action where
   UpdateModel :: (Model -> Model) -> [JSM Action] -> Action
   UploadMyContacts :: Set.Set XOnlyPubKey -> Action
   ContactsLoaded :: Set.Set XOnlyPubKey -> Action
+  DisplayThreadWithId :: EventId -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -128,6 +130,7 @@ data Page
   | ThreadPage Event
   | ProfilePage XOnlyPubKey
   | FindProfilePage
+  | FindEventPage
   | RelaysPage
   | MyProfilePage 
   | NotificationsPage 
@@ -173,9 +176,18 @@ data Model = Model
     replyDraft :: Text,
     postDraft :: Text,
     me :: XOnlyPubKey,
-    subCancelButtons :: Map Text (MVar ())
+    subCancelButtons :: Map Text (MVar ()),
+    findEventModel :: FindEventModel
   }
   deriving (Eq, Generic)
+
+data FindEventModel = FindEventModel {
+  bechEvent :: Text,
+  error :: Maybe Text
+} deriving (Eq, Generic)
+
+defaultFindEventModel :: FindEventModel
+defaultFindEventModel = FindEventModel "" Nothing
 
 newtype CompactModel = CompactModel Model
 -- Miso updates views whenever model changes. It uses Eq instance to determine that.
@@ -204,6 +216,7 @@ instance Eq CompactModel where
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
             FindProfilePage -> allEqual $ [eq #findWho]
             WritePostPage -> True
+            FindEventPage -> allEqual [eq #findEventModel]
    where 
     eq :: Eq a => Lens' Model a -> Bool
     eq ls = m1 ^. ls == m2 ^. ls

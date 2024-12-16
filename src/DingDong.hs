@@ -100,6 +100,7 @@ start = do
           ""
           me
           Map.empty
+          defaultFindEventModel
   startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
     events = defaultEvents
@@ -863,6 +864,23 @@ updateModel nn rl pl action model =
         setLocalStorage tid t
         pure NoAction
 
+    DisplayThreadWithId eid -> 
+      effectSub model $ \sink -> do 
+       liftIO . sink $ UpdateField (#findEventModel % #error) (Just "") 
+       subscribe
+          nn
+          AllAtEOS
+          [anytimeF . EventsWithId $ [eid]]
+          displayThread
+          Nothing -- TODO
+          getEventRelayEither
+          Nothing
+          sink
+      where 
+        displayThread :: [(Event, Relay)] -> Action
+        displayThread (er:_) = DisplayThread $ fst er
+        displayThread [] = UpdateField (#findEventModel % #error) (Just "Event not found on any connected relay!")
+
     _ -> noEff model
 
   where
@@ -1224,7 +1242,7 @@ displayNoteContent withEmbed m (e,content) =
                       embdEvnt
                   ]
           False ->
-            text . ("nevent:" <>) . fromMaybe "Failed encoding nevent" . encodeBechEvent $ eid
+            text . fromMaybe "<Failed encoding nevent>" . encodeBechEvent $ eid
       displayContent (NostrC (NPub xo)) =
         case withEmbed of
           True ->
@@ -1382,6 +1400,7 @@ middlePanel m =
       ThreadPage e -> displayThread m e
       ProfilePage xo -> displayProfile True m xo
       FindProfilePage -> displayFindProfilePage m
+      FindEventPage -> displayFindEventPage m
       RelaysPage -> displayRelaysPage m
       MyProfilePage -> displayMyProfilePage m
       NotificationsPage -> displayNotificationsPage m
@@ -1412,6 +1431,7 @@ leftPanel m =
           -- pItem "Followers"
           pItem "Following" $ Following (m ^. #me),
           pItem "Find Profile" FindProfilePage,
+          pItem "Find Event" FindEventPage,
           pItem "Relays" RelaysPage,
           aItem "My Profile" DisplayMyProfilePage,
           aItem "Write Post" DisplayWritePostPage
@@ -1601,6 +1621,31 @@ displayReactions m e rcs =
    in div_
         [class_ "reactions-container"]
         $ likes ++ [dislikes, others] 
+
+displayFindEventPage :: Model -> View Action
+displayFindEventPage m =
+  div_ [class_ "find-profile"] $
+    [div_ [class_ "search-box"] [search, searchButton]]
+      ++ maybe [] (\err -> [div_ [class_ "error-msg"] [text err]]) error
+  where
+    bechEvent = m ^. #findEventModel % #bechEvent
+    error = m ^. #findEventModel % #error
+    searchAction = 
+      case decodeBechEvent bechEvent of 
+        Just eventId -> DisplayThreadWithId eventId
+        Nothing -> UpdateField (#findEventModel % #error) (Just "Invalid bech event format")
+    searchButton =
+      button_
+        [class_ "search-box-button", onClick searchAction]
+        [text "Find"]
+    search =
+      input_
+        [ class_ "input-xo",
+          value_ bechEvent,
+          placeholder_ "Enter event bech (nevent1, note1)",
+          type_ "text",
+          onInput $ UpdateField (#findEventModel % #bechEvent)
+        ]
 
 displayFindProfilePage :: Model -> View Action
 displayFindProfilePage m =
