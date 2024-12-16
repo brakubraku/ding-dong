@@ -9,7 +9,6 @@
 
 module Nostr.Event where
 
-import Control.Monad (mzero)
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Aeson
 import Data.Aeson.Text (encodeToTextBuilder)
@@ -21,7 +20,7 @@ import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Time.Clock
 import Data.DateTime
 import Data.List
-import Data.Maybe (catMaybes, fromJust, fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text, pack, toLower, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.Lazy as LazyText
@@ -32,7 +31,7 @@ import GHC.Generics
 import MyCrypto
 import Nostr.Keys
 import Nostr.Kind
-import Nostr.Profile (Profile (..), RelayURL, Username)
+import Nostr.Profile (Profile (..), RelayURL)
 import Nostr.Relay
 import Optics hiding (uncons)
 
@@ -173,34 +172,36 @@ instance FromJSON Tag where
   parseJSON _ = fail "DingyDongy: Unexpected format for Tag"
 
 instance ToJSON Tag where
-  toJSON (ETag eventId relayURL marker) =
-    Array $
-      fromList $ 
-        [ String "e",
-          String . B16.extractBase16 . B16.encodeBase16 . getEventId $ eventId
-        ]
-        ++ maybe [] (singleton . String) relayURL
-        ++ maybe [] (singleton . toJSON) marker
+    toJSON (ETag eventId relayUrl marker) =
+      Array . fromList $ 
+       [ String "e",
+         String 
+          . B16.extractBase16 
+          . B16.encodeBase16 . getEventId $ eventId] ++ 
+       case (relayUrl, marker) of 
+        (Nothing, Nothing) -> []
+        (Nothing, _) -> [String "", toJSON marker]
+        (_, _) -> [toJSON relayUrl, toJSON marker]
 
-  toJSON (PTag xo relayURL name) =
-    Array $
-      fromList $
-        [String "p", toJSON xo]
-        ++ maybe [] (singleton . String) relayURL
-        ++ maybe [] (singleton . String) name
-        
-  toJSON (XTag t) = 
-    Array $
-      fromList $ 
-       [String "x", String t] 
+    toJSON (PTag xo relayUrl name) =
+      Array . fromList $ [String "p", toJSON xo] ++ 
+        case (relayUrl, name) of 
+          (Nothing, Nothing) -> []
+          (Nothing, _) -> [String "", toJSON name]
+          (_, _) -> [toJSON relayUrl, toJSON name]
+          
+    toJSON (XTag t) = 
+      Array $
+        fromList $ 
+        [String "x", String t] 
 
-  toJSON (RTag t rw) = 
-    Array $
-      fromList $ 
-       [String "r", String t] 
-       ++ maybe [] (singleton . toJSON) rw
+    toJSON (RTag t rw) = 
+      Array $
+        fromList $ 
+        [String "r", String t] 
+        ++ maybe [] (singleton . toJSON) rw
 
-  toJSON (UnknownTag v) = Array v
+    toJSON (UnknownTag v) = Array v
   
 instance FromJSON Marker where
   parseJSON = withText "Marker" $ \m -> do
@@ -350,38 +351,24 @@ newEvent c pk t = Event {
   sig = Bip340Sig "0"
 }
 
-
-isReplyTag :: Tag -> Bool
-isReplyTag (ETag _ _ (Just Reply)) = True
-isReplyTag _ = False
-
-isRootTag :: Tag -> Bool
-isRootTag (ETag _ _ (Just Root)) = True
-isRootTag _ = False
-
 isReply :: Event -> Bool
-isReply = any (\t -> isReplyTag t || isRootTag t) . tags
+isReply = isJust . findParentEventOf
 
 isReplyTo :: Event -> Event -> Bool
-event `isReplyTo` parent = any checkTag . tags $ event
-  where
-    checkTag (ETag eid _ (Just Reply)) = eid == eventId parent
-    checkTag _ = False
+event `isReplyTo` parent = findParentEventOf event == Just (parent ^. #eventId)
 
 -- If event has Etag with Reply marker then choose that
 -- otherwise if it has Etag with Root marker then choose that
 -- otherwise the event is not a response to anything
 findParentEventOf :: Event -> Maybe EventId
 findParentEventOf event =
-  let find' _ (Just eid, _) = Just eid
-      find' [] (_, Just rid) = Just rid
-      find' [] (Nothing, Nothing) = Nothing
-      find' (e : tags) (_, rootEid) =
+  let find' [] rootEid = rootEid
+      find' (e : tags) rootEid =
         case e of
           ETag eid _ (Just Reply) -> Just eid
-          ETag rid _ (Just Root) -> find' tags (Nothing, Just rid)
-          _ -> find' tags (Nothing, rootEid)
-   in find' (tags event) (Nothing, Nothing)
+          ETag rid _ (Just Root)  -> find' tags (Just rid)
+          _ -> find' tags rootEid
+   in find' (tags event) Nothing
 
 isEtag :: Tag -> Bool
 isEtag ETag {} = True
