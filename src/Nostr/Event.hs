@@ -181,14 +181,14 @@ instance ToJSON Tag where
        case (relayUrl, marker) of 
         (Nothing, Nothing) -> []
         (Nothing, _) -> [String "", toJSON marker]
-        (_, _) -> [toJSON relayUrl, toJSON marker]
+        (_, _) -> [toJSON relayUrl] ++ maybe [] (singleton . toJSON) marker 
 
     toJSON (PTag xo relayUrl name) =
       Array . fromList $ [String "p", toJSON xo] ++ 
         case (relayUrl, name) of 
           (Nothing, Nothing) -> []
           (Nothing, _) -> [String "", toJSON name]
-          (_, _) -> [toJSON relayUrl, toJSON name]
+          (_, _) -> [toJSON relayUrl] ++ maybe [] (singleton . toJSON) name
           
     toJSON (XTag t) = 
       Array $
