@@ -104,7 +104,7 @@ connectRelays nn sendMsg sink = do
         case (resp, hashableResp) of
           (Right (EventReceived subId event), Right (HashableEventReceived _ he))-> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
-            case (verifySignature event && validateEventHash (event ^. #eventId, he)) of 
+            case verifySignature (event, he) of 
               False -> 
                 liftIO . logRelayError relay . pack
                   $ "Failed signature verification of event="  

@@ -245,10 +245,6 @@ signEvent u sk xo = do
   where
     eid = EventId . SHA256.hash . toStrict . encode $ u
 
-validateEventHash :: (EventId, HashableEvent) -> Bool
-validateEventHash (eid, he) = 
-    (getEventId eid) == (SHA256.hash . toStrict . encode $ he)
-
 -- TODO: use this to debug the problems with verifying signatures
 -- checking below event (taken from nostr) works with verifyThis function
 -- {
@@ -269,11 +265,14 @@ verifyThis eid pubKey signature = do
   mm <- msg id
   pure $ verifyBip340 pk mm si
 
-verifySignature :: Event -> Bool
-verifySignature e =
+validateEventHash :: (EventId, HashableEvent) -> Bool
+validateEventHash (eid, he) = 
+    getEventId eid == (SHA256.hash . toStrict . encode) he
+
+verifySignature :: (Event, HashableEvent) -> Bool
+verifySignature (e, he) =
   case msg . getEventId . eventId $ e of
-    -- Just m -> validateEventId e && verifyBip340 (pubKey e) m (sig e)
-    Just m -> verifyBip340 (pubKey e) m $ sig e
+    Just m -> validateEventHash (e ^. #eventId, he) && verifyBip340 (pubKey e) m (sig e)
     Nothing -> False
 
 textNote :: Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
