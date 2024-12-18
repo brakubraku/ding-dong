@@ -48,9 +48,8 @@ import Nostr.Response
 import Optics
 import Prelude hiding (map)
 import Data.Time
-import Nostr.Event (verifySignature, validateEventId)
+import Nostr.Event
 import Utils
-import Debug.Trace (traceM)
 
 data WebSocketAction = 
   WebSocketOpen Relay | 
@@ -97,24 +96,19 @@ connectRelays nn sendMsg sink = do
 
       WS.addEventListener socket "message" $ \v -> do
         msg <- valToStr =<< WS.data' v
+        let msgToParse = fromStrict . encodeUtf8 . strToText $ msg
         resp <-
-          pure
-            . eitherDecode @Response
-            . fromStrict
-            . encodeUtf8
-            . strToText
-            $ msg
-        case resp of
-          Right (EventReceived subId event) -> do
+          pure . eitherDecode @Response $ msgToParse
+        hashableResp <- 
+          pure . eitherDecode @HashableResponse $ msgToParse
+        case (resp, hashableResp) of
+          (Right (EventReceived subId event), Right (HashableEventReceived _ he))-> do
             subs <- liftIO . readMVar $ (nn ^. #subscriptions)
-            when (not $ validateEventId event) $ 
-             traceM ("branko-failed-hash-validation: " <> show msg)
-            case (verifySignature event) of -- TODO: verify hash of event as well
+            case (verifySignature event && validateEventHash (event ^. #eventId, he)) of 
               False -> 
-                liftIO
-                  . logRelayError relay
-                  . pack
-                  $ "Failed signature verification of eventId=" <> show event
+                liftIO . logRelayError relay . pack
+                  $ "Failed signature verification of event="  
+                    <> show event <> " from msg=" <> show msg
               True -> 
                 case Map.lookup subId subs of
                   Just subscription -> do
@@ -132,15 +126,15 @@ connectRelays nn sendMsg sink = do
                         <> " not found in responseChannels. Event received="
                         <> show event
 
-          Right (Nostr.Response.EOSE subId) -> do
+          (Right (Nostr.Response.EOSE subId), _) -> do
             liftIO . runReaderT (changeState subId relay (fmap . const $ Nostr.Network.EOSE)) $ nn
-          Right (Nostr.Response.OK eid True _) -> do
+          (Right (Nostr.Response.OK eid True _), _) -> do
             liftIO . flip runReaderT nn $ setResultSuccess eid relay
-          Right (Nostr.Response.OK eid False reason) -> do
+          (Right (Nostr.Response.OK eid False reason), _) -> do
             liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
-          Right _ -> do 
+          (Right _, _) -> do 
                liftIO . logRelayError relay . pack $ "Uknown response: " <> show msg 
-          Left errMsg -> do 
+          (Left errMsg, _) -> do 
                liftIO . logRelayError relay . pack $ "Decoding failed with: " <> show errMsg <> " for response=" <> show msg
 
       WS.addEventListener socket "close" $ \e -> do

@@ -24,6 +24,7 @@ library
                       Nostr.Filter
                       Nostr.Kind
                       Nostr.Event
+                      Nostr.HashableEvent
                       Nostr.Keys
                       Nostr.Profile
                       Nostr.WebSocket

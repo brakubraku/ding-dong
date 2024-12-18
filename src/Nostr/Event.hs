@@ -34,6 +34,7 @@ import Nostr.Kind
 import Nostr.Profile (Profile (..), RelayURL)
 import Nostr.Relay
 import Optics hiding (uncons)
+import Nostr.HashableEvent (HashableEvent)
 
 newtype EventId = EventId
   { getEventId :: ByteString
@@ -244,15 +245,9 @@ signEvent u sk xo = do
   where
     eid = EventId . SHA256.hash . toStrict . encode $ u
 
-
--- TODO: in order for this to work, you must be able to encode 
---       UnsignedEvent fully - i.e. your ToJSON instance must be complete.
---       I suspect I am not encoding the full "Tags specification", or likely
---       other things as well. Or just somehow hash the bytestring representation of 
---       those event parts which are hashed into eid
-validateEventId :: Event -> Bool
-validateEventId e = 
-    (getEventId . eventId $ e) == (SHA256.hash . toStrict . encode $ fromEvent e)
+validateEventHash :: (EventId, HashableEvent) -> Bool
+validateEventHash (eid, he) = 
+    (getEventId eid) == (SHA256.hash . toStrict . encode $ he)
 
 -- TODO: use this to debug the problems with verifying signatures
 -- checking below event (taken from nostr) works with verifyThis function

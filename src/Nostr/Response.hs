@@ -2,7 +2,6 @@
 
 module Nostr.Response where
 
-import Control.Monad (mzero)
 import Data.Aeson
 import Data.Maybe
 import Data.Text (Text)
@@ -11,6 +10,19 @@ import qualified Data.Vector as V
 import Nostr.Event
 import Nostr.Relay
 import Nostr.Request (SubscriptionId)
+import Nostr.HashableEvent
+
+data HashableResponse = HashableEventReceived SubscriptionId HashableEvent
+
+instance FromJSON HashableResponse where
+   parseJSON = withArray "ServerResponse" $ \arr -> do
+    type' <- parseJSON $ arr V.! 0
+    case type' of
+      String "EVENT" -> do
+        se <- parseJSON $ arr V.! 2
+        subid <- parseJSON $ arr V.! 1
+        pure $ HashableEventReceived subid se
+      _ -> fail "Not an event"
 
 data Response
   = EventReceived SubscriptionId Event
