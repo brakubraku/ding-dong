@@ -66,7 +66,7 @@ start = do
         keys
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
-  lastNotifDate <- loadLastNotif 
+  lastNotifDate <- loadLastNotifTime 
   let notifsFilter =
             \(Since s) (Until u) ->
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
@@ -269,7 +269,7 @@ updateModel nn rl pl action model =
             Nothing
         runLoop sink = 
           do
-            lnd <- loadLastNotif
+            lnd <- loadLastNotifTime
             doSubscribe lnd sink 
             -- subscription will terminate when any relay returns an error
             -- and new one will be created instead. you want this with 

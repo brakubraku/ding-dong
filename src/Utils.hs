@@ -44,8 +44,8 @@ getLocation = jsg ("window" :: String) ! ("location" :: String)
 lastNotifStorageId :: Text
 lastNotifStorageId = pack "last-notif-date"
 
-loadLastNotif :: JSM UTCTime 
-loadLastNotif = do 
+loadLastNotifTime :: JSM UTCTime 
+loadLastNotifTime = do 
   now <- liftIO getCurrentTime
   ln <- getLocalStorage lastNotifStorageId
   case ln of
