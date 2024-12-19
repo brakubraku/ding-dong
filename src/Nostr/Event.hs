@@ -58,7 +58,7 @@ data Tag
 data Event = Event
   { eventId :: EventId,
     pubKey :: XOnlyPubKey,
-    created_at :: UTCTime,
+    created_at :: Integer,
     kind :: Kind,
     tags :: [Tag],
     content :: Text,
@@ -74,7 +74,7 @@ instance Ord Event where
 
 data UnsignedEvent = UnsignedEvent
   { pubKey' :: XOnlyPubKey,
-    created_at' :: UTCTime,
+    created_at' :: Integer,
     kind' :: Kind,
     tags' :: [Tag],
     content' :: Text
@@ -125,7 +125,7 @@ instance FromJSON Event where
     Event
       <$> e .: "id"
       <*> e .: "pubkey"
-      <*> (fromSeconds <$> e .: "created_at")
+      <*> e .: "created_at"
       <*> e .: "kind"
       <*> e .: "tags"
       <*> e .: "content"
@@ -136,7 +136,7 @@ instance ToJSON Event where
     object
       [ "id" .= exportEventId eventId,
         "pubkey" .= exportXOnlyPubKey pubKey,
-        "created_at" .= toSeconds created_at,
+        "created_at" .= created_at,
         "kind" .= kind,
         "tags" .= tags,
         "content" .= content,
@@ -149,7 +149,7 @@ instance ToJSON UnsignedEvent where
       fromList
         [ Number 0,
           String $ pack $ exportXOnlyPubKey $ pubKey',
-          Number $ fromIntegral $ toSeconds $ created_at',
+          Number $ fromIntegral $ created_at',
           toJSON kind',
           toJSON tags',
           toJSON content'
@@ -279,7 +279,7 @@ textNote :: Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
     { pubKey' = xo,
-      created_at' = t,
+      created_at' = toSeconds t,
       kind' = TextNote,
       tags' = [],
       content' = note
@@ -289,7 +289,7 @@ likeEvent :: Event -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 likeEvent e xo t =
   UnsignedEvent
     { pubKey' = xo,
-      created_at' = t,
+      created_at' = toSeconds t,
       kind' = Reaction,
       tags' = [ETag (e ^. #eventId) Nothing (Just Mention), PTag (e ^. #pubKey) Nothing Nothing ],
       content' = "+"
@@ -299,7 +299,7 @@ setMetadata :: Profile -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setMetadata profile xo t =
   UnsignedEvent
     { pubKey' = xo,
-      created_at' = t,
+      created_at' = toSeconds t,
       kind' = Metadata,
       tags' = [XTag "dingo"], -- just a tatoo
       content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
@@ -316,7 +316,7 @@ setContacts :: [XOnlyPubKey] -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo,
-      created_at' = t,
+      created_at' = toSeconds t,
       kind' = Contacts,
       tags' = map (\c -> PTag c (Just "") Nothing) contacts,
       content' = ""
@@ -326,7 +326,7 @@ deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     { pubKey' = xo,
-      created_at' = t,
+      created_at' = toSeconds t,
       kind' = Delete,
       tags' = toDelete,
       content' = reason
@@ -338,7 +338,7 @@ newEvent :: Text -> XOnlyPubKey -> UTCTime -> Event
 newEvent c pk t = Event {
   eventId = EventId "0",
   pubKey = pk,
-  created_at = t,
+  created_at = toSeconds t,
   kind = TextNote,
   tags = [],
   content = c,

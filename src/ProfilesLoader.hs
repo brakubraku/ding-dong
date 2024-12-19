@@ -20,6 +20,7 @@ import Data.Maybe (catMaybes)
 import Data.Bifunctor
 import Nostr.Kind (Kind(Metadata, RelayList))
 import ProfilesLoader.Types
+import Data.DateTime (fromSeconds)
 
 createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey ProfOrRelays)
 createProfilesLoader = do
@@ -50,10 +51,10 @@ extractProfileFromResp (event, relay)
     xo = pubKey event
     parseProfiles e =
           case readProfile e of
-            Just p -> Just (p, created_at e, relay)
+            Just p -> Just (p, fromSeconds $ created_at e, relay)
             Nothing -> Nothing
     parseRelays e = 
-         let rtags = first (catMaybes . fmap rTagToRelay) (getRTags e, e ^. #created_at)
+         let rtags = first (catMaybes . fmap rTagToRelay) (getRTags e, fromSeconds $ e ^. #created_at)
          in case fst rtags of 
               [] -> Nothing
               _ -> Just rtags

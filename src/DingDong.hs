@@ -51,6 +51,7 @@ import Data.Default
 import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
 import ProfilesLoader.Types (ProfOrRelays)
+import Data.DateTime (fromSeconds)
 
 start :: JSM ()
 start = do
@@ -1176,7 +1177,7 @@ displayPagedEvents showIntervals pw m pml screen =
     since' = f ^. #pgStart % at pg
     since = fromMaybe "" (showt <$> since')
     ps = maybe since (showt . O.view #created_at . fst . fst) $ Prelude.uncons notes
-    pu = showt $ maybe until (O.view #created_at . fst . snd) $ Prelude.unsnoc notes
+    pu = showt $ maybe until (fromSeconds . O.view #created_at . fst . snd) $ Prelude.unsnoc notes
 
 areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =
@@ -1847,7 +1848,7 @@ loadKeys = do
 eventAge :: UTCTime -> Event -> String
 eventAge now e =
   let ageSeconds =
-        round $ diffUTCTime now (e ^. #created_at)
+        round $ diffUTCTime now (fromSeconds $ e ^. #created_at)
       format :: Integer -> String
       format s
         | days > 0 = show days <> "d"
