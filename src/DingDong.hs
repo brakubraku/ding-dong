@@ -1176,7 +1176,7 @@ displayPagedEvents showIntervals pw m pml screen =
     (Until until) = f ^. #until
     since' = f ^. #pgStart % at pg
     since = fromMaybe "" (showt <$> since')
-    ps = maybe since (showt . O.view #created_at . fst . fst) $ Prelude.uncons notes
+    ps = maybe since (showt . fromSeconds . O.view #created_at . fst . fst) $ Prelude.uncons notes
     pu = showt $ maybe until (fromSeconds . O.view #created_at . fst . snd) $ Prelude.unsnoc notes
 
 areSubsRunning :: Model -> Page -> Bool
