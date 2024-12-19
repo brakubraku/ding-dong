@@ -70,7 +70,6 @@ connectRelays nn sendMsg sink = do
     conRelay (recnt, lastReconnect) relay = do
       isReconnectingMVar <- liftIO $ newMVar False
       socket <- createWebSocket (relay ^. #uri) []
-
       let 
         reconnect =
           do
@@ -79,7 +78,7 @@ connectRelays nn sendMsg sink = do
               liftIO $ markIsConnected False relay
               liftIO $ modifyMVar_ isReconnectingMVar (const . pure $ True)
               now <- liftIO getCurrentTime
-              liftIO . print $ show now <> "reconnecting " <> show relay
+              liftIO . print $ show now <> ": reconnecting " <> show relay
               let diff = (round $ diffUTCTime now lastReconnect)
               case (recnt > 3, diff > 1) of -- TODO: take time into account?
                 (True, _) -> do
