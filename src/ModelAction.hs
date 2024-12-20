@@ -94,7 +94,6 @@ data Action where
   RemoveRelay :: Text -> Action
   Reload :: Action
   ListenToNotifs :: Action
-  ProcessNewNotifs :: [(Event, Relay)] -> Action
   ShowNotifications :: Action
   SubscribeForPagedReactionsTo :: (Lens' Model PagedEventsModel) ->
                                     Page ->

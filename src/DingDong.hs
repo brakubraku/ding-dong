@@ -263,7 +263,7 @@ updateModel nn rl pl action model =
             nn
             PeriodicForever
             [sinceF lnd $ Mentions [model ^. #me]]
-            ProcessNewNotifs
+            (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
             Nothing
             getEventRelayEither
             Nothing
@@ -277,10 +277,9 @@ updateModel nn rl pl action model =
             -- notifications
             liftIO . waitForReconnect $ sink
             runLoop sink            
-          
-    ProcessNewNotifs ers -> 
-       let update er@(e, r) m =
-              m & #fromRelays % at e 
+        processNewNotifs m ers =
+          let update er@(e, r) m =
+                m & #fromRelays % at e 
                      %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
                 & case (e `elem` (fst <$> m ^. #notifsNew), 
                         e `elem` (fst <$> m ^. #notifs % #events), 
@@ -288,8 +287,7 @@ updateModel nn rl pl action model =
                   of 
                     (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
                     _ -> id   
-           updated = Prelude.foldr update model ers
-       in noEff updated
+          in Prelude.foldr update m ers
 
     StartFeedLongRunning since contacts ->
        effectSub model $ \sink -> 
