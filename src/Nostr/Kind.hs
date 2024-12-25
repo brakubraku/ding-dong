@@ -1,7 +1,6 @@
 module Nostr.Kind where
 
 import Data.Aeson
-import Data.Maybe
 import Data.Scientific
 
 data Kind
@@ -16,7 +15,7 @@ data Kind
   | CalendarRSVP
   | RelayList
   | Reaction
-  | UnknownKind Int
+  | UnknownKind Scientific
   deriving (Eq, Show, Ord)
 
 instance FromJSON Kind where
@@ -34,7 +33,7 @@ instance FromJSON Kind where
         31924 -> Calendar
         31925 -> CalendarRSVP
         10002 -> RelayList
-        k -> UnknownKind . fromMaybe (-1) . toBoundedInteger $ k
+        k -> UnknownKind k
 
 instance ToJSON Kind where
   toJSON Metadata = Number 0
@@ -48,4 +47,4 @@ instance ToJSON Kind where
   toJSON Calendar = Number 31924
   toJSON CalendarRSVP = Number 31925
   toJSON RelayList = Number 10002
-  toJSON (UnknownKind k) = Number . fromRational . toRational $ k -- TODO: wtf
+  toJSON (UnknownKind k) = Number k

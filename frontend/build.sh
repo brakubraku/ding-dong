@@ -16,10 +16,10 @@ cp -r ./browser_wasi_shim dist/
 
 pushd ../
 if command -v wasm32-wasi-cabal &>/dev/null; then
-    wasm32-wasi-cabal build --allow-newer
+    wasm32-wasi-cabal build nostr-wasm --allow-newer
 else
     cabal \
-        build \
+        build nostr-wasm \
         --with-compiler=wasm32-wasi-ghc \
         --with-ghc-pkg=wasm32-wasi-ghc-pkg \
         --with-hsc2hs=wasm32-wasi-hsc2hs \
