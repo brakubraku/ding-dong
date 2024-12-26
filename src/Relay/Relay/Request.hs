@@ -1,33 +1,32 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-module Nostr.NewRequest where
+module Relay.Request where
 
 import Data.Aeson
-import Data.Text                    (Text)
+import Data.Text (Text)
 
 import Nostr.Event
-import qualified Data.Vector as V
-import MyCrypto (XOnlyPubKey)
 import Nostr.Kind
-import Data.Time
-import Data.Aeson.Types (parseMaybe)
+
+import qualified Data.Vector as V
+
+import MyCrypto
 
 type SubscriptionId = Text
 
 data Subscription = Subscription
-  { filters :: [Filter]
-  , subId   :: SubscriptionId
+  { filters :: [Filter],
+    subId :: SubscriptionId
   }
   deriving (Eq, Show)
 
-data NewRequest
+data Request
   = SendEvent Event
   | Subscribe Subscription
   | Close SubscriptionId
   deriving (Eq, Show)
 
-instance FromJSON NewRequest where 
+instance FromJSON Request where
   parseJSON = withArray "Nostr request" $ \arr -> do
     type' <- parseJSON $ arr V.! 0
     case type' of
@@ -37,19 +36,20 @@ instance FromJSON NewRequest where
       String "CLOSE" -> do
         subId <- parseJSON $ arr V.! 1
         pure $ Close subId
-      String "REQ" -> do 
+      String "REQ" -> do
         subId <- parseJSON $ arr V.! 1
         filters <- parseFilters $ V.drop 2 arr
         pure . Subscribe $ Subscription (V.toList filters) subId
       _ -> fail "Unknown Nostr request"
-   where 
-    parseFilters = mapM parseJSON
+    where
+      parseFilters = mapM parseJSON
 
 data Filter = Filter {
   ids :: Maybe [EventId],
   authors :: Maybe [XOnlyPubKey],
   kinds :: [Kind],
-  tags :: Maybe [Tag],
+  etags :: Maybe [EventId],
+  ptags :: Maybe [XOnlyPubKey],
   since :: Maybe Int,
   until :: Maybe Int,
   limit :: Maybe Int
@@ -58,13 +58,12 @@ data Filter = Filter {
 
 instance FromJSON Filter where 
   parseJSON = withObject "Filter" $ \f -> 
-    Filter
+   Filter
      <$> f .:? "ids" 
      <*> f .:? "authors" 
      <*> f .: "kinds" 
-     <*> f .:? "tags"
+     <*> f .:? "#e"
+     <*> f .:? "#p"
      <*> f .:? "since" 
      <*> f .:? "until" 
      <*> f .:? "limit" 
-
--- ddf = decode "{\"since\":1234,\"kinds\":[0]}" :: Maybe Filter

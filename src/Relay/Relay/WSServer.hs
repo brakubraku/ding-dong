@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
-module WSServer where
+module Relay.WSServer where
 
 import Data.Char (isPunctuation, isSpace)
 import Data.Monoid (mappend)
@@ -11,8 +11,9 @@ import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.WebSockets as WS
-import Nostr.NewRequest
 import Data.Aeson.Decoding
+
+import Relay.Request
 
 type Client = (Text, WS.Connection)
 type ServerState = [Client]
@@ -37,8 +38,8 @@ broadcast message clients = do
    T.putStrLn message
    forM_ clients $ \(_, conn) -> WS.sendTextData conn message
 
-main :: IO ()
-main = do
+runServer :: IO ()
+runServer = do
    state <- newMVar newServerState
    print "here"
    WS.runServer "127.0.0.1" 80 $ application state
@@ -52,7 +53,7 @@ application state pending = do
         print $ "Waiting for msg: " 
         forever $ do 
           msg <- WS.receiveData conn
-          let newRequest = decode @NewRequest msg
+          let newRequest = decode @Request msg
           print $ "Received msg: " <> show msg
           print $ "Parsed msg: " <> show newRequest
         -- case msg of  

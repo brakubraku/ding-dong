@@ -19,7 +19,6 @@ library
     import:           warnings
     exposed-modules: 
                       Nostr.Request
-                      Nostr.NewRequest
                       Nostr.Response
                       Nostr.Relay
                       Nostr.Filter
@@ -97,10 +96,11 @@ executable nostr-wasm
     , optics
 
 executable websockets-server
-  Hs-source-dirs:   src/TestRelay
-  Main-is:          WSServer.hs
-  ghc-options: -main-is WSServer.main 
-  -- Ghc-options:      -Wall
+  Hs-source-dirs:   src/Relay
+  Main-is:          Main.hs
+  other-modules:    Relay.WSServer
+                    Relay.Request
+  -- ghc-options: -main-is WSServer.main 
   Default-language: Haskell2010
 
   Build-depends:
@@ -108,4 +108,5 @@ executable websockets-server
     websockets,
     text,
     ding-dong,
-    aeson
+    aeson,
+    vector
