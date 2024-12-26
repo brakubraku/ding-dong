@@ -53,10 +53,10 @@ application state pending = do
         print $ "Waiting for msg: " 
         forever $ do 
           msg <- WS.receiveData conn
-          let newRequest = decode @Request msg
+          let newRequest = eitherDecode @Request msg
           print $ "Received msg: " <> show msg
           print $ "Parsed msg: " <> show newRequest
-        -- case msg of  
+        -- case msg of  j
         --   _
         --     | not (prefix `T.isPrefixOf` msg) -> do
         --         print $ "Nizzles not giving right prefix"

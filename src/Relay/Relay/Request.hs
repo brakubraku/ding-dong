@@ -47,7 +47,7 @@ instance FromJSON Request where
 data Filter = Filter {
   ids :: Maybe [EventId],
   authors :: Maybe [XOnlyPubKey],
-  kinds :: [Kind],
+  kinds :: Maybe [Kind],
   etags :: Maybe [EventId],
   ptags :: Maybe [XOnlyPubKey],
   since :: Maybe Int,
@@ -61,7 +61,7 @@ instance FromJSON Filter where
    Filter
      <$> f .:? "ids" 
      <*> f .:? "authors" 
-     <*> f .: "kinds" 
+     <*> f .:? "kinds" 
      <*> f .:? "#e"
      <*> f .:? "#p"
      <*> f .:? "since" 
