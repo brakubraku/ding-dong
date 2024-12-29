@@ -368,8 +368,15 @@ isEtag :: Tag -> Bool
 isEtag ETag {} = True
 isEtag _ = False
 
+isPtag :: Tag -> Bool
+isPtag PTag {} = True
+isPtag _ = False
+
 getETags :: Event -> [Tag]
 getETags e = filter isEtag . tags $ e
+
+getPTags :: Event -> [Tag]
+getPTags e = filter isPtag . tags $ e
 
 isRtag :: Tag -> Bool
 isRtag RTag {} = True

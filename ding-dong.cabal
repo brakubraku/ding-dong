@@ -100,6 +100,7 @@ executable websockets-server
   Main-is:          Main.hs
   other-modules:    Relay.WSServer
                     Relay.Request
+                    Relay.Response
   -- ghc-options: -main-is WSServer.main 
   Default-language: Haskell2010
 
@@ -109,4 +110,7 @@ executable websockets-server
     text,
     ding-dong,
     aeson,
-    vector
+    vector,
+    mtl,
+    containers,
+    optics
