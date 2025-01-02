@@ -33,6 +33,5 @@ application mdb pending = do
         Right (Subscribe s) -> do
           let result = runFilters db (filters s)
           let eose = encode $ EOSE (subId s)
-          unless (null result) $ do
-            mapM_ (WS.sendTextData conn) $ encode . EventReceived (subId s) <$> result
+          mapM_ (WS.sendTextData conn) $ encode . EventReceived (subId s) <$> result
           WS.sendTextData conn eose
