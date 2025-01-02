@@ -1,6 +1,6 @@
 module Main where 
 
-import Relay.Relay
+import Relay.RelayServer
 import Relay.Database
 import Control.Concurrent
 

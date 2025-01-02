@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Relay.Relay where
+module Relay.RelayServer where
 
 import Control.Concurrent (MVar, readMVar)
 import Control.Monad (forever, unless)

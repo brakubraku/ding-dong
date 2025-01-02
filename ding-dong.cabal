@@ -98,7 +98,7 @@ executable nostr-wasm
 executable websockets-server
   Hs-source-dirs:   src/Relay
   Main-is:          Main.hs
-  other-modules:    Relay.Relay
+  other-modules:    Relay.RelayServer
                     Relay.Request
                     Relay.Database
   -- ghc-options: -main-is WSServer.main 
