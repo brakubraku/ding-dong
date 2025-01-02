@@ -98,9 +98,9 @@ executable nostr-wasm
 executable websockets-server
   Hs-source-dirs:   src/Relay
   Main-is:          Main.hs
-  other-modules:    Relay.WSServer
+  other-modules:    Relay.Relay
                     Relay.Request
-                    Relay.Response
+                    Relay.Database
   -- ghc-options: -main-is WSServer.main 
   Default-language: Haskell2010
 
@@ -113,4 +113,8 @@ executable websockets-server
     vector,
     mtl,
     containers,
-    optics
+    optics,
+    base16,
+    bytestring,
+    time,
+    datetime

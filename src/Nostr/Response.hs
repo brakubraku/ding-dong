@@ -53,6 +53,22 @@ instance FromJSON Response where
       unknown ->
         fail $ "Uknown response" <> show unknown
 
+instance ToJSON Response where 
+   toJSON r = 
+    case r of 
+      EventReceived sid e -> 
+        Array $
+          V.fromList
+            [ String "EVENT",
+              toJSON sid,
+              toJSON e
+            ]
+      EOSE sid ->
+        Array $ 
+          V.fromList 
+            [String "EOSE", toJSON sid]
+      _ -> Array $ V.fromList []
+
 getEvent :: Response -> Maybe Event
 getEvent (EventReceived _ e) = Just e
 getEvent _ = Nothing

@@ -1,7 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-module Relay.Response where
+module Relay.Database where
 
 import Control.Monad.State.Lazy
 import qualified Data.Map.Strict as M
@@ -13,6 +14,9 @@ import Relay.Request
 import Optics
 
 import Data.List (intersect)
+import Nostr.Keys 
+import Data.Time
+import Data.DateTime
 
 data DB = DB
   { byAuthor :: M.Map XOnlyPubKey [Event],
@@ -64,10 +68,21 @@ emptyDB = DB M.empty M.empty M.empty M.empty M.empty
 
 buildTestDB :: [Event] -> DB 
 buildTestDB es = Prelude.foldr add emptyDB es
-    
--- testEvents = [
---   Event {
---     pubKey = xo,
---     created_at = 
---   }
--- ]
+
+createEvent :: UTCTime -> Keys -> Maybe Event
+createEvent when Keys{..} = 
+  let ue = UnsignedEvent {
+      pubKey' = xo,
+      created_at' = toSeconds when,
+      kind' = TextNote,
+      tags' = [],
+      content' = "so what"
+    }
+  in signEvent ue secKey xo
+
+someEvents :: IO [Event]
+someEvents = do 
+  now <- Data.Time.getCurrentTime
+  newKeys <- generateKeys
+  pure $ 
+   catMaybes . take 10 . repeat $ createEvent now newKeys 

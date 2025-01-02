@@ -134,7 +134,8 @@ connectRelays nn sendMsg sink = do
           (Right _, _) -> do 
                liftIO . logRelayError relay . pack $ "Uknown response: " <> show msg 
           (Left errMsg, _) -> do 
-               liftIO . logRelayError relay . pack $ "Decoding failed with: " <> show errMsg <> " for response=" <> show msg
+               liftIO . logRelayError relay . pack $
+                "Decoding failed with: " <> show errMsg <> " for response=" <> show msgToParse
 
       WS.addEventListener socket "close" $ \e -> do
         code <- codeToCloseCode <$> WS.code e
