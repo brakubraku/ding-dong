@@ -11,6 +11,7 @@ module Nostr.Filter
     anytimeF,
     sinceF,
     textNotesWithDeletes,
+    reactionsPagedFilter
   )
 where
 
@@ -46,6 +47,7 @@ data Filter
   | AllMetadata
   | RelayListMetadata [XOnlyPubKey]
   | ReactionsTo [EventId]
+  | ReactionsOf [XOnlyPubKey]
   | Mentions [XOnlyPubKey]
   deriving (Eq, Show, Ord)
 
@@ -62,6 +64,10 @@ toPairs (ReactionsTo eids) =
     ("#e", toJSON eids)
     -- ("authors", toJSON xos)
     -- ("limit", Number 1)
+  ]
+toPairs (ReactionsOf xos) =
+  [ ("kinds", toJSON [Reaction]),
+    ("authors", toJSON xos)
   ]
 toPairs (Mentions xos) =
   [ ("#p", toJSON xos)
@@ -139,6 +145,15 @@ textNotesWithDeletes since until xos =
     -- but instead take all of them until present
     DatedFilter (DeletesFilter xos) since Nothing
   ]
+
+reactionsPagedFilter ::
+  Maybe UTCTime ->
+  Maybe UTCTime ->
+  [XOnlyPubKey] ->
+  [DatedFilter]
+reactionsPagedFilter since until xos =
+  [DatedFilter (ReactionsOf xos) since until, 
+  DatedFilter (DeletesFilter xos) since Nothing]
 
 -- $(deriveFromJSON defaultOptions{constructorTagModifier = fmap toLower} ''Filter)
 

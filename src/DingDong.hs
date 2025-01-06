@@ -52,6 +52,9 @@ import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import Data.List.Extra (headDef)
 import ProfilesLoader.Types (ProfOrRelays)
 import Data.DateTime (fromSeconds)
+import qualified Nostr.Reaction as Reaction
+import Debug.Trace
+import Nostr.Log (logError)
 
 start :: JSM ()
 start = do
@@ -74,11 +77,13 @@ start = do
       update = (\a (CompactModel m) -> CompactModel <$> updateModel nn reactionsLoader profilesLoader a m)
       initialModel =
         CompactModel $ Model 
-          (defaultPagedModel (Until now))
+          (defFeedEvntsModel now)
           [] 
-          ((defaultPagedModel (Until lastNotifDate)) {filter = Just notifsFilter})
+          (defNotifEvntsModel lastNotifDate notifsFilter)
           []
           ""
+          Map.empty
+          Map.empty
           Map.empty
           ""
           relaysList
@@ -234,7 +239,7 @@ updateModel nn rl pl action model =
                 (Just u)
                 contacts
           updated =
-            model & #feed .~ defaultPagedModel (Until $ model ^. #now)
+            model & #feed .~ defFeedEvntsModel (model ^. #now)
                   & #feed % #filter ?~ pagedFilter
        in batchEff
             updated
@@ -367,8 +372,7 @@ updateModel nn rl pl action model =
               sink $ SubscribeForEmbeddedReplies enotes screen
               sink . SubscribeForEmbedded $ enotes
               when loadMore $
-                sink . LoadMoreEvents pml $
-                  screen
+                sink $ LoadMoreEvents pml screen
 
     ShowPrevious pml ->
       let newModel =
@@ -416,7 +420,7 @@ updateModel nn rl pl action model =
                     nn
                     AllAtEOS
                     (filter (Since newSince) (Until until))
-                    (PagedEventsProcess False pml page)
+                    (model ^. pml % #process $ page)
                     (Just $ SubState page)
                     getEventRelayEither
                     Nothing
@@ -675,10 +679,57 @@ updateModel nn rl pl action model =
         load pl $ maybe [] Set.toList $ model ^. #profileContacts % at xo
         pure $ GoPage (Following xo) Nothing
 
+    LoadProfileReactions xo page -> 
+      let 
+        reactions = defProfReactionsModel xo $ model ^. #now
+      in 
+        batchEff model $
+         pure <$> 
+          [LoadMoreEvents (#profileReactions % at xo % non reactions) page]
+
+    ProcessProfileReactions xo page rs -> 
+      let reactions = catMaybes $ Reaction.extract <$> removeDeletetedAndDuplicates rs
+          -- TODO: order them
+          processed = (\r -> (r, getReaction r)) <$> reactions
+          pml = #profileReactions % at xo % _Just 
+          -- put newly received at the end
+          updated = model & pml % #events %~ \es -> es ++ processed
+          mPagedModel = updated ^? pml
+          updatedReactions = fromMaybe [] $ updated ^? pml % #events
+          updateReactionsTo :: [(Event, Relay)] -> Model -> Model
+          updateReactionsTo ers m = 
+            Prelude.foldr 
+             (\e m -> m & #profileReactionsTo % at (e ^. #eventId) ?~ e) 
+             m 
+             (fst <$> ers)
+      in 
+        effectSub updated $ \sink -> do 
+          case mPagedModel of 
+            Nothing -> 
+              liftIO $ do 
+                 logError $ "Missing PagedNotes model for loading reactions"
+                 sink NoAction
+            Just pagedModel -> do
+              subscribe
+                nn
+                AllAtEOS
+                [DatedFilter (EventsWithId (reactions ^.. folded % #reactionTo)) Nothing Nothing]
+                (\ers -> UpdateModel (updateReactionsTo ers) [])
+                (Just . SubState $ page)
+                getEventRelayEither
+                Nothing
+                sink
+              let loadMore =
+                    length updatedReactions < (pagedModel ^. #pgSize) * (pagedModel ^. #pg) + (pagedModel ^. #pgSize)
+                      && (pagedModel ^. #factor) < 100 
+              traceM $ "branko-res: having=" <> show (length updatedReactions) <> " supposed to have at least=" <> show ((pagedModel ^. #pgSize) * (pagedModel ^. #pg) + (pagedModel ^. #pgSize)) <> " loading-more:" <> show loadMore
+              when loadMore $ 
+                liftIO . sink $ LoadMoreEvents (#profileReactions % at xo % non pagedModel) page
+
     LoadProfile isLoadNotes isLoadFollowing xo page ->
       let 
-         empty = defProfEvntsModel xo $ model ^. #now
-         updated = model & #profileEvents % at xo ?~ empty
+         textNotes = defProfEvntsModel xo $ model ^. #now
+         updated = model & #profileEvents % at xo ?~ textNotes
       in
          effectSub updated $ \sink -> do
           subscribe
@@ -691,16 +742,15 @@ updateModel nn rl pl action model =
             Nothing
             sink
           when isLoadNotes $ 
-            liftIO . sink $ 
-              LoadMoreEvents 
-                (#profileEvents % at xo % non empty) 
-                page
+            liftIO . sink $
+             LoadMoreEvents (#profileEvents % at xo % non textNotes) page
           when isLoadFollowing $ 
             liftIO . sink $ 
               LoadContactsOf 
                 xo
                 page
                 (UpdateField (#profileContacts % at xo))
+          liftIO . sink $ LoadProfileReactions xo page
 
     SubState p st ->
       let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
@@ -927,15 +977,12 @@ updateModel nn rl pl action model =
                   Nothing -> pure False
         loop
 
-    -- Note: this only works correctly when subscription is AtEOS,
-    --       i.e. all events are returned at once, not periodically as they arrive
-    --       This allows to handle Delete events effectivelly.
-    processReceivedEvents :: [(Event, Relay)] -> ([(Event, [Content])], [EventId], [XOnlyPubKey])
-    processReceivedEvents rs =
+    removeDeletetedAndDuplicates :: [(Event, Relay)] -> [Event]
+    removeDeletetedAndDuplicates rs =
       let (deleteEvts, otherEvts) =
             Prelude.partition
               (\e -> e ^. #kind == Delete)
-              (Set.toList . Set.fromList $ fst <$> rs)  -- to eliminate duplicates
+              (Set.toList . Set.fromList $ fst <$> rs) -- to eliminate duplicates
           deletions =
             catMaybes $
               deleteEvts
@@ -952,6 +999,14 @@ updateModel nn rl pl action model =
                       `elem` deletions
               )
               otherEvts
+       in evts
+
+    -- Note: this only works correctly when subscription is AtEOS,
+    --       i.e. all events are returned at once, not periodically as they arrive
+    --       This allows to handle Delete events effectivelly.
+    processReceivedEvents :: [(Event, Relay)] -> ([(Event, [Content])], [EventId], [XOnlyPubKey])
+    processReceivedEvents rs =
+      let evts = removeDeletetedAndDuplicates rs
           ecs = (\e -> (e, processContent e)) <$> evts
           embedded = filterBech . concat $ snd <$> ecs
           (eprofs, enotes) = partitionBechs embedded
@@ -1047,7 +1102,6 @@ safeUpdateLocalContacts newCs = do
    then setLocalStorage "my-contacts" $ Set.toList newCs 
    else liftIO . print $ "Not updating local contacts!"
 
-
 loadContactsFromStorage :: JSM [XOnlyPubKey]
 loadContactsFromStorage = fromRight defaultContacts <$> getLocalStorage "my-contacts"
 
@@ -1134,12 +1188,11 @@ displayFeed m =
 
 data PagedWhat = Notes | Notifications
 
-displayPagedEvents :: Bool -> PagedWhat -> Model -> (Lens' Model PagedEventsModel) -> Page -> View Action
-displayPagedEvents showIntervals pw m pml screen =
-  div_
+displayPagedContent :: Bool -> Model -> Lens' Model (PagedEventsModel a) -> Page -> View Action -> View Action
+displayPagedContent showIntervals m pml screen content = 
+   div_
     []
-    [ div_ [id_ "notes-container-top"] [],
-      bool (div_ [] []) (div_ [] [text (pu <> " --- " <> ps)]) showIntervals,
+    [ bool (div_ [] []) (div_ [] [text (pu <> " --- " <> ps)]) showIntervals,
       div_
         [ class_ "load-previous-container",
           bool
@@ -1152,30 +1205,56 @@ displayPagedEvents showIntervals pw m pml screen =
               onClick (ShowPrevious pml)
             ]
             [text "=<<"]
-        ],
-      (case pw of 
-        Notes -> 
-          div_
-            [class_ "notes-container"]
-            (displayPagedNote m pml <$> notes) -- TODO: ordering can be different
-        Notifications ->
-          div_ [] (displayPagedNotif m pml <$> notes)),
-      div_
+        ]
+      ,content
+      ,div_
         [class_ "load-next-container"]
-        [span_ [class_ "load-next", onClick (ShowNext pml screen)] [text ">>="]],
-      div_ [id_ "notes-container-bottom"] []
+        [span_ [class_ "load-next", onClick (ShowNext pml screen)] [text ">>="]]
     ]
+   where
+    f = m ^. pml
+    pgSize = f ^. #pgSize
+    pg = f ^. #pg
+    -- notes = take (pageSize * page + pageSize) $ f ^. #events
+    events = f ^. #getEvent <$> (take pgSize . drop (pg * pgSize) $ f ^. #events)
+    (Until until) = f ^. #until
+    since' = f ^. #pgStart % at pg
+    since = fromMaybe "" (showt <$> since')
+    ps = maybe since (showt . fromSeconds . O.view #created_at . fst ) $ Prelude.uncons events
+    pu = showt $ maybe until (fromSeconds . O.view #created_at . snd ) $ Prelude.unsnoc events
+
+displayPagedEvents :: Bool -> PagedWhat -> Model -> (Lens' Model PagedEvents) -> Page -> View Action
+displayPagedEvents showIntervals pw m pml screen =
+ displayPagedContent showIntervals m pml screen $
+      div_ [] [
+        (case pw of 
+          Notes -> 
+            div_
+              [class_ "notes-container"]
+              (displayPagedNote m pml <$> notes) -- TODO: ordering can be different
+          Notifications ->
+            div_ [] (displayPagedNotif m pml <$> notes))
+        ,div_ [id_ "notes-container-bottom"] []
+      ]
   where
     f = m ^. pml
     pgSize = f ^. #pgSize
     pg = f ^. #pg
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
     notes = take pgSize . drop (pg * pgSize) $ f ^. #events
-    (Until until) = f ^. #until
-    since' = f ^. #pgStart % at pg
-    since = fromMaybe "" (showt <$> since')
-    ps = maybe since (showt . fromSeconds . O.view #created_at . fst . fst) $ Prelude.uncons notes
-    pu = showt $ maybe until (fromSeconds . O.view #created_at . fst . snd) $ Prelude.unsnoc notes
+
+displayPagedReactions m pml screen = 
+  displayPagedContent True m pml screen $ 
+   div_ [] $
+      displayReaction <$> reactions
+  
+  where 
+    f = m ^. pml
+    pgSize = f ^. #pgSize
+    pg = f ^. #pg
+    reactions = take pgSize . drop (pg * pgSize) $ f ^. #events
+    displayReaction (re,r) = 
+      div_ [] [text $ showt (r ^. #content) <> " is a reaction to eventId=" <> showt (re ^. #reactionTo)]
 
 areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =
@@ -1303,7 +1382,7 @@ displayNoteShort withEmbed m ec@(e, _) =
 
     replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "↪"]
 
-displayPagedNote :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
+displayPagedNote :: Model -> (Lens' Model PagedEvents) -> (Event, [Content]) -> View Action
 displayPagedNote m pml ec@(e,_) 
     | isJust (findParentEventOf e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
@@ -1316,7 +1395,7 @@ displayPagedNote m pml ec@(e,_)
   where 
     emptyParent = div_ [] [text "Loading parent event"]
 
-displayPagedNotif :: Model -> (Lens' Model PagedEventsModel) -> (Event, [Content]) -> View Action
+displayPagedNotif :: Model -> (Lens' Model (PagedEventsModel a)) -> (Event, [Content]) -> View Action
 displayPagedNotif m pml ec@(e,_) =
     case e ^. #kind of 
       TextNote -> 
@@ -1521,6 +1600,7 @@ displayProfile isShowNotes m xo =
              if (not isShowNotes) 
              then (div_ [] [])
              else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
+        let reactionsDisplay = displayPagedReactions m (#profileReactions % at xo % non (defProfReactionsModel xo (m ^. #now))) (ProfilePage xo)
         let following = maybe [] Set.toList $ m ^. #profileContacts % at xo
         let follows = div_ 
                [class_ "profile-follows", onClick $ DisplayProfileContacts xo (Following xo)] 
@@ -1554,7 +1634,8 @@ displayProfile isShowNotes m xo =
                     [class_ "about"]
                     [span_ [] [text . fromMaybe "" $ p ^. #about]]
                 ],
-              notesDisplay
+              notesDisplay,
+              reactionsDisplay
             ]
    in div_
         [class_ "profile-page"]

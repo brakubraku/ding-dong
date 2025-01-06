@@ -27,17 +27,20 @@ import Nostr.Reaction
 import Nostr.Relay
 import Nostr.Request
 import Nostr.WebSocket
-import Optics
+import Optics as O
 import StoredRelay
 import ProfilesLoader.Types
 import Miso (JSM)
 import Utils (Seconds)
 import Control.Concurrent (MVar)
 
+type PagedEvents = PagedEventsModel (Event,[Content])
+type PagedReactions = PagedEventsModel (ReactionEvent, Reaction)
+
 data Action where
   RelayConnected :: RelayURI -> Action
   PagedEventsProcess :: Bool ->
-                          (Lens' Model PagedEventsModel) ->
+                          (Lens' Model PagedEvents) ->
                           Page ->
                           [(Event, Relay)] ->
                           Action
@@ -56,12 +59,12 @@ data Action where
   ThreadEvents :: Page -> [(Event, Relay)] -> Action
   ProfileEvents :: [(Event, Relay)] -> Action
   SubscribeForReplies :: [EventId] -> Action
-  SubscribeForParentsOf :: (Lens' Model PagedEventsModel) ->
+  SubscribeForParentsOf :: (Lens' Model PagedEvents) ->
                              Page ->
                              [Event] ->
                              Action
   FeedEventParentsProcess :: (Map.Map EventId (Set.Set EventId)) ->
-                               (Lens' Model PagedEventsModel) ->
+                               (Lens' Model PagedEvents) ->
                                Page ->
                                [(Event, Relay)] ->
                                Action
@@ -75,9 +78,13 @@ data Action where
   DisplayProfilePage :: (Maybe ElementId) -> XOnlyPubKey -> Action
   AddRelay :: Action
   ShowFeed :: Action
-  ShowNext :: (Lens' Model PagedEventsModel) -> Page -> Action
-  ShowPrevious :: (Lens' Model PagedEventsModel) -> Action
-  LoadMoreEvents :: (Lens' Model PagedEventsModel) -> Page -> Action
+  ShowNext :: (Lens' Model (PagedEventsModel a)) ->
+              Page ->
+              Action
+  ShowPrevious :: (Lens' Model (PagedEventsModel a)) -> Action
+  LoadMoreEvents :: (Lens' Model (PagedEventsModel a)) -> 
+                    Page -> 
+                    Action
   LogConsole :: String -> Action
   ScrollTo :: (Maybe Seconds) -> Text -> Action
   SubscribeForEmbeddedReplies :: [EventId] -> Page -> Action
@@ -95,11 +102,11 @@ data Action where
   Reload :: Action
   ListenToNotifs :: Action
   ShowNotifications :: Action
-  SubscribeForPagedReactionsTo :: (Lens' Model PagedEventsModel) ->
+  SubscribeForPagedReactionsTo :: (Lens' Model PagedEvents) ->
                                     Page ->
                                     [ReactionEvent] ->
                                     Action
-  PagedReactionsToProcess :: (Lens' Model PagedEventsModel) ->
+  PagedReactionsToProcess :: (Lens' Model PagedEvents) ->
                                Page ->
                                [(Event, Relay)] ->
                                Action
@@ -116,6 +123,8 @@ data Action where
   UploadMyContacts :: Set.Set XOnlyPubKey -> Action
   ContactsLoaded :: Set.Set XOnlyPubKey -> Action
   DisplayThreadWithId :: EventId -> Action
+  LoadProfileReactions :: XOnlyPubKey -> Page -> Action
+  ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
@@ -146,12 +155,14 @@ newtype CloseCount = CloseCount Int
 type ElementId = Text
 
 data Model = Model
-  { feed :: PagedEventsModel,
+  { feed :: PagedEventsModel (Event, [Content]),
     feedNew :: [(Event, Relay)],
-    notifs :: PagedEventsModel,
+    notifs :: PagedEventsModel (Event, [Content]),
     notifsNew :: [(Event, Relay)],
     findWho :: Text,
-    profileEvents :: Map.Map XOnlyPubKey PagedEventsModel,
+    profileEvents :: Map.Map XOnlyPubKey (PagedEventsModel (Event, [Content])),
+    profileReactions :: Map.Map XOnlyPubKey (PagedEventsModel (ReactionEvent, Reaction)),
+    profileReactionsTo :: Map.Map EventId Event,
     relayInput :: Text,
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
@@ -209,7 +220,9 @@ instance Eq CompactModel where
                           eq (#profileRelays % at xo), 
                           eq (#profileEvents % at xo), 
                           eq (#profileContacts % at xo),
-                          eq myContacts] ++ notesAndStuff
+                          eq myContacts,
+                          eq (#profileReactions % at xo), -- TODO: nuke this to venus
+                          eq #profileReactionsTo] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
@@ -233,7 +246,7 @@ newtype Until = Until UTCTime
 
 type Threads = Map.Map RootEid Thread
 
-data PagedEventsModel = PagedEventsModel
+data PagedEventsModel a = PagedEventsModel
   { filter :: Maybe (Since -> Until -> [DatedFilter]),
     until :: Until,
     step :: NominalDiffTime,
@@ -241,16 +254,18 @@ data PagedEventsModel = PagedEventsModel
     pg :: Int,
     pgStart :: Map.Map Int UTCTime, -- keep track of when each page starts
     pgSize :: Int,
-    events :: [(Event, [Content])],
+    events :: [a],
     fromRelays :: Map.Map EventId (Set.Set Relay), -- TODO:
     parents :: Map.Map EventId (Event, [Content]),
     -- events being reacted to by reactions in #events
-    reactionEvents :: Map.Map EventId (Event, [Content]) 
+    reactionEvents :: Map.Map EventId (Event, [Content]),
+    process :: Page -> ([(Event, Relay)] -> Action),
+    getEvent :: a -> Event
   }
   deriving (Generic)
 
 defaultPagedModel :: Until ->
-  PagedEventsModel
+  (PagedEventsModel a)
 defaultPagedModel until@(Until t) =
   PagedEventsModel
     { filter = Nothing,
@@ -263,15 +278,32 @@ defaultPagedModel until@(Until t) =
       events = [],
       fromRelays = Map.empty,
       parents = Map.empty,
-      reactionEvents = Map.empty
+      reactionEvents = Map.empty,
+      process = error "Unitiliazed process function",
+      getEvent = error "Unitiliazed getEvent function"
     }
 
-defProfEvntsModel :: XOnlyPubKey -> UTCTime -> PagedEventsModel
+defFeedEvntsModel :: UTCTime -> PagedEventsModel (Event, [Content])
+defFeedEvntsModel now = 
+  defaultPagedModel (Until now)
+    & #process .~ PagedEventsProcess False #feed
+    & #getEvent .~ fst
+
+defNotifEvntsModel :: UTCTime -> (Since -> Until -> [DatedFilter]) -> PagedEvents
+defNotifEvntsModel lastNotifDate notifsFilter =
+  defaultPagedModel (Until lastNotifDate) 
+    & #filter .~ Just notifsFilter
+    & #process .~ PagedEventsProcess False #notifs
+    & #getEvent .~ fst
+
+defProfEvntsModel :: XOnlyPubKey -> UTCTime -> PagedEvents
 defProfEvntsModel xo now  = 
   defaultPagedModel (Until now)
       & #filter .~ Just (pagedFilter [xo])
       & #factor .~ 1
       & #step .~ nominalDay/2
+      & #process .~ PagedEventsProcess False (#profileEvents % at xo % non (defProfEvntsModel xo now))
+      & #getEvent .~ fst
  where 
   pagedFilter xos =
     \(Since s) (Until u) ->
@@ -279,9 +311,25 @@ defProfEvntsModel xo now  =
       (Just s)
       (Just u)
       xos
+  
+defProfReactionsModel :: XOnlyPubKey -> UTCTime -> PagedReactions
+defProfReactionsModel xo now  = 
+  defaultPagedModel (Until now)
+        & #filter .~ Just (reactionsFilter [xo])
+        & #factor .~ 1
+        & #step .~ nominalDay/2
+        & #process .~ ProcessProfileReactions xo
+        & #getEvent .~ O.view #event . fst
+ where 
+  reactionsFilter xos =
+    \(Since s) (Until u) ->
+      reactionsPagedFilter
+      (Just s)
+      (Just u)
+      xos
 
 -- TODO: alter this
-instance Eq PagedEventsModel where
+instance Eq (PagedEventsModel a) where
   f1 == f2 = 
          f1 ^. #pg == f2 ^. #pg
       && f1 ^. #factor == f2 ^. #factor

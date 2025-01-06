@@ -16,6 +16,7 @@ import Nostr.Event
 import qualified Nostr.Kind as Kind
 import Nostr.Relay
 import Optics
+import qualified Data.Text as T
 
 data Sentiment = Like | Dislike | Other -- Agree | Disagree
   deriving (Show, Eq, Ord) -- TODO: add emojis and whatnot support
@@ -28,7 +29,8 @@ data ReactionEvent = ReactionEvent
 
 data Reaction = Reaction
   { author :: XOnlyPubKey,
-    sentiment :: Sentiment
+    sentiment :: Sentiment,
+    content :: T.Text
   }
   deriving (Generic, Show, Eq)
 
@@ -41,12 +43,13 @@ extract event
 
 getReaction :: ReactionEvent -> Reaction
 getReaction ReactionEvent {event} =
-  let st = case (event ^. #content) of
+  let cnt = event ^. #content
+      st = case cnt of
         "+" -> Like
         "" -> Like
         "-" -> Dislike
         _ -> Other
-   in Reaction (event ^. #pubKey) st
+   in Reaction (event ^. #pubKey) st cnt
 
 addReaction ::
   ReactionEvent ->
