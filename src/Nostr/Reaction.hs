@@ -43,13 +43,19 @@ extract event
 
 getReaction :: ReactionEvent -> Reaction
 getReaction ReactionEvent {event} =
-  let cnt = event ^. #content
-      st = case cnt of
+  let ct = event ^. #content
+      st = case ct of
         "+" -> Like
         "" -> Like
         "-" -> Dislike
         _ -> Other
-   in Reaction (event ^. #pubKey) st cnt
+   in Reaction (event ^. #pubKey) st (replace st ct)
+  where 
+    replace st ct = 
+      case st of
+        Like -> "👍"
+        Dislike -> "👎"
+        _    -> ct
 
 addReaction ::
   ReactionEvent ->

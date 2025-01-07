@@ -412,7 +412,12 @@
 .like-reaction {
     color: black;
     cursor: pointer;
+    /* transition: all .2s ease-in-out;  */
 }
+
+/* .like-reaction:hover {
+    transform: scale(1.2); 
+} */
 
 .like-reaction-liked {
     color: purple;
@@ -593,4 +598,18 @@ body {
     width: 100%;
     height: 300px;
     border: 1px solid black;
+}
+
+.reaction-and-event {
+    display:flex; 
+    margin-bottom:10px;
+}
+
+.reaction {
+    flex:1;
+    font-size:50px;
+}
+
+.reaction-to {
+    flex:5;
 }

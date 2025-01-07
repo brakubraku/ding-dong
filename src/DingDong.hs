@@ -700,7 +700,7 @@ updateModel nn rl pl action model =
           updateReactionsTo :: [(Event, Relay)] -> Model -> Model
           updateReactionsTo ers m = 
             Prelude.foldr 
-             (\e m -> m & #profileReactionsTo % at (e ^. #eventId) ?~ e) 
+             (\e m -> m & #profileReactionsTo % at (e ^. #eventId) ?~ (e, processContent e)) 
              m 
              (fst <$> ers)
       in 
@@ -1252,18 +1252,24 @@ displayPagedEvents showIntervals pw m pml screen =
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
     notes = take pgSize . drop (pg * pgSize) $ f ^. #events
 
+displayPagedReactions :: Model -> Lens' Model PagedReactions -> Page -> View Action
 displayPagedReactions m pml screen = 
   displayPagedContent True m pml screen $ 
    div_ [] $
       displayReaction <$> reactions
-  
   where 
     f = m ^. pml
     pgSize = f ^. #pgSize
     pg = f ^. #pg
     reactions = take pgSize . drop (pg * pgSize) $ f ^. #events
+    emptyEvent = div_ [] [text "Could not find event..."]
+    displayEvent eid = fromMaybe emptyEvent $ do 
+       ec <- m ^. #profileReactionsTo % at eid 
+       pure $ displayNote m ec
     displayReaction (re,r) = 
-      div_ [] [text $ showt (r ^. #content) <> " is a reaction to eventId=" <> showt (re ^. #reactionTo)]
+      div_ [class_ "reaction-and-event"] 
+        [ div_ [class_ "reaction"] [text $ (r ^. #content)]
+        , div_ [class_ "reaction-to"] [displayEvent (re ^. #reactionTo)]]
 
 areSubsRunning :: Model -> Page -> Bool
 areSubsRunning m p =

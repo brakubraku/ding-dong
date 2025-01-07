@@ -163,7 +163,7 @@ data Model = Model
     findWho :: Text,
     profileEvents :: Map.Map XOnlyPubKey (PagedEventsModel (Event, [Content])),
     profileReactions :: Map.Map XOnlyPubKey (PagedEventsModel (ReactionEvent, Reaction)),
-    profileReactionsTo :: Map.Map EventId Event,
+    profileReactionsTo :: Map.Map EventId (Event, [Content]),
     relayInput :: Text,
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
