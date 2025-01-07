@@ -688,14 +688,15 @@ updateModel nn rl pl action model =
           [LoadMoreEvents (#profileReactions % at xo % non reactions) page]
 
     ProcessProfileReactions xo page rs -> 
-      let reactions = catMaybes $ Reaction.extract <$> removeDeletetedAndDuplicates rs
-          -- TODO: order them
-          processed = (\r -> (r, getReaction r)) <$> reactions
-          pml = #profileReactions % at xo % _Just 
+      let events = removeDeletetedAndDuplicates rs
+          sorted = reverse $ Prelude.sort events
+          processed = catMaybes $ fmap (\r -> (r, getReaction r)) . Reaction.extract <$> sorted
+       
+          mPm = do 
+            pm <- model ^? #profileReactions % at xo % _Just
           -- put newly received at the end
-          updated = model & pml % #events %~ \es -> es ++ processed
-          mPagedModel = updated ^? pml
-          updatedReactions = fromMaybe [] $ updated ^? pml % #events
+            pure $ pm & #events %~ \es -> es ++ processed
+
           updateReactionsTo :: [(Event, Relay)] -> Model -> Model
           updateReactionsTo ers m = 
             Prelude.foldr 
@@ -703,28 +704,36 @@ updateModel nn rl pl action model =
              m 
              (fst <$> ers)
       in 
-        effectSub updated $ \sink -> do 
-          case mPagedModel of 
-            Nothing -> 
-              liftIO $ do 
+        case mPm of 
+          Nothing -> 
+            effectSub model $ \sink -> do 
+               liftIO $ do 
                  logError $ "Missing PagedNotes model for loading reactions"
                  sink NoAction
-            Just pagedModel -> do
+          Just pm ->
+            effectSub (model & #profileReactions % at xo ?~ pm) $ \sink -> do 
               subscribe
                 nn
                 AllAtEOS
-                [DatedFilter (EventsWithId (reactions ^.. folded % #reactionTo)) Nothing Nothing]
+                [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
                 (\ers -> UpdateModel (updateReactionsTo ers) [])
                 (Just . SubState $ page)
                 getEventRelayEither
                 Nothing
                 sink
-              let loadMore =
-                    length updatedReactions < (pagedModel ^. #pgSize) * (pagedModel ^. #pg) + (pagedModel ^. #pgSize)
-                      && (pagedModel ^. #factor) < 100 
-              traceM $ "branko-res: having=" <> show (length updatedReactions) <> " supposed to have at least=" <> show ((pagedModel ^. #pgSize) * (pagedModel ^. #pg) + (pagedModel ^. #pgSize)) <> " loading-more:" <> show loadMore
-              when loadMore $ 
-                liftIO . sink $ LoadMoreEvents (#profileReactions % at xo % non pagedModel) page
+              liftIO . sink $ 
+               LoadMoreIfNecessary (#profileReactions % at xo) pm $
+                 LoadMoreEvents (#profileReactions % at xo % non pm) page
+
+    LoadMoreIfNecessary pml pm loadMoreAction -> 
+          let loadMore = length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
+                      && (pm ^. #factor) < 100
+          in 
+            if loadMore then 
+              trace ("branko-res: having=" <> show (length (pm ^. #events)) <> " supposed to have at least=" <> show ((pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)) <> " loading-more...")
+                $ (model & pml ?~ (pm & #factor %~ (*2))) <# pure loadMoreAction
+            else 
+              (model & pml ?~ (pm & #factor .~ 1)) <# pure NoAction
 
     LoadProfile isLoadNotes isLoadFollowing xo page ->
       let 
