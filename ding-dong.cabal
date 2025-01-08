@@ -43,7 +43,6 @@ library
                       ModelAction
                       BechUtils
                       ContentUtils
-                      Tabs
                       Utils
                       StoredRelay
 

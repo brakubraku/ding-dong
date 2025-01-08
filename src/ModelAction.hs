@@ -133,6 +133,9 @@ data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map 
 data ReportType = ErrorReport | SuccessReport
  deriving Eq
 
+data ProfileTab = ProfilePosts | ProfileReactions
+ deriving Eq
+
 data Page
   = FeedPage
   | Following XOnlyPubKey
@@ -164,6 +167,7 @@ data Model = Model
     profileEvents :: Map.Map XOnlyPubKey (PagedEventsModel (Event, [Content])),
     profileReactions :: Map.Map XOnlyPubKey (PagedEventsModel (ReactionEvent, Reaction)),
     profileReactionsTo :: Map.Map EventId (Event, [Content]),
+    profileTab :: ProfileTab,
     relayInput :: Text,
     relaysList :: [StoredRelay],
     relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
@@ -223,7 +227,8 @@ instance Eq CompactModel where
                           eq (#profileContacts % at xo),
                           eq myContacts,
                           eq (#profileReactions % at xo), -- TODO: nuke this to venus
-                          eq #profileReactionsTo] ++ notesAndStuff
+                          eq #profileReactionsTo, 
+                          eq #profileTab] ++ notesAndStuff
             RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
             MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
             NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff

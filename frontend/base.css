@@ -613,3 +613,21 @@ body {
 .reaction-to {
     flex:5;
 }
+
+.profile-tabs {
+    display:flex;
+    font-size:30px;
+    text-align: center;
+    margin-bottom:10px;
+}
+
+.tab {
+    flex: 1;
+    cursor:pointer; 
+}
+
+.tab-selected {
+    flex:1;
+    color: purple;
+    cursor:pointer;
+}

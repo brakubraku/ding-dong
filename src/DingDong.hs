@@ -85,6 +85,7 @@ start = do
           Map.empty
           Map.empty
           Map.empty
+          ProfilePosts
           ""
           relaysList
           (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
@@ -1574,87 +1575,118 @@ leftPanel m =
 
 displayProfile :: Bool -> Model -> XOnlyPubKey -> View Action
 displayProfile isShowNotes m xo =
-  let notFound =
-        div_
-          []
-          [ text 
-              "Looking for profile or profile not found on any of your relays..."
-          ]
-      profileDisplay = do
-        (p, _) <- m ^. #profiles % at xo
-        let banner =
-              p ^. #banner >>= \b ->
-                pure $
-                  imgKeyed_ (Key b) [class_ "banner-pic", prop "src" b]
-        let bannerDef = div_ [class_ "banner-pic-default"] []
-        let profilepic =
-              p ^. #picture >>= \pic ->
-                pure $
-                  imgKeyed_ (Key pic) [class_ "profile-pic", prop "src" pic]
-        let profilepicDef = div_ [class_ "profile-pic-default"] []
-        let profileName = span_ [class_ "username"] [text $ p ^. #username]
-        let displayName =
-              span_
-                [class_ "displayname"]
-                [text . fromMaybe "" $ p ^. #displayName]
-        let rInfoText r = case (r ^. #info) of 
-                              RelayInfo True True -> "(RW)"
-                              RelayInfo True False -> "(R)"
-                              RelayInfo False True -> "(W)"
-                              RelayInfo False False -> ""
-        let relays = m ^. #profileRelays % at xo >>= \(rels,_) -> 
-              pure $ div_ [] . concat $ 
-                ((\r -> [span_ [class_ "relay"] [text (r ^. #uri)],
-                        span_ [class_ "relay-info"]   
-                              [text $ rInfoText r]]) 
-                <$> rels)
-            relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
-            npub = div_ [class_ "npub"] [text . fromMaybe "" $ encodeBechXo xo]
-        let profileEvents = #profileEvents % at xo % non (defProfEvntsModel xo $ m ^. #now)
-        let notesDisplay = 
-             if (not isShowNotes) 
-             then (div_ [] [])
-             else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
-        let reactionsDisplay = displayPagedReactions m (#profileReactions % at xo % non (defProfReactionsModel xo (m ^. #now))) (ProfilePage xo)
-        let following = maybe [] Set.toList $ m ^. #profileContacts % at xo
-        let follows = div_ 
-               [class_ "profile-follows", onClick $ DisplayProfileContacts xo (Following xo)] 
-               [text $ "follows " <> showt (length following) <> " profiles"]
-        let myContacts = #profileContacts % at (m ^. #me)
-        pure $
+  div_
+    [class_ "profile-page"]
+    [fromMaybe notFound profileDisplay]
+  where
+    displayProfileTabs :: Model -> View Action
+    displayProfileTabs m =
+      div_
+        []
+        [ div_
+            [class_ "profile-tabs"]
+            [ span_ [onClick setPostsTab, class_ postsTabStyle] [text "Posts"],
+              span_ [onClick setReactionsTab, class_ reactionsTabStyle] [text "Reactions"]
+            ],
           div_
             []
-            [ div_
-                [class_ "banner"]
-                [fromMaybe bannerDef banner],
-              div_
-                [class_ "profile-pic-container"]
-                [ fromMaybe profilepicDef profilepic,
-                  div_ [class_ "names"] [profileName, displayName, relaysDisplay, npub, follows],
-                  div_
-                    [class_ "follow-button-container"]
-                    [ if isJust $ m ^? myContacts % _Just % at xo % _Just
-                        then
-                          div_ [] [span_ [class_ "follow-button"] [text "Following"],
-                          button_ [class_ "unfollow-button", onClick (Unfollow xo)] [text "Unfollow"]]
-                        else
-                          button_
-                            [class_ "follow-button", onClick (Follow xo)]
-                            [text "Follow"]
-                    ]
-                ],
-              div_
-                [class_ "profile-about"]
-                [ div_
-                    [class_ "about"]
-                    [span_ [] [text . fromMaybe "" $ p ^. #about]]
-                ],
-              notesDisplay,
-              reactionsDisplay
+            [ case m ^. #profileTab of
+                ProfilePosts -> notesDisplay
+                ProfileReactions -> reactionsDisplay
             ]
-   in div_
-        [class_ "profile-page"]
-        [fromMaybe notFound profileDisplay]
+        ]
+    setPostsTab = UpdateModel (O.set #profileTab ProfilePosts) []
+    setReactionsTab = UpdateModel (O.set #profileTab ProfileReactions) []
+    postsTabStyle = bool "tab" "tab-selected" (m ^. #profileTab == ProfilePosts)
+    reactionsTabStyle = bool "tab" "tab-selected" (m ^. #profileTab == ProfileReactions)
+    notFound =
+      div_
+        []
+        [ text
+            "Looking for profile or profile not found on any of your relays..."
+        ]
+    banner p =
+      p ^. #banner >>= \b ->
+        pure $
+          imgKeyed_ (Key b) [class_ "banner-pic", prop "src" b]
+    bannerDef = div_ [class_ "banner-pic-default"] []
+    profilepic p =
+      p ^. #picture >>= \pic ->
+        pure $
+          imgKeyed_ (Key pic) [class_ "profile-pic", prop "src" pic]
+    profilepicDef = div_ [class_ "profile-pic-default"] []
+    profileName p = span_ [class_ "username"] [text $ p ^. #username]
+    displayName p =
+      span_
+        [class_ "displayname"]
+        [text . fromMaybe "" $ p ^. #displayName]
+    rInfoText r = case (r ^. #info) of
+      RelayInfo True True -> "(RW)"
+      RelayInfo True False -> "(R)"
+      RelayInfo False True -> "(W)"
+      RelayInfo False False -> ""
+    relays =
+      m ^. #profileRelays % at xo >>= \(rels, _) ->
+        pure $
+          div_ [] . concat $
+            ( ( \r ->
+                  [ span_ [class_ "relay"] [text (r ^. #uri)],
+                    span_
+                      [class_ "relay-info"]
+                      [text $ rInfoText r]
+                  ]
+              )
+                <$> rels
+            )
+    relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
+    npub = div_ [class_ "npub"] [text . fromMaybe "" $ encodeBechXo xo]
+    profileEvents = #profileEvents % at xo % non (defProfEvntsModel xo $ m ^. #now)
+    notesDisplay =
+      if (not isShowNotes)
+        then (div_ [] [])
+        else displayPagedEvents True Notes m profileEvents (ProfilePage xo)
+    reactionsDisplay = displayPagedReactions m (#profileReactions % at xo % non (defProfReactionsModel xo (m ^. #now))) (ProfilePage xo)
+    following = maybe [] Set.toList $ m ^. #profileContacts % at xo
+    follows =
+      div_
+        [class_ "profile-follows", onClick $ DisplayProfileContacts xo (Following xo)]
+        [text $ "follows " <> showt (length following) <> " profiles"]
+    myContacts = #profileContacts % at (m ^. #me)
+    profileDisplay = do
+      (p, _) <- m ^. #profiles % at xo
+      pure $
+        div_
+          []
+          [ div_
+              [class_ "banner"]
+              [fromMaybe bannerDef (banner p)],
+            div_
+              [class_ "profile-pic-container"]
+              [ fromMaybe profilepicDef (profilepic p),
+                div_ [class_ "names"] [(profileName p), (displayName p), relaysDisplay, npub, follows],
+                div_
+                  [class_ "follow-button-container"]
+                  [ if isJust $ m ^? myContacts % _Just % at xo % _Just
+                      then
+                        div_
+                          []
+                          [ span_ [class_ "follow-button"] [text "Following"],
+                            button_ [class_ "unfollow-button", onClick (Unfollow xo)] [text "Unfollow"]
+                          ]
+                      else
+                        button_
+                          [class_ "follow-button", onClick (Follow xo)]
+                          [text "Follow"]
+                  ]
+              ],
+            div_
+              [class_ "profile-about"]
+              [ div_
+                  [class_ "about"]
+                  [span_ [] [text . fromMaybe "" $ p ^. #about]]
+              ],
+            displayProfileTabs m
+          ]
 
 displayThread :: Model -> Event -> View Action
 displayThread m e =
