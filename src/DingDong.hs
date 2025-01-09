@@ -55,6 +55,7 @@ import Data.DateTime (fromSeconds)
 import qualified Nostr.Reaction as Reaction
 import Debug.Trace
 import Nostr.Log (logError)
+import Network.URI
 
 start :: JSM ()
 start = do
@@ -164,17 +165,21 @@ updateModel nn rl pl action model =
           saveRelays updated
           pure $ UpdatedRelaysList updated
 
-    AddRelay -> 
-      let uri = model ^. #relayInput
-          nsr = newActiveRelay . newRelay $ uri
-          updated = 
-            nsr : filter 
-              (\sr -> sr ^. #relay % #uri /= uri) 
-              (model ^. #relaysList)
-      in 
-        model <# do 
-          saveRelays updated 
-          pure $ UpdatedRelaysList updated
+    AddRelay getUri -> 
+      -- let uri = model ^. #relayInput
+        model <# do
+          uri <- getUri 
+          case parseURI . T.unpack $ uri of 
+            Nothing ->
+              pure $ Report ErrorReport "Invalid relay url"
+            Just _ -> do 
+              let nsr = newActiveRelay . newRelay $ uri
+                  updated = 
+                    nsr : filter 
+                      (\sr -> sr ^. #relay % #uri /= uri) 
+                      (model ^. #relaysList)
+              saveRelays updated 
+              pure $ UpdatedRelaysList updated
 
     RemoveRelay r -> 
       let updated = filter (\sr -> sr ^. #relay % #uri /= r) $ model ^. #relaysList
@@ -1888,9 +1893,7 @@ displayRelaysPage m =
         [class_ "relay_info"]
         [button_ [onClick Reload] [text "Reload"], span_ [] [text " for changes to take effect"]]
 
-    displayRelay (r, (isConnected, ErrorCount errCnt, CloseCount closeCnt)) =
-      let isActive = headDef False $ m ^.. #relaysList % folded % filtered (\sr -> sr ^. #relay % #uri == r) % #active
-      in 
+    displayRelay (r, isActive, (isConnected, ErrorCount errCnt, CloseCount closeCnt)) =
       [ div_ [class_ ("relay-" <> bool "inactive" "active" isActive)] [text r],
         div_ [class_ ("relay-" <> bool "disconnected" "connected" isConnected)] [text $ bool "No" "Yes" isConnected],
         div_ [class_ "relay-error-count"] [text . showt $ errCnt],
@@ -1902,14 +1905,20 @@ displayRelaysPage m =
          [div_ [class_ (bool "visible" "invisible" isActive), onClick (RemoveRelay r)] [text "Remove"] ]
       ]
     
-    active = Map.keys $ m ^. #relaysStats
-    inactive = m ^.. #relaysList % folded % filtered (\sr -> not . elem (sr ^. #relay % #uri) $ active)
-    inactiveStats = (\sr -> (sr ^. #relay % #uri, (False, ErrorCount 0, CloseCount 0))) <$> inactive
+    getStats r = 
+      fromMaybe (False, ErrorCount 0, CloseCount 0) $
+       m ^. #relaysStats % at (r ^. #uri)
 
     relaysGrid =
       div_ [class_ "relays-grid"] $
         gridHeader
-          ++ concat (displayRelay <$> ((Map.toList $ m ^. #relaysStats) ++ inactiveStats))
+          ++ displayRelays 
+    (connected, notConnected) = 
+      Prelude.partition (\sr -> fromMaybe False $ m ^? #relaysStats % at (sr ^. #relay % #uri) % _Just % _1) $ 
+        m ^. #relaysList
+    relaysStats = (\sr -> (sr ^. #relay % #uri, sr ^. #active, getStats (sr ^. #relay))) <$> 
+       connected ++ notConnected
+    displayRelays = concat (displayRelay <$> relaysStats)
     
     gridHeader =
       [ div_ [] [text "Relay"],
@@ -1920,22 +1929,16 @@ displayRelaysPage m =
         div_ [] [] -- remove
       ]
     inputRelay =
+      let relayInputEl = "relay-text-input"
+          getNewRelayUrl = getValueOfInput relayInputEl
+      in
       div_ [] [
         input_
-          [ class_ "input-relay",
-            class_
-              $ bool
-                "incorrect"
-                "correct"
-              $ validateUrl (m ^. #relayInput),
-            value_ (m ^. #relayInput),
-            type_ "text",
-            onInput $ UpdateField (#relayInput)
+          [ id_ relayInputEl,
+            class_ "input-relay",
+            type_ "text"
           ], 
-        button_ [onClick AddRelay] [text "Add relay"]]
-    validateUrl _ = True -- TODO
-    onEnter :: Action -> Attribute Action
-    onEnter action = onKeyDown $ bool NoAction action . (== KeyCode 13)
+        button_ [onClick $ AddRelay getNewRelayUrl] [text "Add relay"]]
 
 displayWritePostPage :: Model -> View Action
 displayWritePostPage m = 

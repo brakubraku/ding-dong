@@ -14,7 +14,7 @@ import GHC.Generics
 data StoredRelay = StoredRelay {
     relay :: Relay, 
     active :: Bool
-} deriving (FromJSON, ToJSON, Generic, Eq)
+} deriving (FromJSON, ToJSON, Generic, Eq, Show)
 
 loadRelays :: JSM [StoredRelay]
 loadRelays = do

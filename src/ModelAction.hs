@@ -76,7 +76,7 @@ data Action where
   LoadProfile :: Bool -> Bool -> XOnlyPubKey -> Page -> Action
   SubState :: Page -> (SubscriptionId, SubState) -> Action
   DisplayProfilePage :: (Maybe ElementId) -> XOnlyPubKey -> Action
-  AddRelay :: Action
+  AddRelay :: JSM Text -> Action
   ShowFeed :: Action
   ShowNext :: (Lens' Model (PagedEventsModel a)) ->
               Page ->
