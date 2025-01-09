@@ -127,7 +127,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelB
           PeriodicUntilEOS -> do
             addStats (length rrs)
             sd@SubData {..} <- get
-            liftIO . processMsgs $ rrs
+            unless (length rrs == 0) $ 
+              liftIO . processMsgs $ rrs
             case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
               (True, _, _) -> reportFinished
               (_, True, True) -> reportFinished
@@ -137,7 +138,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelB
               (_, _, _) -> continue
           PeriodicForever -> do
             addStats (length rrs)
-            liftIO . processMsgs $ rrs
+            unless (length rrs == 0) $ 
+             liftIO . processMsgs $ rrs  
             -- has any relay closed connection or is the subscription not running on all connected relays?
             let isRestartLongRunning = 
                  isAnyRelayError subState 
