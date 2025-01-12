@@ -355,17 +355,9 @@ updateModel nn rl pl action model =
             (plm #events ++ orderByAgeAsc ecs) 
             (orderByAgeAsc ecs ++ plm #events) 
             putAtStart
-          loadMore =
-            length updatedEvents < plm #pgSize * plm #pg + plm #pgSize
-              && plm #factor < 100 -- TODO: put the number somewhere
           updated =
             model 
               & pml % #events .~ updatedEvents
-              & case loadMore of
-                  True ->
-                    pml % #factor %~ (* 2)
-                  False ->
-                    pml % #factor .~ 1
           events = fst <$> ecs
           reactions = catMaybes $ Nostr.Reaction.extract <$> events
        in effectSub updated $ \sink -> do
@@ -376,9 +368,8 @@ updateModel nn rl pl action model =
               sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
               sink $ SubscribeForReplies $ (eventId <$> events)
               sink $ SubscribeForEmbeddedReplies enotes screen
-              sink . SubscribeForEmbedded $ enotes
-              when loadMore $
-                sink $ LoadMoreEvents pml screen
+              sink $ SubscribeForEmbedded enotes
+              sink $ LoadMoreIfNecessary (castOptic pml) $ LoadMoreEvents pml screen
 
     ShowPrevious pml ->
       let newModel =
@@ -728,18 +719,28 @@ updateModel nn rl pl action model =
                 Nothing
                 sink
               liftIO . sink $ 
-               LoadMoreIfNecessary (#profileReactions % at xo) pm $
+               LoadMoreIfNecessary (#profileReactions % ixAt xo) $
                  LoadMoreEvents (#profileReactions % at xo % non pm) page
 
-    LoadMoreIfNecessary pml pm loadMoreAction -> 
-          let loadMore = length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
-                      && (pm ^. #factor) < 100
-          in 
+    LoadMoreIfNecessary pml loadMoreAction -> 
+      let 
+        updAction =
+          do
+          pm <- model ^? pml
+          let loadMore = 
+               length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
+                    && (pm ^. #factor) < 100
+          pure $ 
             if loadMore then 
-              trace ("branko-res: having=" <> show (length (pm ^. #events)) <> " supposed to have at least=" <> show ((pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)) <> " loading-more...")
-                $ (model & pml ?~ (pm & #factor %~ (*2))) <# pure loadMoreAction
+              ((model & pml .~ (pm & #factor %~ (*2))), loadMoreAction)
             else 
-              (model & pml ?~ (pm & #factor .~ 1)) <# pure NoAction
+              ((model & pml .~ (pm & #factor .~ 1)), NoAction)
+      in 
+        case updAction of 
+          Just (updated, act) -> 
+            updated <# pure act 
+          _ -> 
+            batchEff model [(liftIO . logError) "No model in PML!" >> pure NoAction]
 
     LoadProfile isLoadNotes isLoadFollowing xo page ->
       let 

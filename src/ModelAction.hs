@@ -125,7 +125,7 @@ data Action where
   DisplayThreadWithId :: EventId -> Action
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
-  LoadMoreIfNecessary :: Lens' Model (Maybe (PagedEventsModel a)) -> PagedEventsModel a -> Action -> Action
+  LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
  
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
