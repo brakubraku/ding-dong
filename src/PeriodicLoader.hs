@@ -6,7 +6,7 @@
 module PeriodicLoader where
 
 import Control.Concurrent
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
@@ -60,7 +60,7 @@ startLoader nn pl act sink =
             )
         -- traceM $ "toLoad=" <> (show $ toLoad)
         when (not . Set.null $ toLoad) $ do
-          forkJSM $ subscribe
+          void . forkJSM $ subscribe
             nn
             PeriodicUntilEOS
             ((pl ^. #createFilter) . toList $ toLoad)

@@ -113,7 +113,7 @@ start = do
   where
     events = defaultEvents
     view (CompactModel m) = appView m
-    mountPoint = Nothing
+    mountPoint = "body"
     logLevel = Off
 
 updateModel ::
