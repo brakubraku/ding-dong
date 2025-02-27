@@ -1,16 +1,13 @@
 packages:
  .
- -- ./miso
- -- let's build this puppy with latest "component" miso
- ../miso
  ../secp256k1-haskell/secp256k1-haskell
 
 shared: True
 
---source-repository-package
-  --  type: git
-   -- location: https://github.com/brakubraku/miso
-    --tag: 84019ea4ec2155379c59224e054b299a7a3ddc53
+source-repository-package
+    type: git
+    location: https://github.com/brakubraku/miso-with-components
+    tag: dfaa505
 
 -- source-repository-package
 --    type: git
