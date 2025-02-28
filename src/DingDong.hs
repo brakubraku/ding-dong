@@ -113,7 +113,8 @@ start = do
   where
     events = defaultEvents
     view (CompactModel m) = appView m
-    mountPoint = "body"
+    -- mountPoint = "body"
+    mountPoint = Just "miso-mountpoint"
     logLevel = Off
 
 updateModel ::
@@ -1137,7 +1138,8 @@ appView m =
         [loadingBar],
       newNotesIndicator,
       div_
-        [class_ "main-container", id_ "top-top"]
+        -- [class_ "main-container", id_ "top-top"]
+        [class_ "main-container"]
         [ leftPanel m,
           middlePanel m,
           rightPanel m
