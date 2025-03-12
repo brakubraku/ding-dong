@@ -26,7 +26,7 @@ import Data.Time
 import Miso hiding (at, now, send, WebSocket(..))
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe, isSubCanceled, cancelSub)
+import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -56,6 +56,7 @@ import qualified Nostr.Reaction as Reaction
 import Debug.Trace
 import Nostr.Log (logError)
 import Network.URI
+import SubscriptionUtils
 
 start :: JSM ()
 start = do
@@ -199,8 +200,8 @@ updateModel nn rl pl action model =
           do
             -- wait for connections to relays having been established
             liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
-            forkJSM $ startLoader nn rl ReceivedReactions sink
-            forkJSM $ startLoader nn pl ReceivedProfiles sink
+            forkJSM $ startLoader nn rl ReceivedReactions reportErrorAction sink
+            forkJSM $ startLoader nn pl ReceivedProfiles reportErrorAction sink
             -- fetch my profile
             load pl $ [model ^. #me] 
             forkJSM $ -- put actual time to model every 60 seconds
@@ -270,14 +271,11 @@ updateModel nn rl pl action model =
     ListenToNotifs -> 
       effectSub model runLoop
        where 
-        doSubscribe lnd = 
-          subscribe
-            nn
-            PeriodicForever
+        doSubscribe lnd sink = 
+          subscribe nn sink $
+           periodicForever 
             [sinceF lnd $ Mentions [model ^. #me]]
             (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
-            Nothing
-            getEventRelayEither
             Nothing
         runLoop sink = 
           do
@@ -313,15 +311,13 @@ updateModel nn rl pl action model =
           liftIO . sink $ UpdateModel updateCBs []
           runLoop cb sink
        where 
-        doSubscribe cb = 
-          subscribe
-            nn
-            PeriodicForever
-            (textNotesWithDeletes (Just since) Nothing contacts)
-            FeedLongRunningProcess
-            Nothing
-            getEventRelayEither
-            (Just cb)
+        doSubscribe cb sink =
+          subscribe nn sink $
+            periodicForever
+                (textNotesWithDeletes (Just since) Nothing contacts)
+                FeedLongRunningProcess
+                (Just cb)
+            
         runLoop cb sink = 
           do
             doSubscribe cb sink
@@ -414,15 +410,12 @@ updateModel nn rl pl action model =
             maybe
               (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
               ( \filter ->
-                  subscribe
-                    nn
-                    AllAtEOS
-                    (filter (Since newSince) (Until until))
-                    (model ^. pml % #process $ page)
-                    (Just $ SubState page)
-                    getEventRelayEither
-                    Nothing
-                    sink
+                  subscribe nn sink $ 
+                      allAtEOSOnPage 
+                       page
+                       (filter (Since newSince) (Until until))
+                       (model ^. pml % #process $ page)
+                      
               )
               (pm ^. #filter)
 
@@ -432,15 +425,12 @@ updateModel nn rl pl action model =
 
     SubscribeForEmbeddedReplies [] _ -> noEff $ model
     SubscribeForEmbeddedReplies eids page ->
-      effectSub model $
-        subscribe
-          nn
-          PeriodicUntilEOS
+      effectSub model $ \sink ->
+        subscribe nn sink $
+         periodicUntilEOSOnPage
+          page
           [anytimeF $ LinkedEvents eids]
           RepliesRecvNoEmbedLoading 
-          (Just $ SubState page)
-          getEventRelayEither
-          Nothing
 
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -448,15 +438,12 @@ updateModel nn rl pl action model =
 
     SubscribeForPagedReactionsTo _ _ [] -> noEff model
     SubscribeForPagedReactionsTo pml screen res -> 
-      effectSub model $
-        subscribe
-          nn
-          PeriodicUntilEOS
-          [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
-          (PagedReactionsToProcess pml screen)
-          (Just $ SubState screen)
-          getEventRelayEither
-          Nothing
+      effectSub model $ \sink ->
+        subscribe nn sink $
+          periodicUntilEOSOnPage
+            screen
+            [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
+            (PagedReactionsToProcess pml screen)
 
     PagedReactionsToProcess pml _ ers -> 
       let process (e,_) m = 
@@ -479,15 +466,12 @@ updateModel nn rl pl action model =
                    . fmap (Set.insert eid), parentEid : pids)
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
       in 
-        effectSub model $
-        subscribe
-          nn
-          PeriodicUntilEOS
-          [anytimeF $ EventsWithId pids]
-          (FeedEventParentsProcess pmap pml screen)
-          (Just $ SubState screen)
-          getEventRelayEither
-          Nothing
+        effectSub model $ \sink ->
+          subscribe nn sink $
+             periodicUntilEOSOnPage
+              screen
+              [anytimeF $ EventsWithId pids]
+              (FeedEventParentsProcess pmap pml screen)
 
     FeedEventParentsProcess pmap pml screen rs -> 
        let  (notes, enotes, eprofs) = processReceivedEvents rs 
@@ -510,15 +494,12 @@ updateModel nn rl pl action model =
     SubscribeForEmbedded [] ->
       noEff model
     SubscribeForEmbedded eids ->
-      effectSub model $
-        subscribe
-          nn
-          AllAtEOS
+      effectSub model $ \sink ->
+        subscribe nn sink $ 
+         allAtEOSOnPage
+          FeedPage
           [anytimeF $ EventsWithId eids]
           EmbeddedEventsProcess
-          (Just $ SubState FeedPage)
-          getEventRelayEither
-          Nothing
           
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
@@ -641,15 +622,12 @@ updateModel nn rl pl action model =
         updated = model & #profileContacts % at (model ^. #me) ?~ cs
 
     LoadContactsOf xo page takeAction -> 
-      effectSub model $
-          subscribe
-            nn
-            AllAtEOS
+      effectSub model $ \sink ->
+          subscribe nn sink $ 
+           allAtEOSOnPage
+            page 
             [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
             (takeAction . processReceived)
-            (Just . SubState $ page)
-            getEventRelayEither
-            Nothing
      where 
       processReceived :: [(Event, Relay)] -> Maybe (Set.Set XOnlyPubKey)
       processReceived [] = Nothing
@@ -710,15 +688,11 @@ updateModel nn rl pl action model =
                  sink NoAction
           Just pm ->
             effectSub (model & #profileReactions % at xo ?~ pm) $ \sink -> do 
-              subscribe
-                nn
-                AllAtEOS
+              subscribe nn sink $
+               allAtEOSOnPage 
+                page
                 [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
                 (\ers -> UpdateModel (updateReactionsTo ers) [])
-                (Just . SubState $ page)
-                getEventRelayEither
-                Nothing
-                sink
               liftIO . sink $ 
                LoadMoreIfNecessary (#profileReactions % ixAt xo) $
                  LoadMoreEvents (#profileReactions % at xo % non pm) page
@@ -749,15 +723,12 @@ updateModel nn rl pl action model =
          updated = model & #profileEvents % at xo ?~ textNotes
       in
          effectSub updated $ \sink -> do
-          subscribe
-            nn
-            PeriodicUntilEOS
+          subscribe nn sink $
+           periodicLoadProfileOnPage 
+            page
             [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
             ReceivedProfiles
-            (Just . SubState $ page)
-            extractProfile
-            Nothing
-            sink
+          
           when isLoadNotes $ 
             liftIO . sink $
              LoadMoreEvents (#profileEvents % at xo % non textNotes) page
@@ -933,15 +904,17 @@ updateModel nn rl pl action model =
     DisplayThreadWithId eid -> 
       effectSub model $ \sink -> do 
        liftIO . sink $ UpdateField (#findEventModel % #error) (Just "") 
-       subscribe
-          nn
-          AllAtEOS
-          [anytimeF . EventsWithId $ [eid]]
-          displayThread
-          Nothing -- TODO
-          getEventRelayEither
-          Nothing
-          sink
+       subscribe nn sink $ 
+           SubscriptionParams
+            { subType = AllAtEOS,
+              subFilter = [anytimeF . EventsWithId $ [eid]],
+              extractResults = getEventRelayEither,
+              actOnResults = displayThread,
+              actOnSubState = Nothing, --TODO
+              cancelButton = Nothing,
+              timeoutPerRelay = Nothing,
+              reportError = reportErrorAction
+            }
       where 
         displayThread :: [(Event, Relay)] -> Action
         displayThread (er:_) = DisplayThread $ fst er
@@ -1071,20 +1044,11 @@ subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
 subscribeForWholeThread nn e page sink = do
   let eids = [(e ^. #eventId)]
       replyTo = maybe [] singleton $ findParentEventOf e 
-  subscribe
-    nn
-    PeriodicUntilEOS
-    [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
-    (ThreadEvents page)
-    (Just $ SubState page)
-    process
-    Nothing
-    sink
-  where
-    process (resp, rel) =
-      maybe (Left "could not extract Event") Right $ do
-        evt <- getEvent resp
-        pure (evt, rel)
+  subscribe nn sink $ 
+    periodicUntilEOSOnPage
+      page
+      [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
+      (ThreadEvents page)
 
 subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Sub Action
 subscribeForEventsReplies _ [] _ _ = pure ()
@@ -1092,20 +1056,11 @@ subscribeForEventsReplies nn eids page sink =
   -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
   --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
   --  this makes queries which only want replies (and not root replies) to a single event possibly very inefficient
-  subscribe
-    nn
-    PeriodicUntilEOS
-    [anytimeF $ LinkedEvents eids]
-    (ThreadEvents page)
-    (Just $ SubState page)
-    process
-    Nothing
-    sink
-  where
-    process (resp, rel) =
-      maybe (Left "could not extract Event") Right $ do
-        evt <- getEvent resp
-        pure (evt, rel)
+  subscribe nn sink $ 
+     periodicUntilEOSOnPage
+      page
+      [anytimeF $ LinkedEvents eids]
+      (ThreadEvents page)
 
 writeModelToStorage :: Model -> JSM ()
 writeModelToStorage m = pure ()

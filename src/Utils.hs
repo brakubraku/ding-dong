@@ -18,7 +18,7 @@ import Data.Maybe (isJust)
 newtype Seconds = Seconds
   { getSeconds :: Float
   }
-  deriving (Eq, Generic)
+  deriving (Eq, Generic, Show)
   deriving newtype (Ord)
 
 sleep :: Seconds -> IO () 

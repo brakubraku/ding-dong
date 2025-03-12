@@ -11,7 +11,7 @@ import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
 import Miso.Effect (Sub)
-import MisoSubscribe (subscribe, SubType (PeriodicUntilEOS))
+import MisoSubscribe (subscribe, SubType (PeriodicUntilEOS), SubscriptionParams (..))
 import Nostr.Filter
 import Nostr.Network
 import Nostr.Relay
@@ -46,8 +46,9 @@ startLoader ::
   NostrNetwork ->
   PeriodicLoader id e ->
   ([e] -> action) ->
+  (Text -> action) ->
   Sub action
-startLoader nn pl act sink =
+startLoader nn pl actOnResults actOnError sink =
   let loop = do
         toLoad <- liftIO $ modifyMVar (pl ^. #buffers) $ \b -> do
           let toLoad =
@@ -60,16 +61,17 @@ startLoader nn pl act sink =
             )
         -- traceM $ "toLoad=" <> (show $ toLoad)
         when (not . Set.null $ toLoad) $ do
-          void . forkJSM $ subscribe
-            nn
-            PeriodicUntilEOS
-            ((pl ^. #createFilter) . toList $ toLoad)
-            act 
-            Nothing
-            (pl ^. #extract)
-            Nothing
-            sink
+          void . forkJSM . subscribe nn sink $ 
+              SubscriptionParams
+                { subType = PeriodicUntilEOS,
+                  subFilter = ((pl ^. #createFilter) . toList $ toLoad) ,
+                  extractResults = pl ^. #extract,
+                  actOnResults = actOnResults,
+                  actOnSubState = Nothing,
+                  cancelButton = Nothing,
+                  timeoutPerRelay = Nothing,
+                  reportError = actOnError
+                }
         liftIO . sleep $ pl ^. #period
         loop
   in traceM "starting loader" >> loop
-

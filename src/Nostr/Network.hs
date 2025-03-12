@@ -66,6 +66,13 @@ isSubFinished mss =
     subState <- mss
     pure . notElem Running . elems $ subState ^. #relaysState
 
+getRunningRelays :: SubscriptionState -> [Relay]
+getRunningRelays ss = 
+  fmap fst
+    . Prelude.filter (\(_, s) -> s == Running)
+    . Map.toList
+    $ ss ^. #relaysState
+
 isAnyRelayError :: Maybe SubscriptionState -> Bool
 isAnyRelayError mss =
   fromMaybe False $ do

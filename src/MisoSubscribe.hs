@@ -6,18 +6,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE GADTs #-}
 
 module MisoSubscribe where
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Control.Monad.State (MonadState (get, put), StateT (runStateT))
+import Control.Monad.State (MonadState (get, put), StateT (runStateT), gets)
 import Data.Either
-import Data.Text hiding (length)
+import Data.Text hiding (length, show)
 import qualified Data.Text as T hiding (length)
 import GHC.Generics (Generic)
-import Miso hiding (at)
+import Miso hiding (at, view)
 import Nostr.Filter
 import Nostr.Log (logError)
 import Nostr.Network
@@ -29,8 +30,10 @@ import Optics
 import ModelAction (SubState (..))
 import Data.Bool (bool)
 import Utils
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import qualified Data.Map as Map
+import Data.Time (UTCTime, getCurrentTime, diffUTCTime)
+import Data.Maybe (fromMaybe)
 
 -- 3 types of subscribes:
 --   call actOnResults periodically with whatever messages you have received and quit after EOS
@@ -61,25 +64,41 @@ acceptableRatio = 7 / 10
 toMicro :: Seconds -> Int
 toMicro s = round $ getSeconds s * fromInteger (10 ^ 6)
 
+unpackSeconds :: Seconds -> Float 
+unpackSeconds (Seconds s) = s
+
+diffInSeconds :: UTCTime -> UTCTime -> Seconds
+diffInSeconds t1 t2 = Seconds . realToFrac . abs $ diffUTCTime t1 t2
+
 data SubData = SubData
   { msgsRecvd :: Int,
     msgs :: [(Response, Relay)],
     -- how much time longer to wait for relays to EOS,
     -- after acceptableRatio has been achieved
-    timeout :: Seconds
+    timeout :: Seconds,
+    startedAt :: UTCTime
   }
   deriving (Eq, Generic)
 
+data SubscriptionParams action where
+  SubscriptionParams :: {  subType :: SubType,
+                           subFilter :: [DatedFilter],
+                           extractResults :: (Response, Relay) -> Either Text e,
+                           actOnResults :: [e] -> action,
+                           actOnSubState :: Maybe ((SubscriptionId, SubState) -> action),
+                           cancelButton :: Maybe (MVar ()),
+                           -- after how long to cancel the subscrption. 
+                           -- if any relay is in Running state for longer than this, 
+                           -- the subscription is canceled.
+                           timeoutPerRelay :: Maybe Seconds,
+                           reportError :: Text -> action
+                        } -> SubscriptionParams action
+
 subscribe ::
   NostrNetwork ->
-  SubType ->
-  [DatedFilter] ->
-  ([e] -> action) ->
-  Maybe ((SubscriptionId, SubState) -> action) ->
-  ((Response, Relay) -> Either Text e) ->
-  Maybe (MVar ()) ->
-  Sub action
-subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelButton sink = do
+  Sink action ->
+  SubscriptionParams action -> JSM ()
+subscribe nn sink SubscriptionParams{..} = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter
@@ -87,9 +106,6 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelB
   let collectResponses = do
         subState <- liftIO $ Map.lookup subId <$> readMVar (nn ^. #subscriptions)
         relays <- liftIO $ Map.elems <$> readMVar (nn ^. #relays)
-        rrs <-
-          collectJustM . liftIO . atomically $
-            tryReadTChan respChan
         let finished = isSubFinished subState 
         let ratio = ratioOfFinished subState
         -- inform about subscription state changes if
@@ -106,36 +122,57 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelB
                 (sink . act)
                 state
         let reportRunning = reportSubState False actOnSubState 
-        let reportFinished = reportSubState True actOnSubState
+        let reportFinished stats = do
+               liftIO $ do 
+                now <- getCurrentTime  
+                print $ "branko-sub-stats-finished " <> show subId <> " took=" <> show (diffInSeconds now (stats ^. #startedAt))
+               reportSubState True actOnSubState
         let continue = do
               reportRunning 
               liftIO $ sleep period
               isCanceled <- maybe (pure False) isSubCanceled cancelButton
               unless isCanceled collectResponses
+        rrs <-
+          collectJustM . liftIO . atomically $
+            tryReadTChan respChan
+        tooLong <- do 
+            now <- liftIO getCurrentTime
+            startedAt <- gets (view #startedAt)
+            if diffInSeconds now startedAt > (fromMaybe (Seconds 15) timeoutPerRelay) 
+             then do
+              let runningRels = maybe [] getRunningRelays subState
+              -- liftIO . sink . reportError $
+              liftIO . print $ 
+               "Canceling subId=" <> showt subId <> "becase these relays are taking too long:" <> showt (runningRels ^.. folded % #uri)
+              pure True
+            else 
+              pure False
         case subType of
           AllAtEOS -> do
             addMessages rrs
             addStats (length rrs)
             sd@SubData {..} <- get
-            case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
-              (True, _, _) -> (liftIO . processMsgs $ msgs) >> reportFinished
-              (_, True, True) -> (liftIO . processMsgs $ msgs) >> reportFinished
-              (_, True, False) -> do
+            case (tooLong, finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
+              (True, _ ,_ ,_) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
+              (_, True, _, _) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
+              (_, _, True, True) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
+              (_, _, True, False) -> do
                 put $ sd & #timeout %~ subtract period
                 continue
-              (_, _, _) -> continue
+              (_, _, _, _) -> continue
           PeriodicUntilEOS -> do
             addStats (length rrs)
             sd@SubData {..} <- get
             unless (length rrs == 0) $ 
               liftIO . processMsgs $ rrs
-            case (finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
-              (True, _, _) -> reportFinished
-              (_, True, True) -> reportFinished
-              (_, True, False) -> do
+            case (tooLong, finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
+              (True,_,_,_) -> reportFinished sd
+              (_,True, _, _) -> reportFinished sd
+              (_,_, True, True) -> reportFinished sd
+              (_,_, True, False) -> do
                 put $ sd & #timeout %~ subtract period
                 continue
-              (_, _, _) -> continue
+              (_, _, _, _) -> continue
           PeriodicForever -> do
             addStats (length rrs)
             unless (length rrs == 0) $ 
@@ -147,7 +184,8 @@ subscribe nn subType subFilter actOnResults actOnSubState extractResults cancelB
             unless isRestartLongRunning continue
 
   liftIO $ do 
-     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout)
+     now <- getCurrentTime
+     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout now)
      print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
      flip runReaderT nn $ RP.unsubscribe subId
 
