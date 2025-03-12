@@ -112,7 +112,7 @@ start = do
           defaultFindEventModel
   startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
   where
-    events = defaultEvents
+    events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
     view (CompactModel m) = appView m
     -- mountPoint = "body"
     mountPoint = Just "miso-mountpoint"
