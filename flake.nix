@@ -30,6 +30,7 @@
                 buildInputs = [
                     ghc-wasm.packages.${system}.all_9_10
                     libsecp256k1.dev
+                    pkgs.python3
                 ];
 
                 shellHook = ''export PKG_CONFIG_PATH=${libsecp256k1.dev}/lib/pkgconfig'';
