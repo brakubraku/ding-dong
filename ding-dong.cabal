@@ -58,7 +58,7 @@ library
                       , cryptohash-sha256
                       , base16
                       , data-default
-                      , text <= 2.1.2
+                      , text < 2.1.2
                       , time
                       , containers
                       , string-conversions
@@ -108,7 +108,7 @@ executable websockets-server
   Build-depends:
     base,
     websockets,
-    text <= 2.1.2,
+    text < 2.1.2,
     ding-dong,
     aeson,
     vector,
