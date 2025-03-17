@@ -16,7 +16,7 @@ cp -r ./browser_wasi_shim dist/
 
 pushd ../
 if command -v wasm32-wasi-cabal &>/dev/null; then
-    wasm32-wasi-cabal build nostr-wasm --allow-newer
+    wasm32-wasi-cabal build nostr-wasm
 else
     cabal \
         build nostr-wasm \
