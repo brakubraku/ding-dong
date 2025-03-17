@@ -1,19 +1,16 @@
 packages:
  .
- ../secp256k1-haskell/secp256k1-haskell
-
-shared: True
 
 source-repository-package
     type: git
     location: https://github.com/brakubraku/miso
     tag: 459f50fffe92b969e68a936e3c248ee54fbcc79a
 
--- source-repository-package
---    type: git
---    location: https://github.com/brakubraku/secp256k1-haskell
---    tag: a0e86da21912d999778cd9ffe76bfb69c4417e18
---    subdir:secp256k1-haskell
+source-repository-package
+   type: git
+   location: https://github.com/brakubraku/secp256k1-haskell
+   tag: a0e86da21912d999778cd9ffe76bfb69c4417e18
+   subdir:secp256k1-haskell
 
 source-repository-package
     type: git
@@ -34,6 +31,3 @@ source-repository-package
     type: git
     location: https://github.com/amesgen/entropy
     tag: f771c8010f001b87c5ccf9b61703b6912f7062d5
-
-allow-newer: all
--- extra-lib-dirs: /home/branko/Documents/building-nostr-wasm/secp256k1/.libs
