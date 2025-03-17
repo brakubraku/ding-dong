@@ -54,7 +54,7 @@ subscribe ::
 subscribe rch filters = do
   sid <- lift generate
   registerResponseChannel sid rch
-  lift . logDebug $ "Subscribing for filters: " <> (pack . show) filters
+  lift . logDebug $ "Subscribing (subId=" <> showt sid <> ") for filters: " <> (pack . show) filters
   send . Subscribe . Subscription filters $ sid
   pure sid
   where
