@@ -103,7 +103,6 @@ start = do
           Nothing
           [(FeedPage,Nothing)]
           Map.empty
-          Map.empty
           []
           0
           Map.empty

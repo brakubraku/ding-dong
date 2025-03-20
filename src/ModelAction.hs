@@ -180,10 +180,6 @@ data Model = Model
     threads :: Map.Map RootEid Thread,
     writeReplyTo :: Maybe Event, -- event to reply to
     history :: [(Page, Maybe ElementId)], -- page and what element to scroll to
-    subscriptions ::
-      Map.Map
-        Page
-        [(SubscriptionId, SubState)],
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
     reports :: [(Int, ReportType, Text)],
     reportCounter :: Int,
@@ -211,7 +207,7 @@ newtype CompactModel = CompactModel Model
 -- to determine if update is neccessary.
 instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
-    | not . allEqual $ [eq #now, eq #subscriptions, eq #notifs, eq #notifsNew, eq #reports] = False
+    | not . allEqual $ [eq #now, eq #notifs, eq #notifsNew, eq #reports] = False
     | otherwise =
         if m1 ^. #page /= m2 ^. #page then False
         else 
