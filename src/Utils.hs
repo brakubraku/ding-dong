@@ -24,15 +24,6 @@ newtype Seconds = Seconds
 sleep :: Seconds -> IO () 
 sleep (Seconds s) = threadDelay . round $  s * 10^6
 
-loadingBar :: View action
-loadingBar = rawHtml . pack $ 
- "<div class=\"lb-container\">\
-  \<div class=\"lb-progress lb-progress-infinite\">\
-    \<div class=\"lb-progress-bar3\">\
-    \</div>\
-  \</div>\
-\</div>"
-
 reloadPage :: JSM ()
 reloadPage = do
   _ <- getLocation # ("reload" :: String) $ ()

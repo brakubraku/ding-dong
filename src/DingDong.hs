@@ -58,6 +58,8 @@ import Nostr.Log (logError)
 import Network.URI
 import SubscriptionUtils
 
+import qualified Miso.Components.LoadingBar as LB
+
 start :: JSM ()
 start = do
   (keys@(Keys _ me _), isNewKey) <- loadKeys
@@ -226,6 +228,7 @@ updateModel nn rl pl action model =
           
             storageContacts <- Set.fromList <$> loadContactsFromStorage
             liftIO $ do 
+              sink $ GoPage FeedPage Nothing
               sink $ loadContactsFromNostr storageContacts
               when isNew $ sink CreateInitialProfile
               -- start notifications
@@ -544,7 +547,7 @@ updateModel nn rl pl action model =
             bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in noEff updated
+       in batchEff updated $ [(mail LB.loadingBarComponent $ LB.UpdatePage page) >> pure NoAction]
 
     GoBack ->
       let updated = do
@@ -740,41 +743,26 @@ updateModel nn rl pl action model =
                 (UpdateField (#profileContacts % at xo))
           liftIO . sink $ LoadProfileReactions xo page
 
-    SubState p st ->
-      let isRunning (SubRunning _) = True -- TODO: rewrite all these using Prisms when TH is ready
-          isRunning _ = False
-          isError (Network.Error _) = True
+    SubState p sst ->
+      let isError (Network.Error _) = True
           isError _ = False
           extract (Network.Error e) = Just e
           extract _ = Nothing
           -- timeouted relays, errored relays
           (toRels, erRels) =
-            case st of
+            case sst of
               (_, SubFinished rs) ->
                 -- find timeouted relays
                 let trs = fst <$> filter ((== Running) . snd) (Map.toList rs)
                     ers = filter (isError . snd) (Map.toList rs)
                  in (trs, second extract <$> ers)
               _ -> ([], [])
-          updateSubStates (sid, ss) substates =
-            -- update "sub state" for sid and remove all finished "sub states"
-            (sid, ss) : filter (\(sid2, ss2) -> sid2 /= sid && isRunning ss2) substates
-          updated =
-            model & #subscriptions % at p
-              %~ Just
-              . fromMaybe [st]
-              . fmap (updateSubStates st)
-       in batchEff updated $
-            pure . Report ErrorReport
-              <$> ((\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels)
-                ++ ( ( \(r, er) ->
-                         "Relay "
-                           <> (showt $ r ^. #uri)
-                           <> " returned error: "
-                           <> (fromMaybe "" er)
-                     )
-                       <$> erRels
-                   )
+          timeouts = (\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels
+          errors = (\(r, er) -> "Relay " <> (showt $ r ^. #uri) 
+                                <> " returned error: " <> (fromMaybe "" er)) <$> erRels
+      in batchEff model $
+            [(mail LB.loadingBarComponent $ LB.UpdateSubscriptions p sst) >> pure NoAction] ++
+            (pure . Report ErrorReport <$> timeouts ++ errors)
 
     DisplayProfilePage mid xo ->
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
@@ -1084,13 +1072,7 @@ appView :: Model -> View Action
 appView m =
   -- div_ [onLoad AllLoaded] $
   div_ [] $
-    [ div_
-        [ bool
-            (class_ "remove-element")
-            (class_ "visible")
-            $ areSubsRunning m (m ^. #page)
-        ]
-        [loadingBar],
+    [ embed $ LB.loadingBarComponent,
       newNotesIndicator,
       div_
         -- [class_ "main-container", id_ "top-top"]
@@ -1234,14 +1216,6 @@ displayPagedReactions m pml screen =
       div_ [class_ "reaction-and-event"] 
         [ div_ [class_ "reaction"] [text $ (r ^. #content)]
         , div_ [class_ "reaction-to"] [displayEvent (re ^. #reactionTo)]]
-
-areSubsRunning :: Model -> Page -> Bool
-areSubsRunning m p =
-  fromMaybe False $ do
-    subs <- m ^. #subscriptions % at p
-    let isRunning (_, SubRunning _) = True
-        isRunning (_, _) = False
-    pure . any isRunning $ subs
 
 footerView :: Model -> View action
 footerView Model {..} =
