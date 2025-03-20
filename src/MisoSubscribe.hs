@@ -135,18 +135,21 @@ subscribe nn sink SubscriptionParams{..} = do
         rrs <-
           collectJustM . liftIO . atomically $
             tryReadTChan respChan
-        tooLong <- do 
-            now <- liftIO getCurrentTime
-            startedAt <- gets (view #startedAt)
-            if diffInSeconds now startedAt > (fromMaybe (Seconds 15) timeoutPerRelay) 
-             then do
-              let runningRels = maybe [] getRunningRelays subState
-              -- liftIO . sink . reportError $
-              liftIO . print $ 
-               "Canceling subId=" <> showt subId <> "becase these relays are taking too long:" <> showt (runningRels ^.. folded % #uri)
-              pure True
-            else 
-              pure False
+        tooLong <- case subType of 
+            PeriodicForever -> pure False 
+            _ -> 
+              do 
+              now <- liftIO getCurrentTime
+              startedAt <- gets (view #startedAt)
+              if diffInSeconds now startedAt > (fromMaybe (Seconds 15) timeoutPerRelay) 
+              then do
+                let runningRels = maybe [] getRunningRelays subState
+                -- liftIO . sink . reportError $
+                liftIO . print $ 
+                 "Canceling subId=" <> showt subId <> "becase these relays are taking too long:" <> showt (runningRels ^.. folded % #uri)
+                pure True
+              else 
+                pure False
         case subType of
           AllAtEOS -> do
             addMessages rrs
