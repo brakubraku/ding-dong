@@ -547,7 +547,8 @@ updateModel nn rl pl action model =
             bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in batchEff updated $ [(mail LB.loadingBarComponent $ LB.UpdatePage page) >> pure NoAction]
+       in effectSub updated $ \_ -> do 
+            mail LB.loadingBarComponent $ LB.UpdatePage page
 
     GoBack ->
       let updated = do
@@ -760,9 +761,9 @@ updateModel nn rl pl action model =
           timeouts = (\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels
           errors = (\(r, er) -> "Relay " <> (showt $ r ^. #uri) 
                                 <> " returned error: " <> (fromMaybe "" er)) <$> erRels
-      in batchEff model $
-            [(mail LB.loadingBarComponent $ LB.UpdateSubscriptions p sst) >> pure NoAction] ++
-            (pure . Report ErrorReport <$> timeouts ++ errors)
+      in effectSub model $ \sink -> do
+            mail LB.loadingBarComponent $ LB.UpdateSubscriptions p sst
+            liftIO . mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
     DisplayProfilePage mid xo ->
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
