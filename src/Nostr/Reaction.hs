@@ -32,7 +32,7 @@ data Reaction = Reaction
     sentiment :: Sentiment,
     content :: T.Text
   }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Show, Eq, Ord)
 
 extract :: Event -> Maybe ReactionEvent
 extract event
@@ -59,20 +59,20 @@ getReaction ReactionEvent {event} =
 
 addReaction ::
   ReactionEvent ->
-  Map Sentiment (Set XOnlyPubKey) ->
-  Map Sentiment (Set XOnlyPubKey)
+  Map Sentiment (Set Reaction) ->
+  Map Sentiment (Set Reaction)
 addReaction e rs =
   let r = getReaction e
    in rs
         & at (r ^. #sentiment)
-        %~ \authors ->
-          case authors of
-            Nothing -> Just (S.singleton (r ^. #author))
-            _ -> S.insert (r ^. #author) <$> authors
+        %~ \recs ->
+          case recs of
+            Nothing -> Just (S.singleton r)
+            _ -> S.insert r <$> recs
 
 data Reactions = Reactions
   { received :: Map ReactionEvent (Set Relay),
-    processed :: Map EventId (Map Sentiment (Set XOnlyPubKey))
+    processed :: Map EventId (Map Sentiment (Set Reaction))
   }
   deriving (Generic, Eq)
 
@@ -99,3 +99,6 @@ reactionToEvent :: Event -> Maybe EventId
 reactionToEvent e = do
   (ETag eid _ _) <- snd <$> (unsnoc . Prelude.filter isEtag . tags $ e)
   pure eid
+
+likeReactionOf :: XOnlyPubKey -> Reaction
+likeReactionOf xo = Reaction xo Like "👍"

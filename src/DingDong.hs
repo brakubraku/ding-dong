@@ -59,6 +59,7 @@ import Network.URI
 import SubscriptionUtils
 
 import qualified Miso.Components.LoadingBar as LB
+import Nostr.Reaction (Reaction)
 
 start :: JSM ()
 start = do
@@ -847,7 +848,8 @@ updateModel nn rl pl action model =
         let me = model ^. #me
             rcs = model ^. #reactions % #processed % at (e ^. #eventId)
             sendLike = pure . likeEvent e me
-            isLikedByMe = fromMaybe False $ Set.member me <$> rcs ^? _Just % at Like % _Just
+            likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just 
+            isLikedByMe = Set.member me . Set.fromList $ likeReactions ^.. folded % #author
             doNothing = noEff model
 
         if isLikedByMe 
@@ -861,13 +863,14 @@ updateModel nn rl pl action model =
        
     LikeSent e -> 
       let me = model ^. #me
+          likeReaction = likeReactionOf me
           updated = model & #reactions % #processed % at (e ^. #eventId) 
              %~ \rcs -> 
               Just $ 
                 case rcs of 
-                  Nothing -> Map.fromList [(Like, Set.singleton me)]
+                  Nothing -> Map.fromList [(Like, Set.singleton likeReaction)]
                   Just ss -> ss & at Like %~ Just .
-                      fromMaybe (Set.singleton $ me) . fmap (Set.insert me)
+                      fromMaybe (Set.singleton likeReaction) . fmap (Set.insert likeReaction)
       in 
         noEff $ updated
     
@@ -1670,11 +1673,12 @@ displayThread m e =
    in div_ [class_ "thread-container"] $
         catMaybes [parentDisplay, noteDisplay]
 
-displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set XOnlyPubKey)) -> View Action
+displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set Reaction)) -> View Action
 -- displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
 displayReactions m e rcs =
   let howMany = showt . length
-      isLikedByMe = fromMaybe False $ Set.member (m ^. #me) <$> rcs ^? _Just % at Like % _Just
+      likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just 
+      isLikedByMe = Set.member (m ^. #me) . Set.fromList $ likeReactions ^.. folded % #author
       likeCls = bool "like-reaction" "like-reaction-liked" $ isLikedByMe
       likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like % _Just
       likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [] [text $ " " <> likeCnt]]
