@@ -34,12 +34,12 @@ import GHCJS.Marshal
 import GHCJS.Types ()
 import Language.Javascript.JSaddle.String
 import Language.Javascript.JSaddle.Value (valToStr)
-import Miso.Effect (Sub)
-import Miso.FFI
+import Miso hiding (WebSocket(..), at)
+-- import Miso.FFI
 import Miso.FFI.WebSocket (Socket)
 import qualified Miso.FFI.WebSocket as WS
+import           Language.Javascript.JSaddle
 import Miso.String
-import Miso.WebSocket hiding (WebSocket(..))
 import Nostr.Log
 import Nostr.Network
 import Nostr.Relay
@@ -89,8 +89,8 @@ connectRelays nn sendMsg sink = do
                   conRelay (recnt + 1, now) relay
 
       WS.addEventListener socket "open" $ \_ -> do
-        liftIO $ do
-          markIsConnected True relay
+         do
+          liftIO $ markIsConnected True relay
           sink . sendMsg $ WebSocketOpen relay
 
       WS.addEventListener socket "message" $ \v -> do
@@ -141,7 +141,7 @@ connectRelays nn sendMsg sink = do
         code <- codeToCloseCode <$> WS.code e
         reason <- WS.reason e
         clean <- WS.wasClean e
-        liftIO . sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
+        sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
         reconnect
  
@@ -150,10 +150,10 @@ connectRelays nn sendMsg sink = do
         undef <- ghcjsPure (isUndefined d')
         if undef
           then do
-            liftIO . sink . sendMsg $ (WebSocketError relay mempty)
+            sink . sendMsg $ (WebSocketError relay mempty)
           else do
             Just d <- fromJSVal d'
-            liftIO . sink . sendMsg $ (WebSocketError relay d)
+            sink . sendMsg $ (WebSocketError relay d)
         reconnect
 
       rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
@@ -188,7 +188,7 @@ connectRelays nn sendMsg sink = do
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
 sendJson' socket m = do
-  WS.send socket =<< stringify m
+  WS.send socket =<< jsonStringify m
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
 {-# INLINE createWebSocket #-}

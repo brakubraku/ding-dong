@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Miso.Components.LoadingBar where
 
@@ -15,26 +16,27 @@ import Data.Maybe
 import Data.Bool
 import GHC.Generics
 import qualified Data.Text as T
+import Control.Monad.State (get)
 
 data Action where 
   UpdateSubscriptions :: Page -> (SubscriptionId, SubState) -> Action
   UpdatePage :: Page -> Action
-  NoAction :: Action
 
 data Model = Model {
   subscriptions :: M.Map Page [(SubscriptionId, SubState)],
   page :: Maybe Page
 } deriving (Generic, Eq)
 
-update :: Action -> Model -> Effect Action Model
-update a m = case a of 
-    UpdateSubscriptions p sst ->
-       noEff $
-        m & #subscriptions % at p
-            %~ Just . fromMaybe [sst] . fmap (updateSubStates sst)
-    UpdatePage p ->
-       noEff $ m & #page ?~ p 
-    NoAction -> noEff m
+update :: Action -> Effect Model Action
+update a = do
+    m <- get 
+    case a of 
+      UpdateSubscriptions p sst ->
+        noEff $
+          m & #subscriptions % at p
+              %~ Just . fromMaybe [sst] . fmap (updateSubStates sst)
+      UpdatePage p ->
+        noEff $ m & #page ?~ p 
 
 updateSubStates :: Eq a => (a, SubState) -> [(a, SubState)] -> [(a, SubState)]
 updateSubStates (sid, ss) substates =
@@ -73,7 +75,7 @@ areSubsRunning m =
     pure . any isRunning $ subs
 
 loadingBarApp :: App Model Action
-loadingBarApp = defaultApp (Model M.empty Nothing) update view NoAction
+loadingBarApp = defaultApp (Model M.empty Nothing) update view
 
-loadingBarComponent :: Component "loading-bar" Model Action
-loadingBarComponent = component loadingBarApp 
+loadingBarComponent :: Component Model Action
+loadingBarComponent = component "loading-bar" loadingBarApp 

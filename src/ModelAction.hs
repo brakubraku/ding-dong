@@ -126,7 +126,8 @@ data Action where
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
   LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
- 
+
+
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving Eq
 

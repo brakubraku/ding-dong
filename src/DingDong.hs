@@ -4,11 +4,16 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module DingDong where
 
-import BechUtils
+import BechUtils hiding (get)
 import ContentUtils
+    ( Content(..),
+      LinkType(Other, Image, Video),
+      filterBech,
+      processContent )
 import Control.Concurrent
 import Control.Monad (when, unless)
 import Control.Monad.IO.Class
@@ -60,6 +65,13 @@ import SubscriptionUtils
 
 import qualified Miso.Components.LoadingBar as LB
 import Nostr.Reaction (Reaction)
+-- import qualified THBits as TH (script)
+-- import qualified THBits as TH (script)
+import Miso.Components.ImageWithMouseActions
+-- import Control.Monad.State (State, get, put, modify, runStateT)
+import Control.Monad.Trans.State.Strict (runStateT)
+import Control.Monad.State.Class (put, get)
+import Control.Monad.Trans.Writer.Strict (runWriter)
 
 start :: JSM ()
 start = do
@@ -79,7 +91,18 @@ start = do
             \(Since s) (Until u) ->
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
-      update = (\a (CompactModel m) -> CompactModel <$> updateModel nn reactionsLoader profilesLoader a m)
+      -- update :: Action -> Effect CompactModel Action
+      update a = EffectCore $
+        do 
+          (CompactModel m) <- get 
+          -- subs <- runWriter
+          let (EffectCore effect) = updateModel nn reactionsLoader profilesLoader a
+          let (_, w1 :: [Sub Action]) = runWriter $ runStateT effect m
+          traceM $ "Writer from Model: " <> (show . length $ w1)
+          (_, m1) <- lift $ second CompactModel <$> runStateT effect m
+          -- (_, w1) <- lift $ listen
+          -- traceM $ "Writer from CompactModel: " <> (show . length $ w1)
+          put m1
       initialModel =
         CompactModel $ Model 
           (defFeedEvntsModel now)
@@ -112,7 +135,8 @@ start = do
           me
           Map.empty
           defaultFindEventModel
-  startApp App {initialAction = StartAction isNewKey, model = initialModel, ..}
+      styles = []
+  startApp App {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
   where
     events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
     view (CompactModel m) = appView m
@@ -125,9 +149,10 @@ updateModel ::
   PeriodicLoader EventId (ReactionEvent, Relay) ->
   PeriodicLoader XOnlyPubKey ProfOrRelays ->
   Action ->
-  Model ->
-  Effect Action Model
-updateModel nn rl pl action model =
+  Effect Model Action
+updateModel nn rl pl action = do
+  model <- get
+  traceM $ "Running action"
   case action of
     HandleWebSocket (WebSocketOpen r) -> 
       noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
@@ -149,9 +174,8 @@ updateModel nn rl pl action model =
             model & #reports %~ add 
                   & #reportCounter %~ (+1)
        in effectSub updated $ \sink -> 
-            liftIO $ 
              do 
-              sleep $ Seconds 15
+              liftIO . sleep $ Seconds 15
               sink $ UpdateModel (removeReport counter) []
       where 
         removeReport which model = 
@@ -209,7 +233,7 @@ updateModel nn rl pl action model =
             forkJSM $ -- put actual time to model every 60 seconds
               let loop = do
                     now <- liftIO getCurrentTime
-                    liftIO . sink . ActualTime $ now
+                    sink $ ActualTime now
                     liftIO . sleep . Seconds $ 60
                     loop
                in loop
@@ -227,13 +251,12 @@ updateModel nn rl pl action model =
                in loop
           
             storageContacts <- Set.fromList <$> loadContactsFromStorage
-            liftIO $ do 
-              sink $ GoPage FeedPage Nothing
-              sink $ loadContactsFromNostr storageContacts
-              when isNew $ sink CreateInitialProfile
-              -- start notifications
-              sink $ LoadMoreEvents #notifs NotificationsPage
-              sink ListenToNotifs
+            sink $ GoPage FeedPage Nothing
+            sink $ loadContactsFromNostr storageContacts
+            when isNew $ sink CreateInitialProfile
+            -- start notifications
+            sink $ LoadMoreEvents #notifs NotificationsPage
+            sink ListenToNotifs
 
           where 
             loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
@@ -288,7 +311,7 @@ updateModel nn rl pl action model =
             -- and new one will be created instead. you want this with 
             -- "forever running" subscriptions, in this case to constantly check for 
             -- notifications
-            liftIO . waitForReconnect $ sink
+            waitForReconnect $ sink
             runLoop sink            
         processNewNotifs m ers =
           let update er@(e, r) m =
@@ -311,7 +334,7 @@ updateModel nn rl pl action model =
           cb <- liftIO newEmptyMVar
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
-          liftIO . sink $ UpdateModel updateCBs []
+          sink $ UpdateModel updateCBs []
           runLoop cb sink
        where 
         doSubscribe cb sink =
@@ -327,7 +350,7 @@ updateModel nn rl pl action model =
             isCancelled <- isSubCanceled cb
             unless isCancelled $ 
              do 
-              liftIO . waitForReconnect $ sink
+              waitForReconnect $ sink
               runLoop cb sink   
 
     FeedLongRunningProcess ers ->
@@ -363,13 +386,12 @@ updateModel nn rl pl action model =
        in effectSub updated $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
             load pl $ (pubKey <$> events) ++ eprofs
-            liftIO $ do
-              sink $ SubscribeForPagedReactionsTo pml screen reactions
-              sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
-              sink $ SubscribeForReplies $ (eventId <$> events)
-              sink $ SubscribeForEmbeddedReplies enotes screen
-              sink $ SubscribeForEmbedded enotes
-              sink $ LoadMoreIfNecessary (castOptic pml) $ LoadMoreEvents pml screen
+            sink $ SubscribeForPagedReactionsTo pml screen reactions
+            sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
+            sink $ SubscribeForReplies $ (eventId <$> events)
+            sink $ SubscribeForEmbeddedReplies enotes screen
+            sink $ SubscribeForEmbedded enotes
+            sink $ LoadMoreIfNecessary (castOptic pml) $ LoadMoreEvents pml screen
 
     ShowPrevious pml ->
       let newModel =
@@ -385,7 +407,7 @@ updateModel nn rl pl action model =
         -- otherwise it will scroll to elsewhere
          fromMaybe (pure ()) $ liftIO . sleep <$> delay 
          Utils.scrollIntoView here 
-         liftIO $ sink NoAction
+         sink NoAction
 
     ShowNext pml page ->
       let (Until start) = model ^. pml % #until
@@ -489,10 +511,9 @@ updateModel nn rl pl action model =
        in  effectSub updatedModel $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
             load pl $ (pubKey <$> events) ++ eprofs
-            liftIO $ do
-              sink $ SubscribeForReplies (eventId <$> events)
-              sink $ SubscribeForEmbeddedReplies enotes screen
-              sink $ SubscribeForEmbedded enotes
+            sink $ SubscribeForReplies (eventId <$> events)
+            sink $ SubscribeForEmbeddedReplies enotes screen
+            sink $ SubscribeForEmbedded enotes
 
     SubscribeForEmbedded [] ->
       noEff model
@@ -548,7 +569,7 @@ updateModel nn rl pl action model =
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
        in effectSub updated $ \_ -> do 
-            mail LB.loadingBarComponent $ LB.UpdatePage page
+            notify LB.loadingBarComponent $ LB.UpdatePage page
 
     GoBack ->
       let updated = do
@@ -580,18 +601,16 @@ updateModel nn rl pl action model =
     DisplayThread e -> do
        effectSub model $ \sink -> do
         forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
-        liftIO $ do
-          sink . GoPage (ThreadPage e) . Just $ getNoteElementId e
-          sink . ScrollTo Nothing $ "top-top"
+        sink . GoPage (ThreadPage e) . Just $ getNoteElementId e
+        sink . ScrollTo Nothing $ "top-top"
 
     DisplayReplyThread e -> 
      effectSub (model & #writeReplyTo ?~ e) $ 
       \sink -> 
         do 
          draft <- fromRight "" <$> getLocalStorage "reply-draft"
-         liftIO $ do 
-          sink . UpdateField #replyDraft $ draft
-          sink $ DisplayThread e
+         sink . UpdateField #replyDraft $ draft
+         sink $ DisplayThread e
 
     ThreadEvents _  [] -> noEff $ model
     ThreadEvents screen es ->
@@ -599,9 +618,8 @@ updateModel nn rl pl action model =
        in effectSub (model & #threads .~ updated) $ \sink -> do
             load rl $ (eventId . fst <$> es) ++ enotes
             load pl $ (pubKey . fst <$> es) ++ eprofs
-            liftIO $ do
-              sink . SubscribeForEmbedded $ enotes
-              sink $ SubscribeForEmbeddedReplies enotes screen
+            sink . SubscribeForEmbedded $ enotes
+            sink $ SubscribeForEmbeddedReplies enotes screen
 
     UpdateField l v -> noEff $ model & l .~ v
 
@@ -686,9 +704,9 @@ updateModel nn rl pl action model =
       in 
         case mPm of 
           Nothing -> 
-            effectSub model $ \sink -> do 
-               liftIO $ do 
-                 logError $ "Missing PagedNotes model for loading reactions"
+            effectSub model $ \sink -> 
+               do 
+                 liftIO . logError $ "Missing PagedNotes model for loading reactions"
                  sink NoAction
           Just pm ->
             effectSub (model & #profileReactions % at xo ?~ pm) $ \sink -> do 
@@ -697,7 +715,7 @@ updateModel nn rl pl action model =
                 page
                 [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
                 (\ers -> UpdateModel (updateReactionsTo ers) [])
-              liftIO . sink $ 
+              sink $ 
                LoadMoreIfNecessary (#profileReactions % ixAt xo) $
                  LoadMoreEvents (#profileReactions % at xo % non pm) page
 
@@ -734,15 +752,15 @@ updateModel nn rl pl action model =
             ReceivedProfiles
           
           when isLoadNotes $ 
-            liftIO . sink $
+            sink $
              LoadMoreEvents (#profileEvents % at xo % non textNotes) page
           when isLoadFollowing $ 
-            liftIO . sink $ 
+            sink $ 
               LoadContactsOf 
                 xo
                 page
                 (UpdateField (#profileContacts % at xo))
-          liftIO . sink $ LoadProfileReactions xo page
+          sink $ LoadProfileReactions xo page
 
     SubState p sst ->
       let isError (Network.Error _) = True
@@ -762,8 +780,8 @@ updateModel nn rl pl action model =
           errors = (\(r, er) -> "Relay " <> (showt $ r ^. #uri) 
                                 <> " returned error: " <> (fromMaybe "" er)) <$> erRels
       in effectSub model $ \sink -> do
-            mail LB.loadingBarComponent $ LB.UpdateSubscriptions p sst
-            liftIO . mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
+            notify LB.loadingBarComponent $ LB.UpdateSubscriptions p sst
+            mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
     DisplayProfilePage mid xo ->
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
@@ -883,9 +901,8 @@ updateModel nn rl pl action model =
     DisplayWritePostPage ->
       effectSub model $ \sink -> do 
         draft <- fromRight "" <$> getLocalStorage "post-draft" 
-        liftIO $ do 
-          sink $ UpdateField (#postDraft) draft 
-          sink $ GoPage WritePostPage Nothing
+        sink $ UpdateField (#postDraft) draft 
+        sink $ GoPage WritePostPage Nothing
     
     WriteTextToStorage tid t -> 
       model <# do 
@@ -894,7 +911,7 @@ updateModel nn rl pl action model =
 
     DisplayThreadWithId eid -> 
       effectSub model $ \sink -> do 
-       liftIO . sink $ UpdateField (#findEventModel % #error) (Just "") 
+       sink $ UpdateField (#findEventModel % #error) (Just "") 
        subscribe nn sink $ 
            SubscriptionParams
             { subType = AllAtEOS,
@@ -922,9 +939,9 @@ updateModel nn rl pl action model =
           let Keys _ xo _ = keys $ nn
               signed = signEvent e key xo
           maybe
-            (liftIO . sink $ Report ErrorReport "Failed sending: Event signing failed")
-            ( \se -> liftIO $ do
-                isSuccess <- runInNostr $ sendAndWait se (Seconds 1)
+            (sink $ Report ErrorReport "Failed sending: Event signing failed")
+            ( \se -> do
+                isSuccess <- liftIO . runInNostr $ sendAndWait se (Seconds 1)
                 sequence_ . fmap (\f -> sink (f se)) 
                   $ bool 
                      failureActs 
@@ -1018,7 +1035,7 @@ updateModel nn rl pl action model =
 
     waitForReconnect sink = 
       do 
-        unconnected <- runNostr nn $ RP.waitForActiveConnections (Seconds 10)
+        unconnected <- liftIO . runNostr nn $ RP.waitForActiveConnections (Seconds 10)
         case (length unconnected > 0) of 
           True ->
             sink . Report ErrorReport $ 
@@ -1075,7 +1092,7 @@ appView :: Model -> View Action
 appView m =
   -- div_ [onLoad AllLoaded] $
   div_ [] $
-    [ embed $ LB.loadingBarComponent,
+    [ embed LB.loadingBarComponent [],
       newNotesIndicator,
       div_
         -- [class_ "main-container", id_ "top-top"]
@@ -1228,11 +1245,23 @@ footerView Model {..} =
 
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
-  imgKeyed_ (Key pic)
-    [ class_ "profile-pic",
-      prop "src" $ pic,
-      onClick $ DisplayProfilePage mid xo
-    ]
+  div_ [onClick $ DisplayProfilePage mid xo] 
+       [flip embed [] $ 
+          imgWithMouseActions  
+            [ class_ "profile-pic", 
+              class_ "hovered",
+              prop "src" $ pic
+            ]
+            [ class_ "profile-pic",
+              prop "src" $ pic
+            ]
+        ]
+      
+  -- imgKeyed_ (Key pic)
+  --   [ class_ "profile-pic",
+  --     prop "src" $ pic,
+  --     onClick $ DisplayProfilePage mid xo
+  --   ]
 displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
@@ -1671,6 +1700,10 @@ displayThread m e =
              ++ maybe [] singleton writeReplyDisplay
              ++ fromMaybe [] repliesDisplay
    in div_ [class_ "thread-container"] $
+        -- [script_ [] TH.script] ++ 
+        [div_ [class_ "image-container"] 
+          [div_ [] [text "Hover here bitch"]
+           ,div_ [class_ "enlarged"] [text "FUCK THIS SHIT"]]] ++
         catMaybes [parentDisplay, noteDisplay]
 
 displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set Reaction)) -> View Action

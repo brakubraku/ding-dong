@@ -47,6 +47,10 @@ library
                       Utils
                       StoredRelay
                       Miso.Components.LoadingBar
+                      Miso.Components.ImageWithMouseActions
+                      -- Test
+                      -- THBits
+
 
     build-depends:    base >=4.20.0.0
                       , secp256k1-haskell
@@ -73,6 +77,8 @@ library
                       , extra
                       , scientific
                       , network-uri
+                      , raw-strings-qq
+                      , transformers
     hs-source-dirs:   src
     default-language: Haskell2010
 

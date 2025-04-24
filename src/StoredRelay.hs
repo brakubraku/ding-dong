@@ -5,8 +5,9 @@
 
 module StoredRelay where 
 import Nostr.Relay
-import Miso (JSM)
-import Miso.Storage
+import Miso
+-- import Miso.Storage
+
 import Nostr.Network (newRelay)
 import Data.Aeson
 import GHC.Generics

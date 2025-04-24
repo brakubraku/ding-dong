@@ -111,11 +111,11 @@ subscribe nn sink SubscriptionParams{..} = do
         -- inform about subscription state changes if
         -- function actOnSubState is provided 
         let reportSubState _ Nothing = pure ()
-            reportSubState isFinished (Just act) = liftIO $ do 
+            reportSubState isFinished (Just act) = lift $ do 
               let relState = subState ^? _Just % #relaysState
                   state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
               maybe
-                ( logError $
+                ( liftIO . logError $
                     "Could not find relays state for subId="
                       <> (T.pack . show $ subId)
                 )
@@ -156,9 +156,9 @@ subscribe nn sink SubscriptionParams{..} = do
             addStats (length rrs)
             sd@SubData {..} <- get
             case (tooLong, finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
-              (True, _ ,_ ,_) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
-              (_, True, _, _) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
-              (_, _, True, True) -> (liftIO . processMsgs $ msgs) >> reportFinished sd
+              (True, _ ,_ ,_) -> (lift . processMsgs $ msgs) >> reportFinished sd
+              (_, True, _, _) -> (lift . processMsgs $ msgs) >> reportFinished sd
+              (_, _, True, True) -> (lift . processMsgs $ msgs) >> reportFinished sd
               (_, _, True, False) -> do
                 put $ sd & #timeout %~ subtract period
                 continue
@@ -167,7 +167,7 @@ subscribe nn sink SubscriptionParams{..} = do
             addStats (length rrs)
             sd@SubData {..} <- get
             unless (length rrs == 0) $ 
-              liftIO . processMsgs $ rrs
+              lift . processMsgs $ rrs
             case (tooLong, finished, ratio >= acceptableRatio, getSeconds timeout <= 0) of
               (True,_,_,_) -> reportFinished sd
               (_,True, _, _) -> reportFinished sd
@@ -179,24 +179,24 @@ subscribe nn sink SubscriptionParams{..} = do
           PeriodicForever -> do
             addStats (length rrs)
             unless (length rrs == 0) $ 
-             liftIO . processMsgs $ rrs  
+              lift . processMsgs $ rrs  
             -- has any relay closed connection or is the subscription not running on all connected relays?
             let isRestartLongRunning = 
                  isAnyRelayError subState 
                   || isNotRunningOnAll subState relays
             unless isRestartLongRunning continue
 
-  liftIO $ do 
-     now <- getCurrentTime
-     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout now)
-     print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
-     flip runReaderT nn $ RP.unsubscribe subId
+  do
+    now <- liftIO getCurrentTime
+    (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout now)
+    liftIO . print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
+    liftIO . flip runReaderT nn $ RP.unsubscribe subId
 
   where
-    processMsgs :: [(Response, Relay)] -> IO ()
+    processMsgs :: [(Response, Relay)] -> JSM ()
     processMsgs rrs = do
       let processed = extractResults <$> rrs
-      mapM_ logError $ lefts processed
+      liftIO . mapM_ logError $ lefts processed
       sink . actOnResults . rights $ processed
 
     addStats :: (Monad a) => Int -> StateT SubData a ()

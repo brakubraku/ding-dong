@@ -10,14 +10,13 @@ import Control.Monad (when, void)
 import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
-import Miso.Effect (Sub)
 import MisoSubscribe (subscribe, SubType (PeriodicUntilEOS), SubscriptionParams (..))
 import Nostr.Filter
 import Nostr.Network
 import Nostr.Relay
 import Nostr.Response
 import Optics
-import Miso (forkJSM, JSM)
+import Miso (forkJSM, JSM, Sub)
 import Data.Text
 import Debug.Trace
 import Utils
