@@ -295,7 +295,7 @@ updateModel nn rl pl action = do
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
     ListenToNotifs -> 
-      effectSub model runLoop
+      effectSub model (forkJSM . runLoop)
        where 
         doSubscribe lnd sink = 
           subscribe nn sink $
@@ -335,7 +335,7 @@ updateModel nn rl pl action = do
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
           sink $ UpdateModel updateCBs []
-          runLoop cb sink
+          forkJSM $ runLoop cb sink
        where 
         doSubscribe cb sink =
           subscribe nn sink $

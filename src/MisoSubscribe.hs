@@ -111,7 +111,7 @@ subscribe nn sink SubscriptionParams{..} = do
         -- inform about subscription state changes if
         -- function actOnSubState is provided 
         let reportSubState _ Nothing = pure ()
-            reportSubState isFinished (Just act) = lift $ do 
+            reportSubState isFinished (Just act) = do 
               let relState = subState ^? _Just % #relaysState
                   state = (subId,) <$> bool SubRunning SubFinished isFinished <$> relState
               maybe
@@ -119,7 +119,7 @@ subscribe nn sink SubscriptionParams{..} = do
                     "Could not find relays state for subId="
                       <> (T.pack . show $ subId)
                 )
-                (sink . act)
+                (lift . sink . act)
                 state
         let reportRunning = reportSubState False actOnSubState 
         let reportFinished stats = do
