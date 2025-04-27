@@ -15,7 +15,7 @@ import ContentUtils
       filterBech,
       processContent )
 import Control.Concurrent
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, void)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Bifunctor (second)
@@ -295,7 +295,7 @@ updateModel nn rl pl action = do
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
     ListenToNotifs -> 
-      effectSub model (forkJSM . runLoop)
+      effectSub model (void . forkJSM . runLoop)
        where 
         doSubscribe lnd sink = 
           subscribe nn sink $
@@ -335,7 +335,7 @@ updateModel nn rl pl action = do
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
           sink $ UpdateModel updateCBs []
-          forkJSM $ runLoop cb sink
+          void . forkJSM $ runLoop cb sink
        where 
         doSubscribe cb sink =
           subscribe nn sink $
