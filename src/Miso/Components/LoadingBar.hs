@@ -22,6 +22,12 @@ data Action where
   UpdateSubscriptions :: Page -> (SubscriptionId, SubState) -> Action
   UpdatePage :: Page -> Action
 
+instance Show Action where
+  show (UpdateSubscriptions p sst) = 
+    "LoadingBarAction: UpdateSubscriptions " 
+  show (UpdatePage p) = 
+    "LoadingBarAction: UpdatePage " <> show p
+
 data Model = Model {
   subscriptions :: M.Map Page [(SubscriptionId, SubState)],
   page :: Maybe Page
@@ -46,8 +52,8 @@ updateSubStates (sid, ss) substates =
      isRunning (SubRunning _) = True
      isRunning _ = False
 
-loadingBar :: View action
-loadingBar = rawHtml . T.pack $ 
+loadingBarHtml :: View action
+loadingBarHtml = rawHtml . T.pack $ 
  "<div class=\"lb-container\">\
   \<div class=\"lb-progress lb-progress-infinite\">\
     \<div class=\"lb-progress-bar3\">\
@@ -63,7 +69,7 @@ view m =
         (class_ "visible")
         $ areSubsRunning m
     ]
-    [loadingBar]
+    [loadingBarHtml]
 
 areSubsRunning :: Model -> Bool
 areSubsRunning m =
@@ -74,8 +80,5 @@ areSubsRunning m =
         isRunning (_, _) = False
     pure . any isRunning $ subs
 
-loadingBarApp :: App Model Action
-loadingBarApp = defaultApp (Model M.empty Nothing) update view
-
-loadingBarComponent :: Component Model Action
-loadingBarComponent = component "loading-bar" loadingBarApp 
+loadingBar :: App "loading-bar" Model Action
+loadingBar = defaultApp (Model M.empty Nothing) update view

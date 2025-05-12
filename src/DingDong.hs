@@ -18,7 +18,7 @@ import Control.Concurrent
 import Control.Monad (when, unless, void)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Bifunctor (second)
+import Data.Bifunctor (second, first)
 import Data.Bool (bool)
 import Data.Either (fromRight)
 import Data.List (singleton, uncons)
@@ -31,7 +31,7 @@ import Data.Time
 import Miso hiding (at, now, send, WebSocket(..))
 import Miso.String (MisoString)
 import qualified Miso.String as S
-import MisoSubscribe (SubType (AllAtEOS, PeriodicForever, PeriodicUntilEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
+import MisoSubscribe (SubType (AllAtEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
 import ModelAction
 import MyCrypto
 import Nostr.Event
@@ -54,7 +54,6 @@ import Utils
 import Contacts
 import Data.Default
 import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
-import Data.List.Extra (headDef)
 import ProfilesLoader.Types (ProfOrRelays)
 import Data.DateTime (fromSeconds)
 import qualified Nostr.Reaction as Reaction
@@ -72,6 +71,8 @@ import Miso.Components.ImageWithMouseActions
 import Control.Monad.Trans.State.Strict (runStateT)
 import Control.Monad.State.Class (put, get)
 import Control.Monad.Trans.Writer.Strict (runWriter)
+
+import Control.Monad.RWS
 
 start :: JSM ()
 start = do
@@ -92,17 +93,11 @@ start = do
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
       -- update :: Action -> Effect CompactModel Action
-      update a = EffectCore $
-        do 
-          (CompactModel m) <- get 
-          -- subs <- runWriter
-          let (EffectCore effect) = updateModel nn reactionsLoader profilesLoader a
-          let (_, w1 :: [Sub Action]) = runWriter $ runStateT effect m
-          traceM $ "Writer from Model: " <> (show . length $ w1)
-          (_, m1) <- lift $ second CompactModel <$> runStateT effect m
-          -- (_, w1) <- lift $ listen
-          -- traceM $ "Writer from CompactModel: " <> (show . length $ w1)
-          put m1
+      update a = 
+        EffectCore . rws $ \r (CompactModel m) -> 
+          let (EffectCore rws) = updateModel nn reactionsLoader profilesLoader a
+              (a', m', w') = runRWS rws r m
+          in (a', CompactModel m', w')
       initialModel =
         CompactModel $ Model 
           (defFeedEvntsModel now)
@@ -569,7 +564,7 @@ updateModel nn rl pl action = do
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
        in effectSub updated $ \_ -> do 
-            notify LB.loadingBarComponent $ LB.UpdatePage page
+            notify LB.loadingBar $ LB.UpdatePage page
 
     GoBack ->
       let updated = do
@@ -780,7 +775,7 @@ updateModel nn rl pl action = do
           errors = (\(r, er) -> "Relay " <> (showt $ r ^. #uri) 
                                 <> " returned error: " <> (fromMaybe "" er)) <$> erRels
       in effectSub model $ \sink -> do
-            notify LB.loadingBarComponent $ LB.UpdateSubscriptions p sst
+            notify LB.loadingBar $ LB.UpdateSubscriptions p sst
             mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
     DisplayProfilePage mid xo ->
@@ -1092,7 +1087,7 @@ appView :: Model -> View Action
 appView m =
   -- div_ [onLoad AllLoaded] $
   div_ [] $
-    [ embed LB.loadingBarComponent [],
+    [ component LB.loadingBar,
       newNotesIndicator,
       div_
         -- [class_ "main-container", id_ "top-top"]
@@ -1246,16 +1241,17 @@ footerView Model {..} =
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
   div_ [onClick $ DisplayProfilePage mid xo] 
-       [flip embed [] $ 
-          imgWithMouseActions  
-            [ class_ "profile-pic", 
-              class_ "hovered",
-              prop "src" $ pic
-            ]
-            [ class_ "profile-pic",
-              prop "src" $ pic
-            ]
-        ]
+       [componentWith_ (Component img)]
+  where 
+    img = 
+      imgWithMouseActions  
+          [ class_ "profile-pic", 
+            class_ "hovered",
+            prop "src" $ pic
+          ]
+          [ class_ "profile-pic",
+            prop "src" $ pic
+          ]
       
   -- imgKeyed_ (Key pic)
   --   [ class_ "profile-pic",
@@ -1700,10 +1696,6 @@ displayThread m e =
              ++ maybe [] singleton writeReplyDisplay
              ++ fromMaybe [] repliesDisplay
    in div_ [class_ "thread-container"] $
-        -- [script_ [] TH.script] ++ 
-        [div_ [class_ "image-container"] 
-          [div_ [] [text "Hover here bitch"]
-           ,div_ [class_ "enlarged"] [text "FUCK THIS SHIT"]]] ++
         catMaybes [parentDisplay, noteDisplay]
 
 displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set Reaction)) -> View Action
