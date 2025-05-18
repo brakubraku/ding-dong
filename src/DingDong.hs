@@ -1241,7 +1241,7 @@ footerView Model {..} =
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
   div_ [onClick $ DisplayProfilePage mid xo] 
-       [componentWith_ (Component img)]
+       [component_ (Component img)]
   where 
     img = 
       imgWithMouseActions  
