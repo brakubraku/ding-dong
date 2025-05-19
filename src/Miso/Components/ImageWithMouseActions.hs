@@ -10,6 +10,8 @@ import GHC.Generics
 import Control.Monad.State (put)
 import Debug.Trace (trace)
 
+import qualified Data.Map as Map
+
 data Action = HoverOn | HoverOff
 
 instance Show Action where
