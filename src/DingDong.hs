@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -131,7 +132,7 @@ start = do
           Map.empty
           defaultFindEventModel
       styles = []
-  startApp App {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
+  startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
   where
     events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
     view (CompactModel m) = appView m
@@ -211,8 +212,7 @@ updateModel nn rl pl action = do
           pure $ UpdatedRelaysList updated
 
     Reload -> 
-      model <# do 
-        reloadPage >> pure NoAction
+      io_ reloadPage
 
     StartAction isNew ->
       effectSub
@@ -290,7 +290,7 @@ updateModel nn rl pl action = do
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
     ListenToNotifs -> 
-      effectSub model (void . forkJSM . runLoop)
+      startSub "listen-to-notifications" runLoop
        where 
         doSubscribe lnd sink = 
           subscribe nn sink $
@@ -330,7 +330,7 @@ updateModel nn rl pl action = do
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
           sink $ UpdateModel updateCBs []
-          void . forkJSM $ runLoop cb sink
+          startSub "periodic-feed-update" $ runLoop cb 
        where 
         doSubscribe cb sink =
           subscribe nn sink $
@@ -430,12 +430,11 @@ updateModel nn rl pl action = do
             maybe
               (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
               ( \filter ->
-                  subscribe nn sink $ 
+                  start_ . subscribe nn sink $ 
                       allAtEOSOnPage 
                        page
                        (filter (Since newSince) (Until until))
                        (model ^. pml % #process $ page)
-                      
               )
               (pm ^. #filter)
 
@@ -446,7 +445,7 @@ updateModel nn rl pl action = do
     SubscribeForEmbeddedReplies [] _ -> noEff $ model
     SubscribeForEmbeddedReplies eids page ->
       effectSub model $ \sink ->
-        subscribe nn sink $
+        start_ . subscribe nn sink $
          periodicUntilEOSOnPage
           page
           [anytimeF $ LinkedEvents eids]
@@ -458,7 +457,7 @@ updateModel nn rl pl action = do
 
     SubscribeForPagedReactionsTo _ _ [] -> noEff model
     SubscribeForPagedReactionsTo pml screen res -> 
-      effectSub model $ \sink ->
+      start_ $ \sink ->
         subscribe nn sink $
           periodicUntilEOSOnPage
             screen
@@ -487,7 +486,7 @@ updateModel nn rl pl action = do
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
       in 
         effectSub model $ \sink ->
-          subscribe nn sink $
+          start_ . subscribe nn sink $
              periodicUntilEOSOnPage
               screen
               [anytimeF $ EventsWithId pids]
@@ -514,7 +513,7 @@ updateModel nn rl pl action = do
       noEff model
     SubscribeForEmbedded eids ->
       effectSub model $ \sink ->
-        subscribe nn sink $ 
+        start_ . subscribe nn sink $ 
          allAtEOSOnPage
           FeedPage
           [anytimeF $ EventsWithId eids]
@@ -591,21 +590,19 @@ updateModel nn rl pl action = do
       model <# (writeModelToStorage m >> pure NoAction)
 
     ActualTime t -> do
-      noEff $ model & #now .~ t
+      put $ model & #now .~ t
 
     DisplayThread e -> do
-       effectSub model $ \sink -> do
-        forkJSM $ subscribeForWholeThread nn e (ThreadPage e) sink
-        sink . GoPage (ThreadPage e) . Just $ getNoteElementId e
-        sink . ScrollTo Nothing $ "top-top"
+      start_ $ subscribeForWholeThread nn e (ThreadPage e)
+      issue . GoPage (ThreadPage e) . Just $ getNoteElementId e
+      issue . ScrollTo Nothing $ "top-top"
 
-    DisplayReplyThread e -> 
-     effectSub (model & #writeReplyTo ?~ e) $ 
-      \sink -> 
-        do 
-         draft <- fromRight "" <$> getLocalStorage "reply-draft"
-         sink . UpdateField #replyDraft $ draft
-         sink $ DisplayThread e
+    DisplayReplyThread e -> do
+      put $ model & #writeReplyTo ?~ e
+      io $ do 
+        draft <- fromRight "" <$> getLocalStorage "reply-draft"
+        pure $ UpdateField #replyDraft draft
+      issue $ DisplayThread e
 
     ThreadEvents _  [] -> noEff $ model
     ThreadEvents screen es ->
@@ -640,7 +637,7 @@ updateModel nn rl pl action = do
 
     LoadContactsOf xo page takeAction -> 
       effectSub model $ \sink ->
-          subscribe nn sink $ 
+          start_ . subscribe nn sink $ 
            allAtEOSOnPage
             page 
             [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
@@ -705,7 +702,7 @@ updateModel nn rl pl action = do
                  sink NoAction
           Just pm ->
             effectSub (model & #profileReactions % at xo ?~ pm) $ \sink -> do 
-              subscribe nn sink $
+              start_ . subscribe nn sink $
                allAtEOSOnPage 
                 page
                 [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
@@ -738,24 +735,23 @@ updateModel nn rl pl action = do
       let 
          textNotes = defProfEvntsModel xo $ model ^. #now
          updated = model & #profileEvents % at xo ?~ textNotes
-      in
-         effectSub updated $ \sink -> do
-          subscribe nn sink $
-           periodicLoadProfileOnPage 
-            page
-            [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
-            ReceivedProfiles
-          
-          when isLoadNotes $ 
-            sink $
+      in 
+        do 
+          put updated
+          start_ $ \sink -> do
+            subscribe nn sink $
+              periodicLoadProfileOnPage 
+                page
+                [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
+                ReceivedProfiles
+          when isLoadNotes . issue $ 
              LoadMoreEvents (#profileEvents % at xo % non textNotes) page
-          when isLoadFollowing $ 
-            sink $ 
+          when isLoadFollowing . issue $ 
               LoadContactsOf 
                 xo
                 page
                 (UpdateField (#profileContacts % at xo))
-          sink $ LoadProfileReactions xo page
+          issue $ LoadProfileReactions xo page
 
     SubState p sst ->
       let isError (Network.Error _) = True
@@ -904,10 +900,10 @@ updateModel nn rl pl action = do
         setLocalStorage tid t
         pure NoAction
 
-    DisplayThreadWithId eid -> 
-      effectSub model $ \sink -> do 
-       sink $ UpdateField (#findEventModel % #error) (Just "") 
-       subscribe nn sink $ 
+    DisplayThreadWithId eid -> do
+       issue $ UpdateField (#findEventModel % #error) (Just "") 
+       start_ $ \sink -> 
+         subscribe nn sink $ 
            SubscriptionParams
             { subType = AllAtEOS,
               subFilter = [anytimeF . EventsWithId $ [eid]],
@@ -1241,7 +1237,7 @@ footerView Model {..} =
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
   div_ [onClick $ DisplayProfilePage mid xo] 
-       [component_ (Component img)]
+       [component_ img]
   where 
     img = 
       imgWithMouseActions  
@@ -1273,7 +1269,7 @@ displayNoteContent withEmbed m (e,content) =
             maybe []
               (\(first,rest) -> text first : fmap (\ptext -> p_ [] [text ptext]) rest)
               pgraphs
-      displayContent (LinkC Image link) =
+      displayContent (LinkC ContentUtils.Image link) =
         div_
           []
           [ a_
@@ -1951,3 +1947,5 @@ eventAge now e =
           minutes = s `div` 60
    in format ageSeconds
 
+-- nothing :: View action
+-- nothing = div_ [Styles . Map.fromList $ [("display", "none")]] []

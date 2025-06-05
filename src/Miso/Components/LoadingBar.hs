@@ -80,5 +80,5 @@ areSubsRunning m =
         isRunning (_, _) = False
     pure . any isRunning $ subs
 
-loadingBar :: App "loading-bar" Model Action
-loadingBar = defaultApp (Model M.empty Nothing) update view
+loadingBar :: Component "loading-bar" Model Action
+loadingBar = defaultComponent (Model M.empty Nothing) update view

@@ -10,6 +10,8 @@ import GHC.Generics
 import Control.Monad.State (put)
 import Debug.Trace (trace)
 
+import qualified Data.Map as Map
+
 data Action = HoverOn | HoverOff
 
 instance Show Action where
@@ -29,9 +31,9 @@ view hoveredOnProps defaultProps m =
             HoveredOn -> [img_ $ hoveredOnProps]
             NotHoveredOn -> [img_ $ defaultProps]
     -- ]
-imgWithMouseActions :: [Attribute Action] -> [Attribute Action] -> App name Model Action
+imgWithMouseActions :: [Attribute Action] -> [Attribute Action] -> Component name Model Action
 imgWithMouseActions hoveredOnProps defaultProps =
-  (defaultApp
+  (defaultComponent
     NotHoveredOn
     update
     (view hoveredOnProps defaultProps)) { events = defaultEvents <> mouseEvents, logLevel = DebugAll}
