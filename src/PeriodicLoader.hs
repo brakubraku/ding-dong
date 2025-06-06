@@ -6,7 +6,7 @@
 module PeriodicLoader where
 
 import Control.Concurrent
-import Control.Monad (when, void)
+import Control.Monad (unless, void)
 import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
@@ -16,10 +16,11 @@ import Nostr.Network
 import Nostr.Relay
 import Nostr.Response
 import Optics
-import Miso (forkJSM, JSM, Sub)
+import Miso (forkJSM, JSM, Sub, Sink, startSub, Effect)
 import Data.Text
 import Debug.Trace
 import Utils
+import Data.Hashable (hash)
 
 data LoaderData id = LoaderData
   { loading :: Set id,
@@ -58,19 +59,23 @@ startLoader nn pl actOnResults actOnError sink =
                 & #loading .~ Set.empty, 
                 toLoad
             )
-        -- traceM $ "toLoad=" <> (show $ toLoad)
-        when (not . Set.null $ toLoad) $ do
-          void . forkJSM . subscribe nn sink $ 
-              SubscriptionParams
-                { subType = PeriodicUntilEOS,
-                  subFilter = ((pl ^. #createFilter) . toList $ toLoad) ,
-                  extractResults = pl ^. #extract,
-                  actOnResults = actOnResults,
-                  actOnSubState = Nothing,
-                  cancelButton = Nothing,
-                  timeoutPerRelay = Nothing,
-                  reportError = actOnError
-                }
+        unless (Set.null toLoad) $ do
+          startSubscription nn sink $
+            SubscriptionParams
+              { subType = PeriodicUntilEOS,
+                subFilter = ((pl ^. #createFilter) . toList $ toLoad),
+                extractResults = pl ^. #extract,
+                actOnResults = actOnResults,
+                actOnSubState = Nothing,
+                cancelButton = Nothing,
+                timeoutPerRelay = Nothing,
+                reportError = actOnError
+              }
         liftIO . sleep $ pl ^. #period
         loop
   in traceM "starting loader" >> loop
+
+startSubscription :: NostrNetwork -> Sink action -> SubscriptionParams action -> JSM ()
+startSubscription nn sink sp = subscribe nn sp sink
+--  where
+  -- subName = "PeriodicLoader" <> (show . hash) (show sp)

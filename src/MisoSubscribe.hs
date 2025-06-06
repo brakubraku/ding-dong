@@ -96,9 +96,9 @@ data SubscriptionParams action where
 
 subscribe ::
   NostrNetwork ->
-  Sink action ->
-  SubscriptionParams action -> JSM ()
-subscribe nn sink SubscriptionParams{..} = do
+  SubscriptionParams action ->
+  Sink action -> JSM ()
+subscribe nn SubscriptionParams{..} sink = do
   (respChan, subId) <-
     liftIO . flip runReaderT nn $
       RP.subscribeForFilter subFilter

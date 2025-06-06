@@ -48,7 +48,7 @@ import qualified Nostr.RelayPool as RP
 import Nostr.Response
 import Nostr.WebSocket
 import Optics as O hiding (uncons)
-import PeriodicLoader
+import PeriodicLoader hiding (startSubscription)
 import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
 import Utils
@@ -74,6 +74,7 @@ import Control.Monad.State.Class (put, get)
 import Control.Monad.Trans.Writer.Strict (runWriter)
 
 import Control.Monad.RWS
+import Data.Hashable
 
 start :: JSM ()
 start = do
@@ -214,51 +215,55 @@ updateModel nn rl pl action = do
     Reload -> 
       io_ reloadPage
 
-    StartAction isNew ->
-      effectSub
-        model
-        $ \sink ->
-          do
-            -- wait for connections to relays having been established
-            liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
-            forkJSM $ startLoader nn rl ReceivedReactions reportErrorAction sink
-            forkJSM $ startLoader nn pl ReceivedProfiles reportErrorAction sink
-            -- fetch my profile
-            load pl $ [model ^. #me] 
-            forkJSM $ -- put actual time to model every 60 seconds
-              let loop = do
-                    now <- liftIO getCurrentTime
-                    sink $ ActualTime now
-                    liftIO . sleep . Seconds $ 60
-                    loop
-               in loop
-            
-            forkJSM $
-              let loop = do
-                    liftIO $ do
-                      let isRunning (_, s) = any (== Running) $ Map.elems (s ^. #relaysState)
-                      let showme (id, ss) = "subId=" <> showt id <> ": " <> printState ss
-                      subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
-                      -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
-                      print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
-                    liftIO . sleep . Seconds $ 5
-                    loop
-               in loop
-          
-            storageContacts <- Set.fromList <$> loadContactsFromStorage
-            sink $ GoPage FeedPage Nothing
-            sink $ loadContactsFromNostr storageContacts
-            when isNew $ sink CreateInitialProfile
-            -- start notifications
-            sink $ LoadMoreEvents #notifs NotificationsPage
-            sink ListenToNotifs
+    StartAction isNew -> do
+      io_ $ 
+        -- wait for connections to relays having been established
+        void . liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
+      
+      startSub "reactions-loader" $ startLoader nn rl ReceivedReactions reportErrorAction
+      startSub "profiles-loader" $ startLoader nn pl ReceivedProfiles reportErrorAction
+      
+      -- fetch my profile
+      io_ $ load pl $ [model ^. #me] 
+      
+      -- put actual time to model every 60 seconds
+      startSub "put-actual-time-to-model" $ 
+        \sink ->
+          let loop = do
+                now <- liftIO getCurrentTime
+                sink $ ActualTime now
+                liftIO . sleep . Seconds $ 60
+                loop
+          in loop
+      
+      startSub "some-debugging-info" $ \sink ->
+        let loop = do
+              liftIO $ do
+                let isRunning (_, s) = any (== Running) $ Map.elems (s ^. #relaysState)
+                let showme (id, ss) = "subId=" <> showt id <> ": " <> printState ss
+                subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
+                -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
+                print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
+              liftIO . sleep . Seconds $ 5
+              loop
+          in loop
 
-          where 
-            loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
-            uploadIfNoContacts :: Set.Set XOnlyPubKey -> Maybe (Set.Set XOnlyPubKey) -> Action
-            uploadIfNoContacts toUpload Nothing = UploadMyContacts toUpload
-            uploadIfNoContacts _ (Just cs) = ContactsLoaded cs
-  
+      io $ do 
+        storageContacts <- Set.fromList <$> loadContactsFromStorage
+        pure $ loadContactsFromNostr storageContacts
+      
+      issue $ GoPage FeedPage Nothing
+      when isNew $ issue CreateInitialProfile
+      -- start displaying notifications
+      issue $ LoadMoreEvents #notifs NotificationsPage
+      issue ListenToNotifs
+
+      where 
+        loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
+        uploadIfNoContacts :: Set.Set XOnlyPubKey -> Maybe (Set.Set XOnlyPubKey) -> Action
+        uploadIfNoContacts toUpload Nothing = UploadMyContacts toUpload
+        uploadIfNoContacts _ (Just cs) = ContactsLoaded cs
+
     ShowFeed ->
       let contacts = maybe [] Set.toList $ model ^. #profileContacts % at (model ^. #me)
           pagedFilter =
@@ -292,12 +297,15 @@ updateModel nn rl pl action = do
     ListenToNotifs -> 
       startSub "listen-to-notifications" runLoop
        where 
-        doSubscribe lnd sink = 
-          subscribe nn sink $
-           periodicForever 
-            [sinceF lnd $ Mentions [model ^. #me]]
-            (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
-            Nothing
+        doSubscribe lnd sink =
+          subscribe
+            nn
+            ( periodicForever
+                [sinceF lnd $ Mentions [model ^. #me]]
+                (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
+                Nothing
+            )
+            sink
         runLoop sink = 
           do
             lnd <- loadLastNotifTime
@@ -320,33 +328,37 @@ updateModel nn rl pl action = do
                     _ -> id   
           in Prelude.foldr update m ers
 
-    StartFeedLongRunning since contacts ->
-       effectSub model $ \sink -> 
-        do
+    StartFeedLongRunning since contacts -> do
+        compName <- ask
+        io $ 
+         do
           -- cancel the existing subscription
           sequence_ $ cancelSub <$> (model ^. #subCancelButtons % at "feed-long-running")
           -- create cancel button for the new subscription
           cb <- liftIO newEmptyMVar
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
-          sink $ UpdateModel updateCBs []
-          startSub "periodic-feed-update" $ runLoop cb 
+          startSubForComponent compName "periodic-feed-update" $ runLoop cb
+          pure $ UpdateModel updateCBs []
        where 
         doSubscribe cb sink =
-          subscribe nn sink $
-            periodicForever
+          subscribe
+            nn
+            ( periodicForever
                 (textNotesWithDeletes (Just since) Nothing contacts)
                 FeedLongRunningProcess
                 (Just cb)
-            
-        runLoop cb sink = 
+            )
+            sink
+        
+        runLoop cb sink =
           do
             doSubscribe cb sink
             isCancelled <- isSubCanceled cb
-            unless isCancelled $ 
-             do 
-              waitForReconnect $ sink
-              runLoop cb sink   
+            unless isCancelled $
+              do
+                waitForReconnect $ sink
+                runLoop cb sink
 
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
@@ -426,17 +438,18 @@ updateModel nn rl pl action = do
           newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
           updated =
             model & pml % #until .~ Until newSince
-       in effectSub updated $ \sink -> do
-            maybe
-              (liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
-              ( \filter ->
-                  start_ . subscribe nn sink $ 
-                      allAtEOSOnPage 
-                       page
-                       (filter (Since newSince) (Until until))
-                       (model ^. pml % #process $ page)
-              )
-              (pm ^. #filter)
+       in do 
+        put updated 
+        maybe
+          (io_ . liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
+          (\filter ->
+              startSubscription nn $ 
+                  allAtEOSOnPage 
+                    page
+                    (filter (Since newSince) (Until until))
+                    (model ^. pml % #process $ page)
+          )
+          (pm ^. #filter)
 
     SubscribeForReplies [] -> noEff model
     SubscribeForReplies eids ->
@@ -444,8 +457,7 @@ updateModel nn rl pl action = do
 
     SubscribeForEmbeddedReplies [] _ -> noEff $ model
     SubscribeForEmbeddedReplies eids page ->
-      effectSub model $ \sink ->
-        start_ . subscribe nn sink $
+        startSubscription nn $
          periodicUntilEOSOnPage
           page
           [anytimeF $ LinkedEvents eids]
@@ -457,8 +469,7 @@ updateModel nn rl pl action = do
 
     SubscribeForPagedReactionsTo _ _ [] -> noEff model
     SubscribeForPagedReactionsTo pml screen res -> 
-      start_ $ \sink ->
-        subscribe nn sink $
+        startSubscription nn $
           periodicUntilEOSOnPage
             screen
             [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
@@ -485,12 +496,11 @@ updateModel nn rl pl action = do
                    . fmap (Set.insert eid), parentEid : pids)
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
       in 
-        effectSub model $ \sink ->
-          start_ . subscribe nn sink $
-             periodicUntilEOSOnPage
-              screen
-              [anytimeF $ EventsWithId pids]
-              (FeedEventParentsProcess pmap pml screen)
+        startSubscription nn $
+          periodicUntilEOSOnPage
+            screen
+            [anytimeF $ EventsWithId pids]
+            (FeedEventParentsProcess pmap pml screen)
 
     FeedEventParentsProcess pmap pml screen rs -> 
        let  (notes, enotes, eprofs) = processReceivedEvents rs 
@@ -512,8 +522,7 @@ updateModel nn rl pl action = do
     SubscribeForEmbedded [] ->
       noEff model
     SubscribeForEmbedded eids ->
-      effectSub model $ \sink ->
-        start_ . subscribe nn sink $ 
+        startSubscription nn $ 
          allAtEOSOnPage
           FeedPage
           [anytimeF $ EventsWithId eids]
@@ -593,7 +602,7 @@ updateModel nn rl pl action = do
       put $ model & #now .~ t
 
     DisplayThread e -> do
-      start_ $ subscribeForWholeThread nn e (ThreadPage e)
+      subscribeForWholeThread nn e (ThreadPage e)
       issue . GoPage (ThreadPage e) . Just $ getNoteElementId e
       issue . ScrollTo Nothing $ "top-top"
 
@@ -636,12 +645,11 @@ updateModel nn rl pl action = do
         updated = model & #profileContacts % at (model ^. #me) ?~ cs
 
     LoadContactsOf xo page takeAction -> 
-      effectSub model $ \sink ->
-          start_ . subscribe nn sink $ 
+         startSubscription nn $
            allAtEOSOnPage
-            page 
-            [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
-            (takeAction . processReceived)
+             page
+             [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
+             (takeAction . processReceived)
      where 
       processReceived :: [(Event, Relay)] -> Maybe (Set.Set XOnlyPubKey)
       processReceived [] = Nothing
@@ -700,16 +708,16 @@ updateModel nn rl pl action = do
                do 
                  liftIO . logError $ "Missing PagedNotes model for loading reactions"
                  sink NoAction
-          Just pm ->
-            effectSub (model & #profileReactions % at xo ?~ pm) $ \sink -> do 
-              start_ . subscribe nn sink $
-               allAtEOSOnPage 
+          Just pm -> do
+            put $ model & #profileReactions % at xo ?~ pm 
+            startSubscription nn $
+              allAtEOSOnPage
                 page
                 [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
                 (\ers -> UpdateModel (updateReactionsTo ers) [])
-              sink $ 
-               LoadMoreIfNecessary (#profileReactions % ixAt xo) $
-                 LoadMoreEvents (#profileReactions % at xo % non pm) page
+            issue $
+              LoadMoreIfNecessary (#profileReactions % ixAt xo) $
+                LoadMoreEvents (#profileReactions % at xo % non pm) page
 
     LoadMoreIfNecessary pml loadMoreAction -> 
       let 
@@ -738,12 +746,11 @@ updateModel nn rl pl action = do
       in 
         do 
           put updated
-          start_ $ \sink -> do
-            subscribe nn sink $
-              periodicLoadProfileOnPage 
-                page
-                [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
-                ReceivedProfiles
+          startSubscription nn $
+            periodicLoadProfileOnPage
+              page
+              [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
+              ReceivedProfiles
           when isLoadNotes . issue $ 
              LoadMoreEvents (#profileEvents % at xo % non textNotes) page
           when isLoadFollowing . issue $ 
@@ -902,18 +909,17 @@ updateModel nn rl pl action = do
 
     DisplayThreadWithId eid -> do
        issue $ UpdateField (#findEventModel % #error) (Just "") 
-       start_ $ \sink -> 
-         subscribe nn sink $ 
-           SubscriptionParams
-            { subType = AllAtEOS,
-              subFilter = [anytimeF . EventsWithId $ [eid]],
-              extractResults = getEventRelayEither,
-              actOnResults = displayThread,
-              actOnSubState = Nothing, --TODO
-              cancelButton = Nothing,
-              timeoutPerRelay = Nothing,
-              reportError = reportErrorAction
-            }
+       startSubscription nn $ 
+        SubscriptionParams
+        { subType = AllAtEOS,
+          subFilter = [anytimeF . EventsWithId $ [eid]],
+          extractResults = getEventRelayEither,
+          actOnResults = displayThread,
+          actOnSubState = Nothing, --TODO
+          cancelButton = Nothing,
+          timeoutPerRelay = Nothing,
+          reportError = reportErrorAction
+        }
       where 
         displayThread :: [(Event, Relay)] -> Action
         displayThread (er:_) = DisplayThread $ fst er
@@ -1036,26 +1042,32 @@ updateModel nn rl pl action = do
             sink . Report SuccessReport $ 
               "Reconnected to all relays" 
 
+startSubscription :: NostrNetwork -> SubscriptionParams action -> Effect model action
+startSubscription nn sp = startSub filterHash $ subscribe nn sp
+  where
+    -- TODO: this may be inefficient
+    filterHash = T.pack . show . hash . show $ subFilter sp
+
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
 -- of those subscriptions
-subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Sub Action
-subscribeForWholeThread nn e page sink = do
+subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Effect model Action
+subscribeForWholeThread nn e page = do
   let eids = [(e ^. #eventId)]
       replyTo = maybe [] singleton $ findParentEventOf e 
-  subscribe nn sink $ 
+  startSubscription nn $ 
     periodicUntilEOSOnPage
       page
       [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
       (ThreadEvents page)
 
 subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Sub Action
-subscribeForEventsReplies _ [] _ _ = pure ()
-subscribeForEventsReplies nn eids page sink =
+subscribeForEventsReplies _ [] _ = const $ pure ()
+subscribeForEventsReplies nn eids page =
   -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
   --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
   --  this makes queries which only want replies (and not root replies) to a single event possibly very inefficient
-  subscribe nn sink $ 
+  subscribe nn $ 
      periodicUntilEOSOnPage
       page
       [anytimeF $ LinkedEvents eids]
