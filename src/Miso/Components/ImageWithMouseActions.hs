@@ -5,10 +5,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Miso.Components.ImageWithMouseActions (imgWithMouseActions) where
 
-import Miso hiding (view, update)
+import Miso hiding (view, update, at)
 import GHC.Generics
 import Control.Monad.State (put)
 import Debug.Trace (trace)
+import Optics hiding (view)
 
 import qualified Data.Map as Map
 
@@ -26,7 +27,7 @@ update HoverOff  = put NotHoveredOn
 
 view :: [Attribute Action] -> [Attribute Action] -> Model -> View Action
 view hoveredOnProps defaultProps m = 
-      div_ [onMouseEnter HoverOn, onMouseOut HoverOff] $
+      div_ [onMouseEnter HoverOn, onMouseOut HoverOff, onClick $ HoverOff] $
         case m of 
             HoveredOn -> [img_ $ hoveredOnProps]
             NotHoveredOn -> [img_ $ defaultProps]
@@ -36,4 +37,6 @@ imgWithMouseActions hoveredOnProps defaultProps =
   (defaultComponent
     NotHoveredOn
     update
+    -- (view hoveredOnProps defaultProps)) { events = (defaultEvents & at "click" ?~ True), logLevel = DebugAll}
     (view hoveredOnProps defaultProps)) { events = defaultEvents <> mouseEvents, logLevel = DebugAll}
+    -- (view hoveredOnProps defaultProps)) { events = defaultEvents, logLevel = DebugAll}
