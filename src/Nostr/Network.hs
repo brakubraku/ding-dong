@@ -9,6 +9,8 @@
 
 module Nostr.Network where
 
+import Miso.String (MisoString)
+import qualified Miso.String as S
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Reader
@@ -34,13 +36,13 @@ data SubscriptionState = SubscriptionState
   }
   deriving (Generic, Eq)
 
-data RequestResult = ResultUnknown | ResultSuccess | ResultError Text
+data RequestResult = ResultUnknown | ResultSuccess | ResultError MisoString
   deriving Eq
 
-printState :: SubscriptionState -> Text
+printState :: SubscriptionState -> MisoString
 printState ss =
-  let printRel (r, s) = r ^. #uri <> ":" <> pack (show s)
-   in intercalate "\n" $ printRel <$> Map.toList (ss ^. #relaysState)
+  let printRel (r, s) = r ^. #uri <> ":" <> S.ms (show s)
+   in S.intercalate "\n" $ printRel <$> Map.toList (ss ^. #relaysState)
 
 data NostrNetwork = NostrNetwork
   { relays :: MVar (Map.Map RelayURI Relay),
@@ -56,7 +58,7 @@ runNostr = flip runReaderT
 
 type NostrNetworkT = ReaderT NostrNetwork IO
 
-data RelaySubState = Running | EOSE | Error Text deriving (Eq, Show)
+data RelaySubState = Running | EOSE | Error MisoString deriving (Eq, Show)
 
 -- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
@@ -140,7 +142,7 @@ checkResult results = do
 setResultSuccess :: EventId -> Relay -> NostrNetworkT ()
 setResultSuccess = setResult ResultSuccess
 
-setResultError :: Text -> EventId -> Relay -> NostrNetworkT ()
+setResultError :: MisoString -> EventId -> Relay -> NostrNetworkT ()
 setResultError er = setResult (ResultError er)
 
 setResult :: RequestResult -> EventId -> Relay -> NostrNetworkT ()

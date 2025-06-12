@@ -20,41 +20,39 @@ module Nostr.WebSocket
   )
 where
 
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Monad
-import Control.Monad.Reader
-import Data.Aeson
-import Data.ByteString (fromStrict)
+import           Control.Concurrent
+import           Control.Concurrent.STM
+import           Control.Monad
+import           Control.Monad.Reader
+import           Data.Aeson
+import           Data.ByteString (fromStrict)
 import qualified Data.Map as Map
-import Data.Maybe
-import Data.Text.Encoding (encodeUtf8)
-import GHCJS.Foreign
-import GHCJS.Marshal
-import GHCJS.Types ()
-import Language.Javascript.JSaddle.String
-import Language.Javascript.JSaddle.Value (valToStr)
-import Miso hiding (WebSocket(..), at)
--- import Miso.FFI
-import Miso.FFI.WebSocket (Socket)
-import qualified Miso.FFI.WebSocket as WS
+import           Data.Maybe
+import           Data.Text.Encoding (encodeUtf8)
+import           Data.Text
+import           GHCJS.Foreign
+import           GHCJS.Marshal
+import           GHCJS.Types ()
+import           Language.Javascript.JSaddle.String
+import           Language.Javascript.JSaddle.Value (valToStr)
+import           Miso hiding (WebSocket(..), at)
 import           Language.Javascript.JSaddle
-import Miso.String
-import Nostr.Log
-import Nostr.Network
-import Nostr.Relay
-import Nostr.RelayPool
-import Nostr.Response
-import Optics
-import Prelude hiding (map)
-import Data.Time
-import Nostr.Event
-import Utils
+import           Miso.String (ms, MisoString)
+import           Nostr.Log
+import           Nostr.Network
+import           Nostr.Relay
+import           Nostr.RelayPool
+import           Nostr.Response
+import           Optics hiding ((#))
+import           Prelude hiding (map)
+import           Data.Time
+import           Nostr.Event
+import           Utils
 
-data WebSocketAction = 
-  WebSocketOpen Relay | 
-  WebSocketClose Relay Text | 
-  WebSocketError Relay Text
+data WebSocketAction =
+  WebSocketOpen Relay |
+  WebSocketClose Relay MisoString |
+  WebSocketError Relay MisoString
 
 connectRelays ::
   NostrNetwork ->
@@ -69,8 +67,8 @@ connectRelays nn sendMsg sink = do
     conRelay :: (Int, UTCTime) -> Relay -> JSM ()
     conRelay (recnt, lastReconnect) relay = do
       isReconnectingMVar <- liftIO $ newMVar False
-      socket <- createWebSocket (relay ^. #uri) []
-      let 
+      socket <- createWebSocket (ms (relay ^. #uri)) []
+      let
         reconnect =
           do
             isReconnecting <- liftIO $ readMVar isReconnectingMVar
@@ -88,17 +86,17 @@ connectRelays nn sendMsg sink = do
                   liftIO . sleep . Seconds $ 0.5
                   conRelay (recnt + 1, now) relay
 
-      WS.addEventListener socket "open" $ \_ -> do
+      addEventListener (getSocket socket) "open" $ \_ -> do
          do
           liftIO $ markIsConnected True relay
           sink . sendMsg $ WebSocketOpen relay
 
-      WS.addEventListener socket "message" $ \v -> do
-        msg <- valToStr =<< WS.data' v
+      addEventListener (getSocket socket) "message" $ \v -> do
+        msg <- jsonParse =<< v ! ("data" :: MisoString)
         let msgToParse = fromStrict . encodeUtf8 . strToText $ msg
         resp <-
           pure . eitherDecode @Response $ msgToParse
-        hashableResp <- 
+        hashableResp <-
           pure . eitherDecode @HashableResponse $ msgToParse
         case (resp, hashableResp) of
           (Right (EventReceived subId event), Right (HashableEventReceived _ he))-> do
@@ -108,7 +106,7 @@ connectRelays nn sendMsg sink = do
                 liftIO . logRelayError relay . pack
                   $ "Failed signature verification of event="  
                     <> show event <> " from msg=" <> show msg
-              True -> 
+              True ->
                 case Map.lookup subId subs of
                   Just subscription -> do
                     liftIO $
@@ -117,8 +115,7 @@ connectRelays nn sendMsg sink = do
                           (subscription ^. #responseCh)
                           (EventReceived subId event, relay)
                   Nothing -> do
-                    liftIO
-                      . logRelayError relay
+                    liftIO $ logRelayError relay
                       . pack
                       $ "SubId="
                         <> show subId
@@ -131,22 +128,22 @@ connectRelays nn sendMsg sink = do
             liftIO . flip runReaderT nn $ setResultSuccess eid relay
           (Right (Nostr.Response.OK eid False reason), _) -> do
             liftIO . flip runReaderT nn $ setResultError (fromMaybe "" reason) eid relay
-          (Right _, _) -> do 
-               liftIO . logRelayError relay . pack $ "Uknown response: " <> show msg 
-          (Left errMsg, _) -> do 
-               liftIO . logRelayError relay . pack $
+          (Right _, _) -> do
+               liftIO $ logRelayError relay . pack $ "Uknown response: " <> show msg
+          (Left errMsg, _) -> do
+               liftIO $ logRelayError relay . pack $
                 "Decoding failed with: " <> show errMsg <> " for response=" <> show msgToParse
 
-      WS.addEventListener socket "close" $ \e -> do
-        code <- codeToCloseCode <$> WS.code e
-        reason <- WS.reason e
-        clean <- WS.wasClean e
+      addEventListener (getSocket socket) "close" $ \e -> do
+        code <- codeToCloseCode <$> getCode e
+        reason <- getReason e
+        clean <- wasClean e
         sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
         reconnect
- 
-      WS.addEventListener socket "error" $ \v -> do
-        d' <- WS.data' v
+
+      addEventListener (getSocket socket) "error" $ \v -> do
+        d' <- v ! ("data" :: MisoString)
         undef <- ghcjsPure (isUndefined d')
         if undef
           then do
@@ -159,7 +156,7 @@ connectRelays nn sendMsg sink = do
       rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
       let doLoop =
             do
-              state <- WS.socketState socket
+              state <- socketState socket
               case state of
                 0 -> do
                   -- not ready yet
@@ -170,30 +167,28 @@ connectRelays nn sendMsg sink = do
                   -- try reading requests to send
                   requests <- liftIO . collectJustM . atomically . tryReadTChan $ rc
                   mapM_ (sendJson' socket) requests
-                  liftIO . sleep $ Seconds 0.05 -- TODO: 
+                  liftIO . sleep $ Seconds 0.05 -- TODO:
                   doLoop
                 2 -> markAllError relay "Relay closing connection"
                 3 -> markAllError relay "Relay closed connection"
                 _ -> markAllError relay "Error received from relay"
       doLoop
 
-    markIsConnected isCon r =  
+    markIsConnected isCon r =
         modifyMVar_ (nn ^. #relays) $ \rels ->
           pure $ rels & at (r ^. #uri) % _Just % #connected .~ isCon
 
-    markAllError relay eText = do 
-      liftIO $ do 
-        markIsConnected False relay 
+    markAllError relay eText = do
+      liftIO $ do
+        markIsConnected False relay
         runNostr nn $ changeStateForAllSubs relay (fmap . const $ Nostr.Network.Error eText)
 
 sendJson' :: (ToJSON json) => Socket -> json -> JSM ()
-sendJson' socket m = do
-  WS.send socket =<< jsonStringify m
+sendJson' socket m = sendSocket socket =<< jsonStringify m
 
 createWebSocket :: MisoString -> [MisoString] -> JSM Socket
 {-# INLINE createWebSocket #-}
-createWebSocket url' protocols =
-  WS.create url' =<< toJSVal protocols
+createWebSocket url' protocols = createSocket url' =<< toJSVal protocols
 
 codeToCloseCode :: Int -> CloseCode
 codeToCloseCode = go
@@ -215,3 +210,36 @@ codeToCloseCode = go
     go n = OtherCode n
 
 decodeError code clean reason = "Connection closed" -- TODO
+
+-----------------------------------------------------------------------------
+newtype Socket = Socket { getSocket :: JSVal }
+-----------------------------------------------------------------------------
+createSocket :: MisoString -> JSVal -> JSM Socket
+createSocket url protocols = Socket <$> new (jsg ("WebSocket" :: JSString)) (url, protocols)
+-----------------------------------------------------------------------------
+socketState :: Socket -> JSM Int
+socketState (Socket s) = fromJSValUnchecked =<< s ! ("readyState" :: JSString)
+-----------------------------------------------------------------------------
+wasClean :: JSVal -> JSM WasClean
+wasClean v = WasClean <$> (fromJSValUnchecked =<< v ! ("wasClean" :: JSString))
+-----------------------------------------------------------------------------
+getCode :: JSVal -> JSM Int
+getCode v = fromJSValUnchecked =<< v ! ("code" :: JSString)
+-----------------------------------------------------------------------------
+getReason :: JSVal -> JSM Reason
+getReason v = Reason <$> (fromJSValUnchecked =<< v ! ("reason" :: JSString))
+-----------------------------------------------------------------------------
+closeSocket :: Socket -> JSM ()
+closeSocket (Socket s) = do
+  _ <- s # ("close" :: JSString) $ ([] :: [JSString])
+  pure ()
+-----------------------------------------------------------------------------
+sendSocket :: Socket -> MisoString -> JSM ()
+sendSocket (Socket s) msg = do
+  _ <- s # ("send" :: JSString) $ [msg]
+  pure ()
+-----------------------------------------------------------------------------
+forkJSM :: JSM () -> JSM ThreadId
+forkJSM a = do
+  ctx <- askJSM
+  liftIO (forkIO (runJSM a ctx))

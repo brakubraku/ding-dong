@@ -4,7 +4,7 @@
 module ReactionsLoader where
 
 import Control.Concurrent
-import Data.Text
+import Miso.String
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Reaction
@@ -22,7 +22,7 @@ createReactionsLoader = do
       period = Seconds 0.2 
   pure $ PeriodicLoader {..}
 
-extractReactEvent :: (Response, Relay) -> Either Text (ReactionEvent, Relay)
+extractReactEvent :: (Response, Relay) -> Either MisoString (ReactionEvent, Relay)
 extractReactEvent (resp, rel) = do
   event <- getEventOrError resp
   re <- maybe (Left "Event is not a reaction!") Right $ Nostr.Reaction.extract event

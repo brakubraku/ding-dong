@@ -1,8 +1,9 @@
 module SubscriptionUtils where
 
 import Control.Concurrent
-import Data.Text
+import Miso.String
 import MisoSubscribe
+import Miso.String
 import ModelAction
 import Nostr.Event
 import Nostr.Filter
@@ -15,8 +16,8 @@ import ProfilesLoader.Types
 periodic ::
   [DatedFilter] ->
   ([e] -> action) ->
-  (Text -> action) ->
-  ((Response, Relay) -> Either Text e) ->
+  (MisoString -> action) ->
+  ((Response, Relay) -> Either MisoString e) ->
   SubscriptionParams action
 periodic filter actOnResults actOnError extractResults =
   SubscriptionParams
@@ -114,5 +115,5 @@ allAtEOSOnPage page filter actOnResults =
       reportError = reportErrorAction
     }
 
-reportErrorAction :: Text -> Action
+reportErrorAction :: MisoString -> Action
 reportErrorAction = Report ErrorReport

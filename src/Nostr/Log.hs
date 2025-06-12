@@ -2,6 +2,7 @@
 
 module Nostr.Log where
 
+import Miso.String (fromMisoString)
 import Data.Time.Clock
 import Data.Text
 
@@ -15,7 +16,7 @@ logError e = do
 logRelayError :: Relay -> Text -> IO ()
 logRelayError r e = do
   now <- getCurrentTime
-  print $ (pack . show) now <> "[ERROR] " <> uri r <> ": " <> e
+  print $ (pack . show) now <> "[ERROR] " <> fromMisoString (uri r) <> ": " <> e
 
 logInfo :: Text -> IO ()
 logInfo e = do
@@ -25,7 +26,7 @@ logInfo e = do
 logRelayInfo :: Relay -> Text -> IO ()
 logRelayInfo r e = do
   now <- getCurrentTime
-  print $ (pack . show) now <> "[INFO] " <> uri r <> ": " <> e
+  print $ (pack . show) now <> "[INFO] " <> fromMisoString (uri r) <> ": " <> e
 
 logDebug :: Text -> IO ()
 logDebug e = do
@@ -35,7 +36,7 @@ logDebug e = do
 logRelayDebug :: Relay -> Text -> IO ()
 logRelayDebug r e = do
   now <- getCurrentTime
-  print $ (pack . show) now <> "[DEBUG] " <> uri r <> ": " <> e
+  print $ (pack . show) now <> "[DEBUG] " <> fromMisoString (uri r) <> ": " <> e
 
 logObject :: (Show a) => a -> Text -> IO ()
 logObject o e = do

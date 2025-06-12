@@ -8,6 +8,7 @@
 
 module Nostr.Reaction where
 
+import Miso.String
 import Crypto.Secp256k1 (XOnlyPubKey)
 import Data.Map as M
 import Data.Set as S
@@ -30,7 +31,7 @@ data ReactionEvent = ReactionEvent
 data Reaction = Reaction
   { author :: XOnlyPubKey,
     sentiment :: Sentiment,
-    content :: T.Text
+    content :: MisoString
   }
   deriving (Generic, Show, Eq, Ord)
 

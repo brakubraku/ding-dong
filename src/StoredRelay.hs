@@ -8,6 +8,7 @@ import Nostr.Relay
 import Miso
 -- import Miso.Storage
 
+import Language.Javascript.JSaddle
 import Nostr.Network (newRelay)
 import Data.Aeson
 import GHC.Generics

@@ -8,11 +8,13 @@ import Data.Text (Text)
 import Nostr.Event
 import Nostr.Kind
 
+import Miso.String
+
 import qualified Data.Vector as V
 
 import MyCrypto
 
-type SubscriptionId = Text
+type SubscriptionId = MisoString
 
 data Subscription = Subscription
   { filters :: [Filter],

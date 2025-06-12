@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -30,7 +29,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
 import Miso hiding (at, now, send, WebSocket(..))
-import Miso.String (MisoString)
+import Miso.String (MisoString, ms)
 import qualified Miso.String as S
 import MisoSubscribe (SubType (AllAtEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
 import ModelAction
@@ -53,6 +52,7 @@ import ProfilesLoader
 import ReactionsLoader (createReactionsLoader)
 import Utils
 import Contacts
+import Language.Javascript.JSaddle hiding ((<#))
 import Data.Default
 import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import ProfilesLoader.Types (ProfOrRelays)
@@ -85,25 +85,25 @@ start = do
   nn <-
     liftIO $
       initNetwork
-        activeRelays  
+        activeRelays
         keys
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
-  lastNotifDate <- loadLastNotifTime 
+  lastNotifDate <- loadLastNotifTime
   let notifsFilter =
             \(Since s) (Until u) ->
               [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
       -- update :: Action -> Effect CompactModel Action
-      update a = 
-        EffectCore . rws $ \r (CompactModel m) -> 
-          let (EffectCore rws) = updateModel nn reactionsLoader profilesLoader a
+      update a =
+        rws $ \r (CompactModel m) ->
+          let rws = updateModel nn reactionsLoader profilesLoader a
               (a', m', w') = runRWS rws r m
           in (a', CompactModel m', w')
       initialModel =
-        CompactModel $ Model 
+        CompactModel $ Model
           (defFeedEvntsModel now)
-          [] 
+          []
           (defNotifEvntsModel lastNotifDate notifsFilter)
           []
           ""
@@ -135,7 +135,7 @@ start = do
       styles = []
   startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
   where
-    -- events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
+    -- events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"]
     events = defaultEvents
     view (CompactModel m) = appView m
     -- mountPoint = "body"
@@ -150,85 +150,85 @@ updateModel ::
   Effect Model Action
 updateModel nn rl pl action = do
   model <- get
-  traceM $ "Running action"
+  -- traceM $ "Running action: " <> action
   case action of
-    HandleWebSocket (WebSocketOpen r) -> 
+    HandleWebSocket (WebSocketOpen r) ->
       noEff $ model & #relaysStats % at (r ^. #uri) % _Just % _1 .~ True
 
-    HandleWebSocket (WebSocketError r e) -> 
+    HandleWebSocket (WebSocketError r e) ->
       -- TODO: this causes a lot of view regeneration
-      noEff $ 
+      noEff $
         model & #relaysStats % at  (r ^. #uri) % _Just % _2 %~ (\(ErrorCount ec) -> ErrorCount (ec+1))
 
-    HandleWebSocket (WebSocketClose r e) -> 
-      noEff $ 
+    HandleWebSocket (WebSocketClose r e) ->
+      noEff $
         model & #relaysStats % at (r ^. #uri) % _Just % _3 %~ (\(CloseCount cc) -> CloseCount (cc+1))
               & #relaysStats % at (r ^. #uri) % _Just % _1 .~ False
 
     Report reportType report ->
       let counter = model ^. #reportCounter
           add rs = (counter, reportType, report) : rs
-          updated = 
-            model & #reports %~ add 
+          updated =
+            model & #reports %~ add
                   & #reportCounter %~ (+1)
-       in effectSub updated $ \sink -> 
-             do 
+       in effectSub updated $ \sink ->
+             do
               liftIO . sleep $ Seconds 15
               sink $ UpdateModel (removeReport counter) []
-      where 
-        removeReport which model = 
+      where
+        removeReport which model =
           model & #reports %~ filter (\(c,_,_) -> c /= which)
-            
-    UpdatedRelaysList rl -> 
+
+    UpdatedRelaysList rl ->
       noEff $ model & #relaysList .~ rl
 
-    ChangeRelayActive uri isActive -> 
+    ChangeRelayActive uri isActive ->
       let updated = (model ^. #relaysList) &
-            traversed 
-            % unsafeFiltered (\r -> r ^. #relay % #uri == uri) 
+            traversed
+            % unsafeFiltered (\r -> r ^. #relay % #uri == uri)
             %~ O.set #active isActive
-      in model <# do 
+      in model <# do
           saveRelays updated
           pure $ UpdatedRelaysList updated
 
-    AddRelay getUri -> 
+    AddRelay getUri ->
       -- let uri = model ^. #relayInput
         model <# do
-          uri <- getUri 
-          case parseURI . T.unpack $ uri of 
+          uri <- getUri
+          case parseURI . S.unpack $ uri of
             Nothing ->
               pure $ Report ErrorReport "Invalid relay url"
-            Just _ -> do 
+            Just _ -> do
               let nsr = newActiveRelay . newRelay $ uri
-                  updated = 
-                    nsr : filter 
-                      (\sr -> sr ^. #relay % #uri /= uri) 
+                  updated =
+                    nsr : filter
+                      (\sr -> sr ^. #relay % #uri /= uri)
                       (model ^. #relaysList)
-              saveRelays updated 
+              saveRelays updated
               pure $ UpdatedRelaysList updated
 
-    RemoveRelay r -> 
+    RemoveRelay r ->
       let updated = filter (\sr -> sr ^. #relay % #uri /= r) $ model ^. #relaysList
-      in model <# do 
+      in model <# do
           saveRelays updated
           pure $ UpdatedRelaysList updated
 
-    Reload -> 
+    Reload ->
       io_ reloadPage
 
     StartAction isNew -> do
-      io_ $ 
+      io_ $
         -- wait for connections to relays having been established
         void . liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
-      
+
       startSub "reactions-loader" $ startLoader nn rl ReceivedReactions reportErrorAction
       startSub "profiles-loader" $ startLoader nn pl ReceivedProfiles reportErrorAction
-      
+
       -- fetch my profile
-      io_ $ load pl $ [model ^. #me] 
-      
+      io_ $ load pl $ [model ^. #me]
+
       -- put actual time to model every 60 seconds
-      startSub "put-actual-time-to-model" $ 
+      startSub "put-actual-time-to-model" $
         \sink ->
           let loop = do
                 now <- liftIO getCurrentTime
@@ -236,30 +236,30 @@ updateModel nn rl pl action = do
                 liftIO . sleep . Seconds $ 60
                 loop
           in loop
-      
+
       startSub "some-debugging-info" $ \sink ->
         let loop = do
               liftIO $ do
                 let isRunning (_, s) = any (== Running) $ Map.elems (s ^. #relaysState)
-                let showme (id, ss) = "subId=" <> showt id <> ": " <> printState ss
+                let showme (id, ss) = "subId=" <> ms id <> ": " <> printState ss
                 subStates <- Map.toList <$> readMVar (nn ^. #subscriptions)
-                -- print $ ("branko-sub:Running subs:" <>) . T.intercalate "\n" $ showme <$> filter isRunning subStates
-                print $ ("branko-sub:subs:" <>) . T.intercalate "\n" $ showme <$> subStates
+                -- print $ ("branko-sub:Running subs:" <>) . S.intercalate "\n" $ showme <$> filter isRunning subStates
+                print $ ("branko-sub:subs:" <>) . S.intercalate "\n" $ showme <$> subStates
               liftIO . sleep . Seconds $ 5
               loop
           in loop
 
-      io $ do 
+      io $ do
         storageContacts <- Set.fromList <$> loadContactsFromStorage
         pure $ loadContactsFromNostr storageContacts
-      
+
       issue $ GoPage FeedPage Nothing
       when isNew $ issue CreateInitialProfile
       -- start displaying notifications
       issue $ LoadMoreEvents #notifs NotificationsPage
       issue ListenToNotifs
 
-      where 
+      where
         loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
         uploadIfNoContacts :: Set.Set XOnlyPubKey -> Maybe (Set.Set XOnlyPubKey) -> Action
         uploadIfNoContacts toUpload Nothing = UploadMyContacts toUpload
@@ -280,24 +280,24 @@ updateModel nn rl pl action = do
             updated
             [ pure $ LoadMoreEvents #feed FeedPage
             , pure $ StartFeedLongRunning (model ^. #now) contacts]
-    
-    ShowNotifications -> 
+
+    ShowNotifications ->
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
           new = model ^. #notifsNew
           hasNew = length new > 0
-          saveLast = do 
+          saveLast = do
             now <- liftIO getCurrentTime
-            saveLastNotif now 
+            saveLastNotif now
             pure NoAction
-      in batchEff (bool model updated hasNew) $ 
-            bool [] 
-                 [pure $ PagedEventsProcess True #notifs NotificationsPage new] 
-                 hasNew  
+      in batchEff (bool model updated hasNew) $
+            bool []
+                 [pure $ PagedEventsProcess True #notifs NotificationsPage new]
+                 hasNew
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
-    ListenToNotifs -> 
+    ListenToNotifs ->
       startSub "listen-to-notifications" runLoop
-       where 
+       where
         doSubscribe lnd sink =
           subscribe
             nn
@@ -307,34 +307,34 @@ updateModel nn rl pl action = do
                 Nothing
             )
             sink
-        runLoop sink = 
+        runLoop sink =
           do
             lnd <- loadLastNotifTime
-            doSubscribe lnd sink 
+            doSubscribe lnd sink
             -- subscription will terminate when any relay returns an error
-            -- and new one will be created instead. you want this with 
-            -- "forever running" subscriptions, in this case to constantly check for 
+            -- and new one will be created instead. you want this with
+            -- "forever running" subscriptions, in this case to constantly check for
             -- notifications
             waitForReconnect $ sink
-            runLoop sink            
+            runLoop sink
         processNewNotifs m ers =
           let update er@(e, r) m =
-                m & #fromRelays % at e 
+                m & #fromRelays % at e
                      %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
-                & case (e `elem` (fst <$> m ^. #notifsNew), 
-                        e `elem` (fst <$> m ^. #notifs % #events), 
-                        any (== e ^. #kind) [TextNote, Reaction]) 
-                  of 
+                & case (e `elem` (fst <$> m ^. #notifsNew),
+                        e `elem` (fst <$> m ^. #notifs % #events),
+                        any (== e ^. #kind) [TextNote, Reaction])
+                  of
                     (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
-                    _ -> id   
+                    _ -> id
           in Prelude.foldr update m ers
-    
-    StartSub name sub -> do 
+
+    StartSub name sub -> do
        startSub name sub
 
     StartFeedLongRunning since contacts -> do
         compName <- ask
-        withSink $ \sink -> 
+        withSink $ \sink ->
          do
           -- cancel the existing subscription
           sequence_ $ cancelSub <$> (model ^. #subCancelButtons % at "feed-long-running")
@@ -345,7 +345,7 @@ updateModel nn rl pl action = do
 --TODO: better to start sub here than doing all the theather of issuing and action to do it
           sink $ StartSub "periodic-feed-update" (runLoop cb)
           sink $ UpdateModel updateCBs []
-       where 
+       where
         doSubscribe cb sink =
           subscribe
             nn
@@ -355,7 +355,7 @@ updateModel nn rl pl action = do
                 (Just cb)
             )
             sink
-        
+
         runLoop cb sink =
           do
             doSubscribe cb sink
@@ -367,14 +367,14 @@ updateModel nn rl pl action = do
 
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
-              m & #fromRelays % at e 
+              m & #fromRelays % at e
                      %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
                 & case (e `elem` (fst <$> m ^. #feedNew),
-                        e `elem` (fst <$> m ^. #feed % #events), 
+                        e `elem` (fst <$> m ^. #feed % #events),
                         any (== e ^. #kind) [TextNote])
-                  of 
+                  of
                     (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
-                    _ -> id   
+                    _ -> id
            updated =  Prelude.foldr update model ers
        in noEff updated
 
@@ -386,12 +386,12 @@ updateModel nn rl pl action = do
       let (ecs, enotes, eprofs) = processReceivedEvents rs
           plm = flip O.view model . (%) pml
           (_, replies) = Prelude.partition (not . isReply . fst) ecs
-          updatedEvents = bool 
-            (plm #events ++ orderByAgeAsc ecs) 
-            (orderByAgeAsc ecs ++ plm #events) 
+          updatedEvents = bool
+            (plm #events ++ orderByAgeAsc ecs)
+            (orderByAgeAsc ecs ++ plm #events)
             putAtStart
           updated =
-            model 
+            model
               & pml % #events .~ updatedEvents
           events = fst <$> ecs
           reactions = catMaybes $ Nostr.Reaction.extract <$> events
@@ -412,13 +412,13 @@ updateModel nn rl pl action = do
             pure . ScrollTo (Just $ Seconds 0.5) $ "notes-container-bottom"
 
     ScrollTo delay here ->
-      effectSub model $ \sink -> 
-        do 
+      effectSub model $ \sink ->
+        do
         -- TODO: bit of a hack to introduce delay before scrolling
         -- so that page is hopefully fully loaded after that delay,
         -- otherwise it will scroll to elsewhere
-         fromMaybe (pure ()) $ liftIO . sleep <$> delay 
-         Utils.scrollIntoView here 
+         fromMaybe (pure ()) $ liftIO . sleep <$> delay
+         Utils.scrollIntoView here
          sink NoAction
 
     ShowNext pml page ->
@@ -443,13 +443,13 @@ updateModel nn rl pl action = do
           newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
           updated =
             model & pml % #until .~ Until newSince
-       in do 
-        put updated 
+       in do
+        put updated
         maybe
           (io_ . liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
           (\filter ->
-              startSubscription nn $ 
-                  allAtEOSOnPage 
+              startSubscription nn $
+                  allAtEOSOnPage
                     page
                     (filter (Since newSince) (Until until))
                     (model ^. pml % #process $ page)
@@ -466,53 +466,53 @@ updateModel nn rl pl action = do
          periodicUntilEOSOnPage
           page
           [anytimeF $ LinkedEvents eids]
-          RepliesRecvNoEmbedLoading 
+          RepliesRecvNoEmbedLoading
 
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
 
     SubscribeForPagedReactionsTo _ _ [] -> noEff model
-    SubscribeForPagedReactionsTo pml screen res -> 
+    SubscribeForPagedReactionsTo pml screen res ->
         startSubscription nn $
           periodicUntilEOSOnPage
             screen
             [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
             (PagedReactionsToProcess pml screen)
 
-    PagedReactionsToProcess pml _ ers -> 
-      let process (e,_) m = 
+    PagedReactionsToProcess pml _ ers ->
+      let process (e,_) m =
             m & pml % #reactionEvents % at (e ^. #eventId) ?~ (e, processContent e)
           updated = Prelude.foldr process model ers
-      in 
-        noEff updated 
-     
-    SubscribeForParentsOf _ _ [] -> 
+      in
+        noEff updated
+
+    SubscribeForParentsOf _ _ [] ->
       noEff model
-    SubscribeForParentsOf pml screen replies -> 
-      let insert e (pmap, pids) = 
-           fromMaybe (pmap, pids) $ do 
+    SubscribeForParentsOf pml screen replies ->
+      let insert e (pmap, pids) =
+           fromMaybe (pmap, pids) $ do
               parentEid <- findParentEventOf e
               let eid = e ^. #eventId
-              pure $ 
+              pure $
                (pmap & at parentEid %~ -- record which parent goes with which child/children
-                  Just 
-                   . fromMaybe (Set.singleton eid) 
+                  Just
+                   . fromMaybe (Set.singleton eid)
                    . fmap (Set.insert eid), parentEid : pids)
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
-      in 
+      in
         startSubscription nn $
           periodicUntilEOSOnPage
             screen
             [anytimeF $ EventsWithId pids]
             (FeedEventParentsProcess pmap pml screen)
 
-    FeedEventParentsProcess pmap pml screen rs -> 
-       let  (notes, enotes, eprofs) = processReceivedEvents rs 
+    FeedEventParentsProcess pmap pml screen rs ->
+       let  (notes, enotes, eprofs) = processReceivedEvents rs
             events = fst <$> notes
             upd ec chid m = m & pml % #parents % at chid .~ Just ec
-            update ec@(p,_) m = 
-                maybe 
+            update ec@(p,_) m =
+                maybe
                   m
                   (\chids -> Prelude.foldr (upd ec) m chids)
                   (pmap ^. at (p ^. #eventId))
@@ -527,17 +527,17 @@ updateModel nn rl pl action = do
     SubscribeForEmbedded [] ->
       noEff model
     SubscribeForEmbedded eids ->
-        startSubscription nn $ 
+        startSubscription nn $
          allAtEOSOnPage
           FeedPage
           [anytimeF $ EventsWithId eids]
           EmbeddedEventsProcess
-          
+
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
           process (e, rel) (m, xos) =
             (,Set.insert (e ^. #pubKey) xos) $
-              m & #embedded % at (e ^. #eventId) 
+              m & #embedded % at (e ^. #eventId)
                 %~ Just
                 . maybe
                   ((e, processContent e), Set.singleton rel)
@@ -554,29 +554,29 @@ updateModel nn rl pl action = do
 
     ReceivedProfiles rs ->
       let process :: ProfOrRelays -> Model -> Model
-          process por m = 
-           case por of 
-            (xo, Just (profile, date, _), Nothing) -> 
+          process por m =
+           case por of
+            (xo, Just (profile, date, _), Nothing) ->
               m & #profiles % at xo %~ Just .
-              fromMaybe (profile, date) . fmap (\(p,d) -> do 
-                  if date > d 
+              fromMaybe (profile, date) . fmap (\(p,d) -> do
+                  if date > d
                   then (profile,date)
                   else (p,d))
-            (xo, Nothing, Just (relays, date)) -> 
+            (xo, Nothing, Just (relays, date)) ->
               m & #profileRelays % at xo %~ Just .
-               fromMaybe (relays, date) . fmap (\(r,d) -> do 
-                  if date > d 
+               fromMaybe (relays, date) . fmap (\(r,d) -> do
+                  if date > d
                   then (relays,date)
                   else (r,d))
-            _ -> m 
-      in noEff $ Prelude.foldr process model rs 
+            _ -> m
+      in noEff $ Prelude.foldr process model rs
 
     GoPage page elementId ->
       let add p ps@(p1 : rest) =
             bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in effectSub updated $ \_ -> do 
+       in effectSub updated $ \_ -> do
             notify LB.loadingBar $ LB.UpdatePage page
 
     GoBack ->
@@ -585,7 +585,7 @@ updateModel nn rl pl action = do
             (prevPage, rest) <- uncons xs
             pure (model & #page .~ fst prevPage & #history .~ (prevPage : rest), snd prevPage)
        in maybe (noEff model)
-           (\(updatedModel, scrollToId) -> 
+           (\(updatedModel, scrollToId) ->
               -- if there is information about the element to scroll to, then scroll to it
               updatedModel <# maybe (pure NoAction) (\eid -> pure (ScrollTo (Just $ Seconds 0.5) eid)) scrollToId)
            updated
@@ -613,7 +613,7 @@ updateModel nn rl pl action = do
 
     DisplayReplyThread e -> do
       put $ model & #writeReplyTo ?~ e
-      io $ do 
+      io $ do
         draft <- fromRight "" <$> getLocalStorage "reply-draft"
         pure $ UpdateField #replyDraft draft
       issue $ DisplayThread e
@@ -629,11 +629,11 @@ updateModel nn rl pl action = do
 
     UpdateField l v -> noEff $ model & l .~ v
 
-    UploadMyContacts cs -> 
-      effectSub model $ 
-       \sink -> 
+    UploadMyContacts cs ->
+      effectSub model $
+       \sink ->
          do
-          signAndSend 
+          signAndSend
             (pure . setContacts (Set.toList cs) (model ^. #me))
             [ const $ Report SuccessReport $ "Contacts uploaded"
             , const $ ContactsLoaded cs]
@@ -641,80 +641,80 @@ updateModel nn rl pl action = do
             sink
           safeUpdateLocalContacts cs
 
-    ContactsLoaded cs -> 
-      updated <# 
-        do 
+    ContactsLoaded cs ->
+      updated <#
+        do
           load pl (Set.toList cs)
           pure ShowFeed
-      where 
+      where
         updated = model & #profileContacts % at (model ^. #me) ?~ cs
 
-    LoadContactsOf xo page takeAction -> 
+    LoadContactsOf xo page takeAction ->
          startSubscription nn $
            allAtEOSOnPage
              page
              [DatedFilter (ContactsFilter [xo]) Nothing Nothing]
              (takeAction . processReceived)
-     where 
+     where
       processReceived :: [(Event, Relay)] -> Maybe (Set.Set XOnlyPubKey)
       processReceived [] = Nothing
-      processReceived ers = 
+      processReceived ers =
         let latest =
                  -- take the latest event from each relay
               Prelude.maximumBy (\x y -> compare (x ^. #created_at) (y ^. #created_at) ) <$> fmap fst <$>
                  -- group by relays
                (Prelude.groupBy (\x y -> snd x == snd y) $
-                 -- remove duplicate events received from differet relays 
+                 -- remove duplicate events received from differet relays
                  Prelude.nubBy (\x y -> fst x == fst y) ers)
-        in 
+        in
           -- extract contacts from the events
-          Just . Set.fromList . Prelude.concat $ extractContacts <$> latest 
+          Just . Set.fromList . Prelude.concat $ extractContacts <$> latest
       extractContacts :: Event -> [XOnlyPubKey]
-      extractContacts event = 
+      extractContacts event =
          let isPTag (PTag _ _ _) = True
-             isPTag _ = False    
-             extractXo (PTag xo _ _) = Just xo 
+             isPTag _ = False
+             extractXo (PTag xo _ _) = Just xo
              extractXo _ = Nothing
          in catMaybes $ extractXo <$> event ^.. #tags % folded % filtered isPTag
 
-    DisplayProfileContacts xo page -> 
-      model <# do 
+    DisplayProfileContacts xo page ->
+      model <# do
         load pl $ maybe [] Set.toList $ model ^. #profileContacts % at xo
         pure $ GoPage (Following xo) Nothing
 
-    LoadProfileReactions xo page -> 
-      let 
+    LoadProfileReactions xo page ->
+      let
         reactions = defProfReactionsModel xo $ model ^. #now
-      in 
+      in
         batchEff model $
-         pure <$> 
+         pure <$>
           [LoadMoreEvents (#profileReactions % at xo % non reactions) page]
 
-    ProcessProfileReactions xo page rs -> 
+    ProcessProfileReactions xo page rs ->
       let events = removeDeletetedAndDuplicates rs
           sorted = reverse $ Prelude.sort events
           processed = catMaybes $ fmap (\r -> (r, getReaction r)) . Reaction.extract <$> sorted
-       
-          mPm = do 
+
+          mPm = do
             pm <- model ^? #profileReactions % at xo % _Just
           -- put newly received at the end
             pure $ pm & #events %~ \es -> es ++ processed
 
           updateReactionsTo :: [(Event, Relay)] -> Model -> Model
-          updateReactionsTo ers m = 
-            Prelude.foldr 
-             (\e m -> m & #profileReactionsTo % at (e ^. #eventId) ?~ (e, processContent e)) 
-             m 
+          updateReactionsTo ers m =
+            Prelude.foldr
+             (\e m -> m & #profileReactionsTo % at (e ^. #eventId) ?~ (e, processContent e))
+             m
              (fst <$> ers)
-      in 
-        case mPm of 
-          Nothing -> 
-            effectSub model $ \sink -> 
-               do 
+      in
+        case mPm of
+          Nothing ->
+            effectSub model $ \sink ->
+               do
                  liftIO . logError $ "Missing PagedNotes model for loading reactions"
                  sink NoAction
           Just pm -> do
-            put $ model & #profileReactions % at xo ?~ pm 
+            put $ model & #profileReactions % at xo ?~ pm
             startSubscription nn $
               allAtEOSOnPage
                 page
@@ -724,42 +724,42 @@ updateModel nn rl pl action = do
               LoadMoreIfNecessary (#profileReactions % ixAt xo) $
                 LoadMoreEvents (#profileReactions % at xo % non pm) page
 
-    LoadMoreIfNecessary pml loadMoreAction -> 
-      let 
+    LoadMoreIfNecessary pml loadMoreAction ->
+      let
         updAction =
           do
           pm <- model ^? pml
-          let loadMore = 
+          let loadMore =
                length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
                     && (pm ^. #factor) < 100
-          pure $ 
-            if loadMore then 
+          pure $
+            if loadMore then
               ((model & pml .~ (pm & #factor %~ (*2))), loadMoreAction)
-            else 
+            else
               ((model & pml .~ (pm & #factor .~ 1)), NoAction)
-      in 
-        case updAction of 
-          Just (updated, act) -> 
-            updated <# pure act 
-          _ -> 
+      in
+        case updAction of
+          Just (updated, act) ->
+            updated <# pure act
+          _ ->
             batchEff model [(liftIO . logError) "No model in PML!" >> pure NoAction]
 
     LoadProfile isLoadNotes isLoadFollowing xo page ->
-      let 
+      let
          textNotes = defProfEvntsModel xo $ model ^. #now
          updated = model & #profileEvents % at xo ?~ textNotes
-      in 
-        do 
+      in
+        do
           put updated
           startSubscription nn $
             periodicLoadProfileOnPage
               page
               [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
               ReceivedProfiles
-          when isLoadNotes . issue $ 
+          when isLoadNotes . issue $
              LoadMoreEvents (#profileEvents % at xo % non textNotes) page
-          when isLoadFollowing . issue $ 
-              LoadContactsOf 
+          when isLoadFollowing . issue $
+              LoadContactsOf
                 xo
                 page
                 (UpdateField (#profileContacts % at xo))
@@ -779,14 +779,14 @@ updateModel nn rl pl action = do
                     ers = filter (isError . snd) (Map.toList rs)
                  in (trs, second extract <$> ers)
               _ -> ([], [])
-          timeouts = (\r -> "Relay " <> (showt $ r ^. #uri) <> " timeouted") <$> toRels
-          errors = (\(r, er) -> "Relay " <> (showt $ r ^. #uri) 
+          timeouts = (\r -> "Relay " <> (ms $ r ^. #uri) <> " timeouted") <$> toRels
+          errors = (\(r, er) -> "Relay " <> (ms $ r ^. #uri)
                                 <> " returned error: " <> (fromMaybe "" er)) <$> erRels
       in effectSub model $ \sink -> do
             notify LB.loadingBar $ LB.UpdateSubscriptions p sst
             mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
-    DisplayProfilePage mid xo -> do 
+    DisplayProfilePage mid xo -> do
       io_ . liftIO . print $ "branko-dispatching displayprofilepage"
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
 
@@ -794,7 +794,7 @@ updateModel nn rl pl action = do
       model <# do
         liftIO (print what) >> pure NoAction
 
-    UpdateModel updateF actions -> do 
+    UpdateModel updateF actions -> do
       batchEff (updateF model) actions
 
     SendReplyTo e getReplyText -> do
@@ -802,120 +802,120 @@ updateModel nn rl pl action = do
             reply <- getReplyText
             pure $ createReplyEvent e t (model ^. #me) reply
           localhost = Relay "localhost" (RelayInfo False False) False
-          successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)], 
+          successActs = [\se -> RepliesRecvNoEmbedLoading [(se, localhost)],
               const (UpdateModel clearReplyInModel [clearReplyInStorage]),
               const (Report SuccessReport $ "Reply sent!")]
-      effectSub model $ 
-       signAndSend 
-        replyEventF 
+      effectSub model $
+       signAndSend
+        replyEventF
         successActs
         (singleton . const . Report ErrorReport $ "Failed sending reply!")
-      where 
+      where
         clearReplyInModel :: Model -> Model
         clearReplyInModel m = m & #writeReplyTo .~ Nothing & #replyDraft .~ ""
-        clearReplyInStorage = 
-          do 
-            setLocalStorage @T.Text "reply-draft" ""
+        clearReplyInStorage =
+          do
+            setLocalStorage "reply-draft" S.empty
             pure NoAction
 
-    SendPost getPostText -> do 
-      let createPost = 
-           \t -> do 
+    SendPost getPostText -> do
+      let createPost =
+           \t -> do
             content <- getPostText
             pure $ textNote content (model ^. #me) t
-          successActs = [const $ UpdateModel clearPostInModel [clearPostInStorage], 
+          successActs = [const $ UpdateModel clearPostInModel [clearPostInStorage],
                          const (Report SuccessReport $ "Post sent!"),
                          DisplayThread]
-      effectSub model $ 
-        signAndSend 
-          createPost 
+      effectSub model $
+        signAndSend
+          createPost
           successActs
           (singleton . const . Report ErrorReport $ "Failed sending post!")
-     where 
+     where
       clearPostInModel :: Model -> Model
       clearPostInModel m = m & #postDraft .~ ""
-      clearPostInStorage = 
-        do 
-          setLocalStorage @T.Text "post-draft" ""
+      clearPostInStorage =
+        do
+          setLocalStorage "post-draft" S.empty
           pure NoAction
-        
+
     CreateInitialProfile -> do
         let me = model ^. #me
-            p = def 
+            p = def
              {username="Fresh Dingo",
               picture=
-                Just $ 
+                Just $
                 "https://howtodrawforkids.com/wp-content/\
                 \uploads/2022/04/how-to-draw-a-cute-frog.jpg"}
-            newProfileF = \now -> do 
+            newProfileF = \now -> do
               pure $ setMetadata p me now
-        effectSub model $ 
-         signAndSend 
-          newProfileF 
+        effectSub model $
+         signAndSend
+          newProfileF
           []
           []
 
     SendUpdateProfile getProfile -> do
         let me = model ^. #me
-        let newProfileF = \now -> do 
+        let newProfileF = \now -> do
               p <- getProfile
               pure $ setMetadata p me now
-        effectSub model $ 
-         signAndSend 
-          newProfileF 
-          (singleton . const . LoadProfile False False me $ MyProfilePage) 
+        effectSub model $
+         signAndSend
+          newProfileF
+          (singleton . const . LoadProfile False False me $ MyProfilePage)
           (singleton . const . Report ErrorReport $ "Failed updating profile!")
         -- TODO: update profile in #profiles if sending successfull
     SendLike e -> do
         let me = model ^. #me
             rcs = model ^. #reactions % #processed % at (e ^. #eventId)
             sendLike = pure . likeEvent e me
-            likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just 
+            likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just
             isLikedByMe = Set.member me . Set.fromList $ likeReactions ^.. folded % #author
             doNothing = noEff model
 
-        if isLikedByMe 
+        if isLikedByMe
         then doNothing
-        else 
-          effectSub model $ 
-           signAndSend 
-            sendLike 
-            (singleton . const . LikeSent $ e) 
+        else
+          effectSub model $
+           signAndSend
+            sendLike
+            (singleton . const . LikeSent $ e)
             (singleton . const . Report ErrorReport $ "Failed sending like!")
-       
-    LikeSent e -> 
+
+    LikeSent e ->
       let me = model ^. #me
           likeReaction = likeReactionOf me
-          updated = model & #reactions % #processed % at (e ^. #eventId) 
-             %~ \rcs -> 
-              Just $ 
-                case rcs of 
+          updated = model & #reactions % #processed % at (e ^. #eventId)
+             %~ \rcs ->
+              Just $
+                case rcs of
                   Nothing -> Map.fromList [(Like, Set.singleton likeReaction)]
                   Just ss -> ss & at Like %~ Just .
                       fromMaybe (Set.singleton likeReaction) . fmap (Set.insert likeReaction)
-      in 
+      in
         noEff $ updated
-    
-    DisplayMyProfilePage -> 
+
+    DisplayMyProfilePage ->
         batchEff model $
           [ pure $ LoadProfile False False (model ^. #me) MyProfilePage,
             pure $ GoPage MyProfilePage Nothing
           ]
-    
+
     DisplayWritePostPage ->
-      effectSub model $ \sink -> do 
-        draft <- fromRight "" <$> getLocalStorage "post-draft" 
-        sink $ UpdateField (#postDraft) draft 
+      effectSub model $ \sink -> do
+        draft <- fromRight "" <$> getLocalStorage "post-draft"
+        sink $ UpdateField (#postDraft) draft
         sink $ GoPage WritePostPage Nothing
-    
-    WriteTextToStorage tid t -> 
-      model <# do 
+
+    WriteTextToStorage tid t ->
+      model <# do
         setLocalStorage tid t
         pure NoAction
 
     DisplayThreadWithId eid -> do
-       issue $ UpdateField (#findEventModel % #error) (Just "") 
-       startSubscription nn $ 
+       issue $ UpdateField (#findEventModel % #error) (Just "")
+       startSubscription nn $
         SubscriptionParams
         { subType = AllAtEOS,
           subFilter = [anytimeF . EventsWithId $ [eid]],
@@ -926,7 +926,7 @@ updateModel nn rl pl action = do
           timeoutPerRelay = Nothing,
           reportError = reportErrorAction
         }
-      where 
+      where
         displayThread :: [(Event, Relay)] -> Action
         displayThread (er:_) = DisplayThread $ fst er
         displayThread [] = UpdateField (#findEventModel % #error) (Just "Event not found on any connected relay!")
@@ -934,7 +934,7 @@ updateModel nn rl pl action = do
     _ -> noEff model
 
   where
-    signAndSend makeEvent successActs failureActs sink = 
+    signAndSend makeEvent successActs failureActs sink =
        do
           now <- liftIO getCurrentTime
           key <- liftIO $ getSecKey xo
@@ -945,14 +945,14 @@ updateModel nn rl pl action = do
             (sink $ Report ErrorReport "Failed sending: Event signing failed")
             ( \se -> do
                 isSuccess <- liftIO . runInNostr $ sendAndWait se (Seconds 1)
-                sequence_ . fmap (\f -> sink (f se)) 
-                  $ bool 
-                     failureActs 
+                sequence_ . fmap (\f -> sink (f se))
+                  $ bool
+                     failureActs
                      successActs
                      isSuccess
             )
             signed
-      where 
+      where
        getSecKey xo = pure $ Nostr.Keys.secKey . keys $ nn -- TODO: don't store keys in NostrNetwork
 
     sendAndWait :: Event -> Seconds -> ReaderT NostrNetwork IO Bool
@@ -972,8 +972,8 @@ updateModel nn rl pl action = do
                          ) of
                       (True, _) -> pure True
                       (False, True) -> pure False
-                      (False, False) -> do 
-                        liftIO $ sleep (Seconds 0.1) 
+                      (False, False) -> do
+                        liftIO $ sleep (Seconds 0.1)
                         loop
                   Nothing -> pure False
         loop
@@ -1036,23 +1036,23 @@ updateModel nn rl pl action = do
 
     runInNostr = runNostr nn
 
-    waitForReconnect sink = 
-      do 
+    waitForReconnect sink =
+      do
         unconnected <- liftIO . runNostr nn $ RP.waitForActiveConnections (Seconds 10)
-        case (length unconnected > 0) of 
+        case (length unconnected > 0) of
           True ->
-            sink . Report ErrorReport $ 
-              "Unable to connect to these relays: " 
-              <> showt (unconnected ^.. folded % #uri)
+            sink . Report ErrorReport $
+              "Unable to connect to these relays: "
+              <> ms (show (unconnected ^.. folded % #uri))
           False ->
-            sink . Report SuccessReport $ 
-              "Reconnected to all relays" 
+            sink . Report SuccessReport $
+              "Reconnected to all relays"
 
 startSubscription :: NostrNetwork -> SubscriptionParams action -> Effect model action
 startSubscription nn sp = startSub filterHash $ subscribe nn sp
   where
     -- TODO: this may be inefficient
-    filterHash = T.pack . show . hash . show $ subFilter sp
+    filterHash = S.pack . show . hash . show $ subFilter sp
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)
@@ -1060,8 +1060,8 @@ startSubscription nn sp = startSub filterHash $ subscribe nn sp
 subscribeForWholeThread :: NostrNetwork -> Event -> Page -> Effect model Action
 subscribeForWholeThread nn e page = do
   let eids = [(e ^. #eventId)]
-      replyTo = maybe [] singleton $ findParentEventOf e 
-  startSubscription nn $ 
+      replyTo = maybe [] singleton $ findParentEventOf e
+  startSubscription nn $
     periodicUntilEOSOnPage
       page
       [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
@@ -1073,7 +1073,7 @@ subscribeForEventsReplies nn eids page =
   -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
   --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
   --  this makes queries which only want replies (and not root replies) to a single event possibly very inefficient
-  subscribe nn $ 
+  subscribe nn $
      periodicUntilEOSOnPage
       page
       [anytimeF $ LinkedEvents eids]
@@ -1087,8 +1087,8 @@ safeUpdateLocalContacts newCs = do
   oldCs <- Set.fromList <$> loadContactsFromStorage
   -- in case difference is more than one contact, refuse updating locally stored contacts
   -- it's expected that if you follow/unfollow more than one contact at a time something is borked
-  if (Set.size $ oldCs `Set.difference` newCs) <= 1 
-   then setLocalStorage "my-contacts" $ Set.toList newCs 
+  if (Set.size $ oldCs `Set.difference` newCs) <= 1
+   then setLocalStorage "my-contacts" $ Set.toList newCs
    else liftIO . print $ "Not updating local contacts!"
 
 loadContactsFromStorage :: JSM [XOnlyPubKey]
@@ -1126,7 +1126,7 @@ appView m =
         [ span_
             [class_ "new-notes-count"]
             [ text $
-                "Display " <> showt howMany <> " new " <> bool "note" "notes" (howMany > 1)
+                "Display " <> ms howMany <> " new " <> bool "note" "notes" (howMany > 1)
             ]
         ]
 
@@ -1145,13 +1145,13 @@ displayFollowingView m followersOf =
         <$> maybe [] Set.toList (m ^. #profileContacts % at followersOf)
       where
         -- in case profile was not found on any relay display pubKey in about
-        emptyP xo = Profile "" Nothing (encodeBechXo xo) Nothing Nothing
+        emptyP xo = Profile "" Nothing (fmap ms $ encodeBechXo xo) Nothing Nothing
 
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
       div_
         [class_ "profile", id_ $ "abc" <> getProfileElementId xo]
-        [ 
+        [
           div_
             [class_ "pic-container"]
             [displayProfilePic (Just $ getProfileElementId xo) xo $ p ^. #picture],
@@ -1173,7 +1173,7 @@ displayFeed m =
 data PagedWhat = Notes | Notifications
 
 displayPagedContent :: Bool -> Model -> Lens' Model (PagedEventsModel a) -> Page -> View Action -> View Action
-displayPagedContent showIntervals m pml screen content = 
+displayPagedContent showIntervals m pml screen content =
    div_
     []
     [ bool (div_ [] []) (div_ [] [text (pu <> " --- " <> ps)]) showIntervals,
@@ -1203,16 +1203,16 @@ displayPagedContent showIntervals m pml screen content =
     events = f ^. #getEvent <$> (take pgSize . drop (pg * pgSize) $ f ^. #events)
     (Until until) = f ^. #until
     since' = f ^. #pgStart % at pg
-    since = fromMaybe "" (showt <$> since')
-    ps = maybe since (showt . fromSeconds . O.view #created_at . fst ) $ Prelude.uncons events
-    pu = showt $ maybe until (fromSeconds . O.view #created_at . snd ) $ Prelude.unsnoc events
+    since = fromMaybe "" (ms . show <$> since')
+    ps = maybe since (ms . show . fromSeconds . O.view #created_at . fst ) $ Prelude.uncons events
+    pu = ms $ show $ maybe until (fromSeconds . O.view #created_at . snd ) $ Prelude.unsnoc events
 
 displayPagedEvents :: Bool -> PagedWhat -> Model -> (Lens' Model PagedEvents) -> Page -> View Action
 displayPagedEvents showIntervals pw m pml screen =
  displayPagedContent showIntervals m pml screen $
       div_ [] [
-        (case pw of 
-          Notes -> 
+        (case pw of
+          Notes ->
             div_
               [class_ "notes-container"]
               (displayPagedNote m pml <$> notes) -- TODO: ordering can be different
@@ -1228,21 +1228,21 @@ displayPagedEvents showIntervals pw m pml screen =
     notes = take pgSize . drop (pg * pgSize) $ f ^. #events
 
 displayPagedReactions :: Model -> Lens' Model PagedReactions -> Page -> View Action
-displayPagedReactions m pml screen = 
-  displayPagedContent True m pml screen $ 
+displayPagedReactions m pml screen =
+  displayPagedContent True m pml screen $
    div_ [] $
       displayReaction <$> reactions
-  where 
+  where
     f = m ^. pml
     pgSize = f ^. #pgSize
     pg = f ^. #pg
     reactions = take pgSize . drop (pg * pgSize) $ f ^. #events
     emptyEvent = div_ [] [text "Could not find event..."]
-    displayEvent eid = fromMaybe emptyEvent $ do 
-       ec <- m ^. #profileReactionsTo % at eid 
+    displayEvent eid = fromMaybe emptyEvent $ do
+       ec <- m ^. #profileReactionsTo % at eid
        pure $ displayNote m ec
-    displayReaction (re,r) = 
-      div_ [class_ "reaction-and-event"] 
+    displayReaction (re,r) =
+      div_ [class_ "reaction-and-event"]
         [ div_ [class_ "reaction"] [text $ (r ^. #content)]
         , div_ [class_ "reaction-to"] [displayEvent (re ^. #reactionTo)]]
 
@@ -1254,38 +1254,38 @@ footerView Model {..} =
 
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
-  div_ [onClick $ DisplayProfilePage mid xo, onClick $ LogConsole "clickity-clack"] 
+  div_ [onClick $ DisplayProfilePage mid xo, onClick $ LogConsole "clickity-clack"]
        [img]
       --  [componentWith_ img (Just $ Key "whatever-1") [onMouseLeave $ LogConsole "branko-onmouseleave"]]
       --  [component_ img]
-  where 
-    img =  
-      -- imgWithMouseActions  
-      --     [ class_ "profile-pic", 
+  where
+    img =
+      -- imgWithMouseActions
+      --     [ class_ "profile-pic",
       --       class_ "hovered",
       --       prop "src" $ pic
       --     ]
       --     [ class_ "profile-pic",
       --       prop "src" $ pic
       --     ]
-      
+
       imgKeyed_ (Key pic)
         [ class_ "profile-pic",
           prop "src" $ pic,
           onClick $ DisplayProfilePage mid xo
         ]
-displayProfilePic mid xo _ = 
+displayProfilePic mid xo _ =
   div_
     [ class_ "profile-pic",
-      onClick $ DisplayProfilePage mid xo 
+      onClick $ DisplayProfilePage mid xo
     ]
     []
 
 displayNoteContent :: Bool -> Model -> (Event, [Content]) -> View Action
 displayNoteContent withEmbed m (e,content) =
   let displayContent (TextC textWords) =
-        let pgraphs = uncons . filter (/= "") . T.splitOn "\n\n" $ T.unwords $ textWords
-        in div_ [] $ 
+        let pgraphs = uncons . filter (/= "") . S.splitOn "\n\n" $ S.unwords $ textWords
+        in div_ [] $
             maybe []
               (\(first,rest) -> text first : fmap (\ptext -> p_ [] [text ptext]) rest)
               pgraphs
@@ -1295,13 +1295,13 @@ displayNoteContent withEmbed m (e,content) =
           [ a_
               [href_ link, target_ "_blank"]
               [imgKeyed_ (Key link) [class_ "link-pic", prop "src" link]]
-          ] 
+          ]
       displayContent (LinkC Video link) =
         div_
           []
           [ a_
               [href_ link, target_ "_blank"]
-              [video_ [class_ "link-video", prop @T.Text "controls" " "] [source_ [prop "src" link]]]
+              [video_ [class_ "link-video", textProp "controls" " "] [source_ [textProp "src" link]]]
           ]
       displayContent (LinkC ContentUtils.Other link) =
         div_ [] [a_ [href_ link, target_ "_blank"] [text link]]
@@ -1317,7 +1317,7 @@ displayNoteContent withEmbed m (e,content) =
                       embdEvnt
                   ]
           False ->
-            text . fromMaybe "<Failed encoding nevent>" . encodeBechEvent $ eid
+            text . fromMaybe "<Failed encoding nevent>" . fmap ms . encodeBechEvent $ eid
       displayContent (NostrC (NPub xo)) =
         case withEmbed of
           True ->
@@ -1328,7 +1328,7 @@ displayNoteContent withEmbed m (e,content) =
                 (displayEmbeddedProfile xo)
                 (fst <$> m ^. #profiles % at xo)
           False ->
-            text . fromMaybe "Failed encoding npub" . encodeBechXo $ xo
+            text . fromMaybe "Failed encoding npub" . fmap ms . encodeBechXo $ xo
    in div_ [class_ "note-content"] $
         displayContent <$> content
   where
@@ -1354,7 +1354,7 @@ displayNoteShort withEmbed m ec@(e, _) =
     [ displayNoteContent withEmbed m ec,
       div_
         [class_ "text-note-properties"]
-        ( [showThreadIcon]
+        ( [mshreadIcon]
             ++ [displayReactions m e reactions]
             ++ [replyIcon]
         )
@@ -1367,8 +1367,8 @@ displayNoteShort withEmbed m ec@(e, _) =
     replies = do
       thread <- m ^. #threads % at reid
       Set.size <$> thread ^. #replies % at eid
-    showThreadIcon =
-      let count = maybe "" showt replies
+    mshreadIcon =
+      let count = maybe "" ms replies
       in div_
             [class_ "replies-count", onClick $ DisplayThread e]
             [ bool
@@ -1380,39 +1380,39 @@ displayNoteShort withEmbed m ec@(e, _) =
     replyIcon = div_ [class_ "reply-icon", onClick $ DisplayReplyThread e] [text "↪"]
 
 displayPagedNote :: Model -> (Lens' Model PagedEvents) -> (Event, [Content]) -> View Action
-displayPagedNote m pml ec@(e,_) 
+displayPagedNote m pml ec@(e,_)
     | isJust (findParentEventOf e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
-        in 
-          div_ [class_ "parent-child-complex"] 
+        in
+          div_ [class_ "parent-child-complex"]
            [div_ [class_ "parent", class_ "whatever-shit"] [maybe emptyParent (\p -> displayNote m p) mp]
            ,div_ [class_ "child"] [displayNote m ec]]
-    | otherwise = 
+    | otherwise =
         div_ [class_ "parent-child-complex"] [displayNote m ec]
-  where 
+  where
     emptyParent = div_ [] [text "Loading parent event"]
 
 displayPagedNotif :: Model -> (Lens' Model (PagedEventsModel a)) -> (Event, [Content]) -> View Action
 displayPagedNotif m pml ec@(e,_) =
-    case e ^. #kind of 
-      TextNote -> 
+    case e ^. #kind of
+      TextNote ->
         notif [tnInfo, displayNote m ec]
-      Reaction -> 
+      Reaction ->
         notif [reactInfo, displayNote m reactTo]
-      _ -> div_ [] [] 
-  where 
+      _ -> div_ [] []
+  where
     notif = div_ [class_ "notification", id_ $ getNoteElementId e]
     replyTo = m ^. pml % #parents % at (e ^. #eventId)
     unknown = Profile "" Nothing Nothing Nothing Nothing
     profile = fromMaybe unknown $ getAuthorProfile m e
-    onProfileClick = 
-      onClick $ DisplayProfilePage (Just $ getNoteElementId e) 
+    onProfileClick =
+      onClick $ DisplayProfilePage (Just $ getNoteElementId e)
                                    (e ^. #pubKey)
-    profileName = span_ 
-     [class_ "username", onProfileClick] 
+    profileName = span_
+     [class_ "username", onProfileClick]
      [text $ profile ^. #username]
-    displayName = span_ 
-     [class_ "displayname", onProfileClick] 
+    displayName = span_
+     [class_ "displayname", onProfileClick]
      [text . fromMaybe "" $ profile ^. #displayName]
     isReplyToU = maybe False (\(p,_) -> p ^. #pubKey == m ^. #me) replyTo
     notifType = bool
@@ -1421,20 +1421,20 @@ displayPagedNotif m pml ec@(e,_) =
       isReplyToU
     tnInfo = div_ [] [profileName, displayName, span_ [] [text $ " " <> notifType]]
     reactInfo = div_ [] [profileName, displayName, span_ [] [text $ " reacted with " <> decodeContent (e ^. #content) <> " to"]]
-    decodeContent c = if c == "+" then "👍" else c 
-    reactTo = fromMaybe (emptyEvent, processContent emptyEvent) $ do 
+    decodeContent c = ms (if c == "+" then "👍" else c )
+    reactTo = fromMaybe (emptyEvent, processContent emptyEvent) $ do
        eid <- (Nostr.Reaction.extract e) ^? _Just % #reactionTo
        m ^. pml % #reactionEvents % at eid
-    emptyEvent = newEvent "<Could not find the event this reaction belongs to>" (m ^. #me) (m ^. #now) 
+    emptyEvent = newEvent "<Could not find the event this reaction belongs to>" (m ^. #me) (m ^. #now)
 
 displayNote :: Model -> (Event, [Content]) -> View Action
-displayNote = displayNote' True 
+displayNote = displayNote' True
 
 getProfileElementId :: XOnlyPubKey -> ElementId
-getProfileElementId = T.pack . take 10 . exportXOnlyPubKey 
+getProfileElementId = S.pack . take 10 . exportXOnlyPubKey
 
 getNoteElementId :: Event -> ElementId
-getNoteElementId e = T.take 10 . eventIdToText . getEventId $ e ^. #eventId
+getNoteElementId e = S.take 10 . eventIdToText . getEventId $ e ^. #eventId
 
 displayNote' :: Bool -> Model -> (Event, [Content]) -> View Action
 displayNote' withEmbed m ec@(e, _) =
@@ -1487,7 +1487,7 @@ rightPanel m = div_ [class_ "right-panel"] [ul_ [] reports]
     reports =
       ( \(i, reportType, report) ->
           liKeyed_
-            (Key . showt $ i) -- so that Miso diff algoritm displays it in the correct order
+            (Key . ms $ i) -- so that Miso diff algoritm displays it in the correct order
             [ class_ $ bool "error" "success" (reportType == SuccessReport),
               class_ "hide-after-period"
             ]
@@ -1520,14 +1520,15 @@ leftPanel m =
             ]
             [ text
                 . (<> "...")
-                . T.take 20
+                . S.take 20
                 . fromMaybe ""
+                . fmap S.ms
                 . encodeBechXo
-                $ m ^. #me
+                $ (m ^. #me)
             ]
         ]
-          ++ (maybe [] 
-                (\un -> [div_ [] [text . showt $ un]])
+          ++ (maybe []
+                (\un -> [div_ [] [text . ms $ un]])
                 (m ^? #profiles % at (m ^. #me) % _Just % _1 % #username)
              ),
       div_
@@ -1544,15 +1545,15 @@ leftPanel m =
         [class_ "left-panel-item"]
         [div_ [onClick action] [text label]]
     showBack = (> 1) . length $ m ^. #history
-    backButton = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: T.Text)]
-    notifications = 
+    backButton = img_ [id_ "left-arrow", prop "src" $ ("arrow-left.svg" :: S.MisoString)]
+    notifications =
       div_
        [class_ "left-panel-item"]
-       [div_ [onClick ShowNotifications] 
-             [text "Notifications", span_ [class_ "new-notifs-count"] [text newNotifsCount]]] 
+       [div_ [onClick ShowNotifications]
+             [text "Notifications", span_ [class_ "new-notifs-count"] [text newNotifsCount]]]
     newNotifs = m ^. #notifsNew
     hasNewNotifs = length newNotifs > 0
-    newNotifsCount = bool "" (" (" <> (showt $ length newNotifs) <> ")") hasNewNotifs
+    newNotifsCount = bool "" (" (" <> (ms $ length newNotifs) <> ")") hasNewNotifs
 
 displayProfile :: Bool -> Model -> XOnlyPubKey -> View Action
 displayProfile isShowNotes m xo =
@@ -1620,7 +1621,7 @@ displayProfile isShowNotes m xo =
                 <$> rels
             )
     relaysDisplay = div_ [class_ "profile-relays"] (maybe [] singleton relays)
-    npub = div_ [class_ "npub"] [text . fromMaybe "" $ encodeBechXo xo]
+    npub = div_ [class_ "npub"] [text . fromMaybe "" $ S.ms <$> encodeBechXo xo]
     profileEvents = #profileEvents % at xo % non (defProfEvntsModel xo $ m ^. #now)
     notesDisplay =
       if (not isShowNotes)
@@ -1631,7 +1632,7 @@ displayProfile isShowNotes m xo =
     follows =
       div_
         [class_ "profile-follows", onClick $ DisplayProfileContacts xo (Following xo)]
-        [text $ "follows " <> showt (length following) <> " profiles"]
+        [text $ "follows " <> ms (length following) <> " profiles"]
     myContacts = #profileContacts % at (m ^. #me)
     profileDisplay = do
       (p, _) <- m ^. #profiles % at xo
@@ -1673,7 +1674,7 @@ displayThread :: Model -> Event -> View Action
 displayThread m e =
   let reid = RootEid $ fromMaybe (e ^. #eventId) $ findRootEid e
       isWriteReply = Just e == m ^. #writeReplyTo
-      parentNotFound = div_ [class_ "parent-not-found"] 
+      parentNotFound = div_ [class_ "parent-not-found"]
         [text "Loading parent or parent not found on connected relays..."]
       parentDisplay = maybe (bool Nothing (Just parentNotFound) $ isReply e) Just $ do
         thread <- m ^. #threads % at reid
@@ -1688,7 +1689,7 @@ displayThread m e =
 
       replyInputEl = "reply-text-area"
       getReply = getValueOfInput replyInputEl
-      writeReplyDisplay = 
+      writeReplyDisplay =
         flip (bool Nothing) isWriteReply $ pure $
           div_
             [class_ "reply-box"]
@@ -1717,8 +1718,8 @@ displayThread m e =
 displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set Reaction)) -> View Action
 -- displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
 displayReactions m e rcs =
-  let howMany = showt . length
-      likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just 
+  let howMany = ms . length
+      likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just
       isLikedByMe = Set.member (m ^. #me) . Set.fromList $ likeReactions ^.. folded % #author
       likeCls = bool "like-reaction" "like-reaction-liked" $ isLikedByMe
       likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like % _Just
@@ -1729,7 +1730,7 @@ displayReactions m e rcs =
       others = span_ [class_ "other-reaction"] [text $ "Others: " <> otherCnt]
    in div_
         [class_ "reactions-container"]
-        $ likes ++ [dislikes, others] 
+        $ likes ++ [dislikes, others]
 
 displayFindEventPage :: Model -> View Action
 displayFindEventPage m =
@@ -1739,8 +1740,8 @@ displayFindEventPage m =
   where
     bechEvent = m ^. #findEventModel % #bechEvent
     error = m ^. #findEventModel % #error
-    searchAction = 
-      case decodeBechEvent bechEvent of 
+    searchAction =
+      case decodeBechEvent (S.fromMisoString bechEvent) of
         Just eventId -> DisplayThreadWithId eventId
         Nothing -> UpdateField (#findEventModel % #error) (Just "Invalid bech event format")
     searchButton =
@@ -1759,8 +1760,8 @@ displayFindEventPage m =
 displayFindProfilePage :: Model -> View Action
 displayFindProfilePage m =
   let npub = m ^. #findWho
-      isNotBlank = not . T.null $ npub
-      mxo = decodeNpub npub
+      isNotBlank = not . S.null $ npub
+      mxo = decodeNpub (S.fromMisoString npub)
       searchAction = maybe NoAction (\xo -> DisplayProfilePage Nothing xo) mxo
       search =
         input_
@@ -1775,11 +1776,11 @@ displayFindProfilePage m =
           [class_ "search-box-button", onClick searchAction]
           [text "Find"]
    in div_ [class_ "find-profile"] $
-        [div_ [class_ "search-box"] [search, searchButton]] 
+        [div_ [class_ "search-box"] [search, searchButton]]
          ++ bool [] [div_ [class_ "error-msg"] [text "Invalid NPub"]] ((not . isJust $ mxo) && isNotBlank)
 
 displayNotificationsPage :: Model -> View Action
-displayNotificationsPage m = 
+displayNotificationsPage m =
   div_
     [class_ "notifications"]
     [displayPagedEvents True Notifications m #notifs NotificationsPage]
@@ -1788,15 +1789,15 @@ displayMyProfilePage :: Model -> View Action
 displayMyProfilePage m =
   div_
     [class_ "myprofile-edit"]
-    [ 
+    [
       --  inputKeyed_ (Key username)
       input_
         [ id_ iUsername,
           defaultValue_ username,
           placeholder_ "Enter Username",
           type_ "text"
-        ], 
-      -- inputKeyed_ (Key displayname) 
+        ],
+      -- inputKeyed_ (Key displayname)
       input_
         [ id_ iDisplayname,
           -- onCreated $ SetInitialValue "myprofile.displayname" displayname,
@@ -1810,7 +1811,7 @@ displayMyProfilePage m =
           defaultValue_ about,
           placeholder_ "Enter About",
           type_ "text"
-        ], 
+        ],
       -- inputKeyed_ (Key picture)
       input_
         [ id_ iPicture,
@@ -1830,7 +1831,7 @@ displayMyProfilePage m =
           [text "Update"],
       displayProfile False m (m ^. #me)
     ]
-  where 
+  where
     me = fromMaybe def $ fst <$> m ^. #profiles % at (m ^. #me)
     username = me ^. #username
     displayname = fromMaybe "" $ me ^. #displayName
@@ -1861,10 +1862,10 @@ displayRelaysPage :: Model -> View Action
 displayRelaysPage m =
   div_ [class_ "relays-page"] $
     [info, relaysGrid, reloadInfo, inputRelay]
-  
+
   where
     info = div_ [class_ "relay-info"] [text $ "Remove relays which time out to improve loading speed"]
-    
+
     reloadInfo =
       div_
         [class_ "relay_info"]
@@ -1873,30 +1874,30 @@ displayRelaysPage m =
     displayRelay (r, isActive, (isConnected, ErrorCount errCnt, CloseCount closeCnt)) =
       [ div_ [class_ ("relay-" <> bool "inactive" "active" isActive)] [text r],
         div_ [class_ ("relay-" <> bool "disconnected" "connected" isConnected)] [text $ bool "No" "Yes" isConnected],
-        div_ [class_ "relay-error-count"] [text . showt $ errCnt],
-        div_ [class_ "relay-close-count"] [text . showt $ closeCnt],
-        div_ [class_ "relay-action"] 
-         [div_ [onClick $ bool (ChangeRelayActive r True) (ChangeRelayActive r False) isActive] 
+        div_ [class_ "relay-error-count"] [text . ms $ errCnt],
+        div_ [class_ "relay-close-count"] [text . ms $ closeCnt],
+        div_ [class_ "relay-action"]
+         [div_ [onClick $ bool (ChangeRelayActive r True) (ChangeRelayActive r False) isActive]
                [text (bool "Activate" "Deactivate" isActive)]],
         div_ [class_ "relay-action"]
          [div_ [class_ (bool "visible" "invisible" isActive), onClick (RemoveRelay r)] [text "Remove"] ]
       ]
-    
-    getStats r = 
+
+    getStats r =
       fromMaybe (False, ErrorCount 0, CloseCount 0) $
        m ^. #relaysStats % at (r ^. #uri)
 
     relaysGrid =
       div_ [class_ "relays-grid"] $
         gridHeader
-          ++ displayRelays 
-    (connected, notConnected) = 
-      Prelude.partition (\sr -> fromMaybe False $ m ^? #relaysStats % at (sr ^. #relay % #uri) % _Just % _1) $ 
+          ++ displayRelays
+    (connected, notConnected) =
+      Prelude.partition (\sr -> fromMaybe False $ m ^? #relaysStats % at (sr ^. #relay % #uri) % _Just % _1) $
         m ^. #relaysList
-    relaysStats = (\sr -> (sr ^. #relay % #uri, sr ^. #active, getStats (sr ^. #relay))) <$> 
+    relaysStats = (\sr -> (sr ^. #relay % #uri, sr ^. #active, getStats (sr ^. #relay))) <$>
        connected ++ notConnected
     displayRelays = concat (displayRelay <$> relaysStats)
-    
+
     gridHeader =
       [ div_ [] [text "Relay"],
         div_ [] [text "Connected"],
@@ -1914,14 +1915,14 @@ displayRelaysPage m =
           [ id_ relayInputEl,
             class_ "input-relay",
             type_ "text"
-          ], 
+          ],
         button_ [onClick $ AddRelay getNewRelayUrl] [text "Add relay"]]
 
 displayWritePostPage :: Model -> View Action
-displayWritePostPage m = 
+displayWritePostPage m =
     div_
       [class_ "new-post-page"]
-      [ textarea_ 
+      [ textarea_
           [ id_ "new-post-text-area",
             defaultValue_ $ m ^. #postDraft,
             onChange $ WriteTextToStorage "post-draft"

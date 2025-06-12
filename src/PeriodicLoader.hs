@@ -11,12 +11,14 @@ import Control.Monad.IO.Class
 import Data.Set as Set (Set, difference, fromList, map, null, toList, union, empty)
 import GHC.Generics
 import MisoSubscribe (subscribe, SubType (PeriodicUntilEOS), SubscriptionParams (..))
+import Language.Javascript.JSaddle
 import Nostr.Filter
 import Nostr.Network
 import Nostr.Relay
 import Nostr.Response
 import Optics
-import Miso (forkJSM, JSM, Sub, Sink, startSub, Effect)
+import Miso (Sub, Sink, startSub, Effect)
+import Miso.String
 import Data.Text
 import Debug.Trace
 import Utils
@@ -31,7 +33,7 @@ data LoaderData id = LoaderData
 data PeriodicLoader id e = PeriodicLoader
   { buffers :: MVar (LoaderData id),
     createFilter :: [id] -> [DatedFilter],
-    extract :: (Response, Relay) -> Either Text e,
+    extract :: (Response, Relay) -> Either MisoString e,
     period :: Seconds 
   }
   deriving (Generic)
@@ -46,7 +48,7 @@ startLoader ::
   NostrNetwork ->
   PeriodicLoader id e ->
   ([e] -> action) ->
-  (Text -> action) ->
+  (MisoString -> action) ->
   Sub action
 startLoader nn pl actOnResults actOnError sink =
   let loop = do
@@ -79,3 +81,8 @@ startSubscription :: NostrNetwork -> Sink action -> SubscriptionParams action ->
 startSubscription nn sink sp = subscribe nn sp sink
 --  where
   -- subName = "PeriodicLoader" <> (show . hash) (show sp)
+
+forkJSM :: JSM () -> JSM ThreadId
+forkJSM a = do
+  ctx <- askJSM
+  liftIO (forkIO (runJSM a ctx))
