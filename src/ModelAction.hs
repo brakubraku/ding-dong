@@ -30,7 +30,7 @@ import Nostr.WebSocket
 import Optics as O
 import StoredRelay
 import ProfilesLoader.Types
-import Miso (JSM)
+import Miso (JSM, Sub)
 import Utils (Seconds)
 import Control.Concurrent (MVar)
 
@@ -126,6 +126,7 @@ data Action where
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
   LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
+  StartSub :: Text -> Sub Action -> Action
 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)

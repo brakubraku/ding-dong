@@ -328,10 +328,13 @@ updateModel nn rl pl action = do
                     (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
                     _ -> id   
           in Prelude.foldr update m ers
+    
+    StartSub name sub -> do 
+       startSub name sub
 
     StartFeedLongRunning since contacts -> do
         compName <- ask
-        io $ 
+        withSink $ \sink -> 
          do
           -- cancel the existing subscription
           sequence_ $ cancelSub <$> (model ^. #subCancelButtons % at "feed-long-running")
@@ -339,8 +342,9 @@ updateModel nn rl pl action = do
           cb <- liftIO newEmptyMVar
           let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
           -- save cancel button for the new subscription
-          startSubForComponent compName "periodic-feed-update" $ runLoop cb
-          pure $ UpdateModel updateCBs []
+--TODO: better to start sub here than doing all the theather of issuing and action to do it
+          sink $ StartSub "periodic-feed-update" (runLoop cb)
+          sink $ UpdateModel updateCBs []
        where 
         doSubscribe cb sink =
           subscribe
@@ -1965,3 +1969,11 @@ eventAge now e =
 
 -- nothing :: View action
 -- nothing = div_ [Styles . Map.fromList $ [("display", "none")]] []
+
+imgKeyed_ :: Key -> [Attribute action] -> View action
+imgKeyed_ k attrs = img_ $ key_ k : attrs
+-- imgKeyed_ k attrs = img_ attrs
+
+liKeyed_ :: Key -> [Attribute action] -> [View action] -> View action
+liKeyed_ k attrs children = li_ (key_ k : attrs) children
+-- liKeyed_ k attrs children = li_ (attrs) children
