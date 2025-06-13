@@ -99,6 +99,7 @@ executable nostr-wasm
     , transformers
     , jsaddle
     , jsaddle-wasm
+    , jsaddle-warp
     , ghc-experimental
     , base
     , mtl
