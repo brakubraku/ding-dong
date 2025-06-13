@@ -30,7 +30,9 @@ import Nostr.WebSocket
 import Optics as O
 import StoredRelay
 import ProfilesLoader.Types
-import Miso (JSM, Sub)
+import Language.Javascript.JSaddle
+import Miso (Sub)
+import Data.Text
 import Utils (Seconds)
 import Control.Concurrent (MVar)
 
@@ -72,11 +74,11 @@ data Action where
   EmbeddedEventsProcess :: [(Event, Relay)] -> Action
   GoBack :: Action
   UpdateField :: (Lens' Model a) -> a -> Action
-  WriteTextToStorage :: Text -> Text -> Action
+  WriteTextToStorage :: MisoString -> MisoString -> Action
   LoadProfile :: Bool -> Bool -> XOnlyPubKey -> Page -> Action
   SubState :: Page -> (SubscriptionId, SubState) -> Action
   DisplayProfilePage :: (Maybe ElementId) -> XOnlyPubKey -> Action
-  AddRelay :: JSM Text -> Action
+  AddRelay :: JSM MisoString -> Action
   ShowFeed :: Action
   ShowNext :: (Lens' Model (PagedEventsModel a)) ->
               Page ->
@@ -86,19 +88,19 @@ data Action where
                     Page -> 
                     Action
   LogConsole :: String -> Action
-  ScrollTo :: (Maybe Seconds) -> Text -> Action
+  ScrollTo :: (Maybe Seconds) -> MisoString -> Action
   SubscribeForEmbeddedReplies :: [EventId] -> Page -> Action
   RepliesRecvNoEmbedLoading :: [(Event, Relay)] -> Action
-  Report :: ReportType -> Text -> Action
+  Report :: ReportType -> MisoString -> Action
   StartFeedLongRunning :: UTCTime -> [XOnlyPubKey] -> Action
   FeedLongRunningProcess :: [(Event, Relay)] -> Action
   ShowNewNotes :: Action
-  SendReplyTo :: Event -> (JSM Text) -> Action
+  SendReplyTo :: Event -> (JSM MisoString) -> Action
   AllLoaded :: Action
   SendUpdateProfile :: (JSM Profile) -> Action
-  ChangeRelayActive :: Text -> Bool -> Action
+  ChangeRelayActive :: MisoString -> Bool -> Action
   UpdatedRelaysList :: [StoredRelay] -> Action
-  RemoveRelay :: Text -> Action
+  RemoveRelay :: MisoString -> Action
   Reload :: Action
   ListenToNotifs :: Action
   ShowNotifications :: Action
@@ -118,7 +120,7 @@ data Action where
   ShowModal :: Action
   LoadContactsOf :: XOnlyPubKey -> Page -> (Maybe (Set.Set XOnlyPubKey) -> Action) -> Action
   DisplayProfileContacts :: XOnlyPubKey -> Page -> Action
-  SendPost :: (JSM Text) -> Action
+  SendPost :: (JSM MisoString) -> Action
   UpdateModel :: (Model -> Model) -> [JSM Action] -> Action
   UploadMyContacts :: Set.Set XOnlyPubKey -> Action
   ContactsLoaded :: Set.Set XOnlyPubKey -> Action
@@ -126,7 +128,7 @@ data Action where
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
   LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
-  StartSub :: Text -> Sub Action -> Action
+  StartSub :: MisoString -> Sub Action -> Action
 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
@@ -158,21 +160,21 @@ newtype CloseCount = CloseCount Int
 --  deriving newtype (Num, Eq)
   deriving Eq
 
-type ElementId = Text
+type ElementId = MisoString
 
 data Model = Model
   { feed :: PagedEventsModel (Event, [Content]),
     feedNew :: [(Event, Relay)],
     notifs :: PagedEventsModel (Event, [Content]),
     notifsNew :: [(Event, Relay)],
-    findWho :: Text,
+    findWho :: MisoString,
     profileEvents :: Map.Map XOnlyPubKey (PagedEventsModel (Event, [Content])),
     profileReactions :: Map.Map XOnlyPubKey (PagedEventsModel (ReactionEvent, Reaction)),
     profileReactionsTo :: Map.Map EventId (Event, [Content]),
     profileTab :: ProfileTab,
-    relayInput :: Text,
+    relayInput :: MisoString,
     relaysList :: [StoredRelay],
-    relaysStats :: Map.Map Text (Bool, ErrorCount, CloseCount), 
+    relaysStats :: Map.Map MisoString (Bool, ErrorCount, CloseCount), 
     reactions :: Reactions, -- TODO: what about deleted reactions?
     profiles :: Map.Map XOnlyPubKey (Profile, UTCTime),
     profileContacts :: Map.Map XOnlyPubKey (Set.Set XOnlyPubKey),
@@ -183,20 +185,20 @@ data Model = Model
     writeReplyTo :: Maybe Event, -- event to reply to
     history :: [(Page, Maybe ElementId)], -- page and what element to scroll to
     embedded :: Map EventId ((Event, [Content]), Set.Set Relay),
-    reports :: [(Int, ReportType, Text)],
+    reports :: [(Int, ReportType, MisoString)],
     reportCounter :: Int,
     fromRelays :: Map Event (Set.Set Relay),
-    replyDraft :: Text,
-    postDraft :: Text,
+    replyDraft :: MisoString,
+    postDraft :: MisoString,
     me :: XOnlyPubKey,
-    subCancelButtons :: Map Text (MVar ()),
+    subCancelButtons :: Map MisoString (MVar ()),
     findEventModel :: FindEventModel
   }
   deriving (Eq, Generic)
 
 data FindEventModel = FindEventModel {
-  bechEvent :: Text,
-  error :: Maybe Text
+  bechEvent :: MisoString,
+  error :: Maybe MisoString
 } deriving (Eq, Generic)
 
 defaultFindEventModel :: FindEventModel

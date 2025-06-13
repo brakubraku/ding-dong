@@ -7,6 +7,7 @@
 
 module Miso.Components.LoadingBar where
 
+import Miso.String (ms)
 import qualified Data.Map as M
 import ModelAction (Page, SubState(..))
 import Miso hiding (update, view, at)
@@ -18,14 +19,14 @@ import GHC.Generics
 import qualified Data.Text as T
 import Control.Monad.State (get)
 
-data Action where 
+data Action where
   UpdateSubscriptions :: Page -> (SubscriptionId, SubState) -> Action
   UpdatePage :: Page -> Action
 
 instance Show Action where
-  show (UpdateSubscriptions p sst) = 
-    "LoadingBarAction: UpdateSubscriptions " 
-  show (UpdatePage p) = 
+  show (UpdateSubscriptions p sst) =
+    "LoadingBarAction: UpdateSubscriptions "
+  show (UpdatePage p) =
     "LoadingBarAction: UpdatePage " <> show p
 
 data Model = Model {
@@ -35,25 +36,25 @@ data Model = Model {
 
 update :: Action -> Effect Model Action
 update a = do
-    m <- get 
-    case a of 
+    m <- get
+    case a of
       UpdateSubscriptions p sst ->
         noEff $
           m & #subscriptions % at p
               %~ Just . fromMaybe [sst] . fmap (updateSubStates sst)
       UpdatePage p ->
-        noEff $ m & #page ?~ p 
+        noEff $ m & #page ?~ p
 
 updateSubStates :: Eq a => (a, SubState) -> [(a, SubState)] -> [(a, SubState)]
 updateSubStates (sid, ss) substates =
   -- update "sub state" for sid and remove all finished "sub states"
   (sid, ss) : filter (\(sid2, ss2) -> sid2 /= sid && isRunning ss2) substates
-  where 
+  where
      isRunning (SubRunning _) = True
      isRunning _ = False
 
 loadingBarHtml :: View action
-loadingBarHtml = rawHtml . T.pack $ 
+loadingBarHtml = rawHtml $
  "<div class=\"lb-container\">\
   \<div class=\"lb-progress lb-progress-infinite\">\
     \<div class=\"lb-progress-bar3\">\
@@ -62,7 +63,7 @@ loadingBarHtml = rawHtml . T.pack $
 \</div>"
 
 view :: Model -> View Action
-view m = 
+view m =
   div_
     [ bool
         (class_ "remove-element")

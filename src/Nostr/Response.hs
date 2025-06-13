@@ -11,6 +11,7 @@ import Nostr.Event
 import Nostr.Relay
 import Nostr.Request (SubscriptionId)
 import Nostr.HashableEvent
+import Miso.String
 
 data HashableResponse = HashableEventReceived SubscriptionId HashableEvent
 
@@ -28,7 +29,7 @@ data Response
   = EventReceived SubscriptionId Event
   | Notice Text
   | EOSE SubscriptionId
-  | OK EventId Bool (Maybe Text)
+  | OK EventId Bool (Maybe MisoString)
   deriving (Eq, Show)
 
 instance FromJSON Response where
@@ -80,12 +81,12 @@ getEventRelay (res, rel) = do
   pure (event, rel)
 
 getEventRelayEither ::
-  (Response, Relay) -> Either Text (Event, Relay)
+  (Response, Relay) -> Either MisoString (Event, Relay)
 getEventRelayEither rr =
   fromMaybe
-    (Left $ "Failed to extract event from response:" <> (T.pack . show $ fst rr))
+    (Left $ "Failed to extract event from response:" <> (ms . show $ fst rr))
     $ Right <$> getEventRelay rr
 
-getEventOrError :: Response -> Either Text Event
+getEventOrError :: Response -> Either MisoString Event
 getEventOrError (EventReceived _ e) = Right e
-getEventOrError r = Left $ "Received response:" <> (T.pack . show $ r)
+getEventOrError r = Left $ "Received response:" <> (ms . show $ r)

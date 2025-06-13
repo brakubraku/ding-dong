@@ -19,6 +19,8 @@ import Data.Text hiding (length, show)
 import qualified Data.Text as T hiding (length)
 import GHC.Generics (Generic)
 import Miso hiding (at, view)
+import Miso.String (MisoString, ms, fromMisoString)
+import Language.Javascript.JSaddle
 import Nostr.Filter
 import Nostr.Log (logError)
 import Nostr.Network
@@ -83,7 +85,7 @@ data SubData = SubData
 data SubscriptionParams action where
   SubscriptionParams :: {  subType :: SubType,
                            subFilter :: [DatedFilter],
-                           extractResults :: (Response, Relay) -> Either Text e,
+                           extractResults :: (Response, Relay) -> Either MisoString e,
                            actOnResults :: [e] -> action,
                            actOnSubState :: Maybe ((SubscriptionId, SubState) -> action),
                            cancelButton :: Maybe (MVar ()),
@@ -91,7 +93,7 @@ data SubscriptionParams action where
                            -- if any relay is in Running state for longer than this, 
                            -- the subscription is canceled.
                            timeoutPerRelay :: Maybe Seconds,
-                           reportError :: Text -> action
+                           reportError :: MisoString -> action
                         } -> SubscriptionParams action
 
 subscribe ::
@@ -196,7 +198,7 @@ subscribe nn SubscriptionParams{..} sink = do
     processMsgs :: [(Response, Relay)] -> JSM ()
     processMsgs rrs = do
       let processed = extractResults <$> rrs
-      liftIO . mapM_ logError $ lefts processed
+      liftIO . mapM_ (logError . fromMisoString) $ lefts processed
       sink . actOnResults . rights $ processed
 
     addStats :: (Monad a) => Int -> StateT SubData a ()

@@ -12,6 +12,7 @@ import Data.Aeson
 import Data.Text (Text)
 import GHC.Exts (fromList)
 import GHC.Generics
+import Miso.String
 
 data RelayInfo = RelayInfo
   { readable  :: Bool
@@ -19,7 +20,7 @@ data RelayInfo = RelayInfo
   }
   deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
-type RelayURI = Text
+type RelayURI = MisoString
 data Relay = Relay
   { 
     uri :: RelayURI
@@ -42,7 +43,7 @@ instance FromJSON Relay where
 
 instance ToJSON Relay where
   toJSON r = object $ fromList
-    [ ( "uri", String $ uri r)
+    [ ( "uri", toJSON $ uri r)
     , ( "info", toJSON $ info r)
     ]
   

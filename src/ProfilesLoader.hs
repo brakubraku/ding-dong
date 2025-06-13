@@ -7,7 +7,7 @@ module ProfilesLoader where
 import PeriodicLoader
 
 import Control.Concurrent
-import Data.Text
+import Miso.String
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Relay
@@ -31,7 +31,7 @@ createProfilesLoader = do
       period = Seconds 0.2 
   pure $ PeriodicLoader {..}
 
-extractProfile :: (Response, Relay) -> Either Text ProfOrRelays
+extractProfile :: (Response, Relay) -> Either MisoString ProfOrRelays
 extractProfile (resp, rel) = do
   event <- getEventOrError resp
   let profOrRels = extractProfileFromResp (event, rel)

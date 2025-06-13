@@ -4,23 +4,23 @@
 
 module Nostr.Profile where
 
-import           Data.Aeson
-import           Data.Default
-import           Data.Text              (Text)
+import Data.Aeson
+import Data.Default
 import GHC.Generics
+import Miso.String (MisoString)
 
-type RelayURL = Text
+type RelayURL = MisoString
 
-type Username = Text
+type Username = MisoString
 
-type DisplayName = Text
+type DisplayName = MisoString
 
-type About = Text
+type About = MisoString
 
-type Picture = Text
+type Picture = MisoString
 
 data Profile = Profile {
-  username :: Text ,
+  username :: MisoString ,
   displayName :: Maybe DisplayName,
   about :: Maybe About,
   picture :: Maybe Picture,

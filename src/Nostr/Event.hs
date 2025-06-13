@@ -10,31 +10,32 @@
 module Nostr.Event where
 
 import qualified Crypto.Hash.SHA256 as SHA256
-import Data.Aeson
-import Data.Aeson.Text (encodeToTextBuilder)
+import           Data.Aeson
+import           Data.Aeson.Text (encodeToTextBuilder)
 import qualified Data.Base16.Types as B16
-import Data.ByteString (ByteString)
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import Data.ByteString.Lazy (fromStrict, toStrict)
-import Data.Time.Clock
-import Data.DateTime
-import Data.List
-import Data.Maybe (fromMaybe, isJust)
-import Data.Text (Text, pack, toLower, unpack)
-import Data.Text.Encoding (encodeUtf8)
+import           Data.ByteString.Lazy (fromStrict, toStrict)
+import           Data.DateTime
+import           Data.List
+import           Data.Maybe (fromMaybe, isJust)
+import           Data.Text (Text, pack, toLower, unpack)
+import           Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.Lazy as LazyText
-import Data.Text.Lazy.Builder (toLazyText)
+import           Data.Text.Lazy.Builder (toLazyText)
+import           Data.Time.Clock
 import qualified Data.Vector as V
-import GHC.Exts (fromList)
-import GHC.Generics
-import MyCrypto
-import Nostr.Keys
-import Nostr.Kind
-import Nostr.Profile (Profile (..), RelayURL)
-import Nostr.Relay
-import Optics hiding (uncons)
-import Nostr.HashableEvent (HashableEvent)
+import           GHC.Exts (fromList)
+import           GHC.Generics
+import           Miso.String (ms, MisoString, fromMisoString)
+import           MyCrypto
+import           Nostr.HashableEvent (HashableEvent)
+import           Nostr.Keys
+import           Nostr.Kind
+import           Nostr.Profile (Profile (..), RelayURL)
+import           Nostr.Relay
+import           Optics hiding (uncons)
 
 newtype EventId = EventId
   { getEventId :: ByteString
@@ -50,8 +51,8 @@ data ReadWrite = Read | Write
 data Tag
   = ETag EventId (Maybe RelayURL) (Maybe Marker)
   | PTag XOnlyPubKey (Maybe RelayURL) (Maybe ProfileName)
-  | RTag Text (Maybe ReadWrite)
-  | XTag Text
+  | RTag MisoString (Maybe ReadWrite)
+  | XTag MisoString
   | UnknownTag Array
   deriving (Eq, Show, Ord)
 
@@ -61,7 +62,7 @@ data Event = Event
     created_at :: Integer,
     kind :: Kind,
     tags :: [Tag],
-    content :: Text,
+    content :: MisoString,
     sig :: Bip340Sig
   }
   deriving (Show, Generic)
@@ -77,7 +78,7 @@ data UnsignedEvent = UnsignedEvent
     created_at' :: Integer,
     kind' :: Kind,
     tags' :: [Tag],
-    content' :: Text
+    content' :: MisoString
   }
   deriving (Eq, Show, Generic)
 
@@ -115,10 +116,11 @@ instance ToJSON ReadWrite where
       Read -> "read"
       Write -> "write"
 
-eventIdToText :: ByteString -> Text
-eventIdToText =  B16.extractBase16 . B16.encodeBase16
+eventIdToText :: ByteString -> MisoString
+eventIdToText = ms . B16.extractBase16 . B16.encodeBase16
+
 instance ToJSON EventId where
-  toJSON e = String . eventIdToText . getEventId $ e
+  toJSON e = toJSON . eventIdToText . getEventId $ e
 
 instance FromJSON Event where
   parseJSON = withObject "event data" $ \e ->
@@ -194,12 +196,12 @@ instance ToJSON Tag where
     toJSON (XTag t) = 
       Array $
         fromList $ 
-        [String "x", String t] 
+        [String "x", toJSON t] 
 
     toJSON (RTag t rw) = 
       Array $
         fromList $ 
-        [String "r", String t] 
+        [String "r", toJSON t] 
         ++ maybe [] (singleton . toJSON) rw
 
     toJSON (UnknownTag v) = Array v
@@ -275,7 +277,7 @@ verifySignature (e, he) =
     Just m -> validateEventHash (e ^. #eventId, he) && verifyBip340 (pubKey e) m (sig e)
     Nothing -> False
 
-textNote :: Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
+textNote :: MisoString -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -302,13 +304,13 @@ setMetadata profile xo t =
       created_at' = toSeconds t,
       kind' = Metadata,
       tags' = [XTag "dingo"], -- just a tatoo
-      content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
+      content' = ms . LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
     }
 
 readProfile :: Event -> Maybe Profile
 readProfile event = case kind event of
   Metadata ->
-    decode $ fromStrict $ encodeUtf8 $ content event
+    decode $ fromStrict $ encodeUtf8 $ fromMisoString $ content event
   _ ->
     Nothing
 
@@ -322,7 +324,7 @@ setContacts contacts xo t =
       content' = ""
     }
 
-deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> UTCTime -> UnsignedEvent
+deleteEvents :: [EventId] -> MisoString -> XOnlyPubKey -> UTCTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     { pubKey' = xo,
@@ -334,7 +336,7 @@ deleteEvents eids reason xo t =
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
-newEvent :: Text -> XOnlyPubKey -> UTCTime -> Event
+newEvent :: MisoString -> XOnlyPubKey -> UTCTime -> Event
 newEvent c pk t = Event {
   eventId = EventId "0",
   pubKey = pk,
@@ -430,7 +432,7 @@ orderByAgeAsc es =
       )
       es
 
-createReplyEvent :: Event -> UTCTime -> XOnlyPubKey -> Text -> UnsignedEvent
+createReplyEvent :: Event -> UTCTime -> XOnlyPubKey -> MisoString -> UnsignedEvent
 createReplyEvent replyTo now xo replyMsg =
   let reply = textNote replyMsg xo now
       rootEid = findRootEid replyTo
