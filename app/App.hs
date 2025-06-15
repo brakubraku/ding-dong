@@ -12,6 +12,7 @@ import Language.Javascript.JSaddle.Types
 import Language.Javascript.JSaddle.Warp as JSaddle.Warp
 #endif
 
+import qualified Miso.Run
 import qualified DingDong
 
 #ifdef wasi_HOST_OS
@@ -23,5 +24,6 @@ main e = JSaddle.Wasm.run DingDong.start
 
 #else   
 main :: IO ()
-main = JSaddle.Warp.run 1234 $ DingDong.start
+-- main = JSaddle.Warp.run 1234 $ DingDong.start
+main = Miso.Run.run DingDong.start
 #endif  

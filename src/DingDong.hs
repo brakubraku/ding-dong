@@ -137,9 +137,9 @@ start = do
   where
     -- events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"]
     events = defaultEvents
-    view (CompactModel m) = appView m
-    -- mountPoint = "body"
-    mountPoint = Just "miso-mountpoint"
+    view (CompactModel m) = appView m 
+    mountPoint = Nothing
+    -- mountPoint = Just "miso-mountpoint"
     logLevel = Off
 
 updateModel ::
