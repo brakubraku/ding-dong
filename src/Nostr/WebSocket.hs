@@ -92,7 +92,7 @@ connectRelays nn sendMsg sink = do
           sink . sendMsg $ WebSocketOpen relay
 
       addEventListener (getSocket socket) "message" $ \v -> do
-        msg <- jsonParse =<< v ! ("data" :: MisoString)
+        msg <- valToStr =<< v ! ("data" :: MisoString)
         let msgToParse = fromStrict . encodeUtf8 . strToText $ msg
         resp <-
           pure . eitherDecode @Response $ msgToParse
