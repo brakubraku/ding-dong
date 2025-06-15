@@ -1057,7 +1057,7 @@ startSubscription :: NostrNetwork -> SubscriptionParams action -> Effect model a
 startSubscription nn sp = startSub filterHash $ subscribe nn sp
   where
     -- TODO: this may be inefficient
-    filterHash = S.pack . show . hash . show $ subFilter sp
+    filterHash = T.pack . show . hash . show $ subFilter sp
 
 -- subscriptions below are parametrized by Page. The reason is
 -- so that one can within that page track the state (Running, EOS)

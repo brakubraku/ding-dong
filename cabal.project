@@ -5,7 +5,7 @@ packages:
 source-repository-package
     type: git
     location: https://github.com/dmjio/miso
-    tag: ba30b78b202325ae0555f5f946c0e9624e5d6dd3
+    tag: e1e77108f239aecb04b7dd435670b05720bbfbf8
 
 source-repository-package
    type: git
