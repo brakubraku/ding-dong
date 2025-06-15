@@ -28,7 +28,8 @@ import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
-import Miso hiding (at, now, send, WebSocket(..))
+import Miso hiding (at, now, send, WebSocket(..), startSub)
+import qualified Miso as Miso (startSub)
 import Miso.String (MisoString, ms)
 import qualified Miso.String as S
 import MisoSubscribe (SubType (AllAtEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
@@ -62,6 +63,7 @@ import Debug.Trace
 import Nostr.Log (logError)
 import Network.URI
 import SubscriptionUtils
+import Data.List.Extra
 
 import qualified Miso.Components.LoadingBar as LB
 import Nostr.Reaction (Reaction)
@@ -75,6 +77,9 @@ import Control.Monad.Trans.Writer.Strict (runWriter)
 
 import Control.Monad.RWS
 import Data.Hashable
+
+startSub :: T.Text -> Sub action -> Effect model action
+startSub = Miso.startSub
 
 start :: JSM ()
 start = do
@@ -1205,7 +1210,7 @@ displayPagedContent showIntervals m pml screen content =
     since' = f ^. #pgStart % at pg
     since = fromMaybe "" (ms . show <$> since')
     ps = maybe since (ms . show . fromSeconds . O.view #created_at . fst ) $ Prelude.uncons events
-    pu = ms $ show $ maybe until (fromSeconds . O.view #created_at . snd ) $ Prelude.unsnoc events
+    pu = ms $ show $ maybe until (fromSeconds . O.view #created_at . snd ) $ Data.List.Extra.unsnoc events
 
 displayPagedEvents :: Bool -> PagedWhat -> Model -> (Lens' Model PagedEvents) -> Page -> View Action
 displayPagedEvents showIntervals pw m pml screen =

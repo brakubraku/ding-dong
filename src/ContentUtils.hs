@@ -5,6 +5,8 @@ module ContentUtils where
 
 import BechUtils (Bech, decodeBech)
 import Data.List hiding (words)
+import Data.List.Extra
+
 import Data.Maybe
 import qualified Miso.String as S
 import qualified Data.Text as T
@@ -75,6 +77,6 @@ splitToWords :: MisoString -> [MisoString]
 splitToWords content = concat . catMaybes $
    -- append \n\n to last word in a paragraph
    fmap (\(prefix, lastWord) -> prefix ++ [lastWord <> "\n\n"]) 
-     <$> Data.List.unsnoc 
+     <$> Data.List.Extra.unsnoc 
      -- split to paragraphs and paragraphs into words
        <$> (S.words <$>  S.splitOn "\n\n" content)
