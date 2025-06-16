@@ -1977,9 +1977,9 @@ eventAge now e =
 -- nothing = div_ [Styles . Map.fromList $ [("display", "none")]] []
 
 imgKeyed_ :: Key -> [Attribute action] -> View action
-imgKeyed_ k attrs = img_ $ key_ k : attrs
--- imgKeyed_ k attrs = img_ attrs
+-- imgKeyed_ k attrs = img_ $ key_ k : attrs
+imgKeyed_ k attrs = img_ attrs
 
 liKeyed_ :: Key -> [Attribute action] -> [View action] -> View action
-liKeyed_ k attrs children = li_ (key_ k : attrs) children
--- liKeyed_ k attrs children = li_ (attrs) children
+-- liKeyed_ k attrs children = li_ (key_ k : attrs) children
+liKeyed_ k attrs children = li_ (attrs) children
