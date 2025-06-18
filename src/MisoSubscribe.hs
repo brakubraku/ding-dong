@@ -191,7 +191,7 @@ subscribe nn SubscriptionParams{..} sink = do
   do
     now <- liftIO getCurrentTime
     (_, SubData {..}) <- runStateT collectResponses (SubData 0 [] defaultTimeout now)
-    liftIO . print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
+    -- liftIO . print $ "branko-Unsubscribing subId=" <> show subId <> " filter=" <> show subFilter <> "; msgs-received: " <> show msgsRecvd
     liftIO . flip runReaderT nn $ RP.unsubscribe subId
 
   where
