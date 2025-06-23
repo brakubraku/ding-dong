@@ -28,7 +28,8 @@ import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Time
-import Miso hiding (at, now, send, WebSocket(..))
+import Miso hiding (at, now, send, WebSocket(..), startSub)
+import qualified Miso as Miso
 import Miso.String (MisoString, ms)
 import qualified Miso.String as S
 import MisoSubscribe (SubType (AllAtEOS), subscribe, isSubCanceled, cancelSub, cancelButton, SubscriptionParams(..))
@@ -1978,3 +1979,5 @@ imgKeyed_ k attrs = img_ $ key_ k : attrs
 liKeyed_ :: Key -> [Attribute action] -> [View action] -> View action
 liKeyed_ k attrs children = li_ (key_ k : attrs) children
 -- liKeyed_ k attrs children = li_ (attrs) children
+
+startSub = Miso.startSub @MisoString

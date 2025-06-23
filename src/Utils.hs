@@ -40,7 +40,7 @@ lastNotifStorageId = ms "last-notif-date"
 loadLastNotifTime :: JSM UTCTime 
 loadLastNotifTime = do 
   now <- liftIO getCurrentTime
-  ln <- getLocalStorage (ms lastNotifStorageId)
+  ln <- getLocalStorage lastNotifStorageId
   case ln of
     Right r -> pure r
     Left _ -> do
@@ -49,18 +49,18 @@ loadLastNotifTime = do
 
 saveLastNotif :: UTCTime -> JSM ()
 saveLastNotif when = 
-  setLocalStorage (ms lastNotifStorageId) when
+  setLocalStorage lastNotifStorageId when
 
 showt :: Show a => a -> Text
 showt = pack . show
 
 getValueOfInput :: MisoString -> JSM MisoString
 getValueOfInput inputId = 
-    fromJSValUnchecked =<< getElementById (ms inputId) ! ("value" :: String)
+    fromJSValUnchecked =<< getElementById inputId ! ("value" :: String)
 
 setValueOfInput :: MisoString -> MisoString -> JSM ()
 setValueOfInput inputId t = do
-    i <- getElementById (ms inputId)
+    i <- getElementById inputId
     v <- toJSVal t
     setProp (toJSString "value") v $ Object i
 
