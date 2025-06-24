@@ -136,8 +136,7 @@ start = do
       styles = []
   startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
   where
-    -- events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"]
-    events = defaultEvents
+    events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
     view (CompactModel m) = appView m
     -- mountPoint = "body"
     mountPoint = Just "miso-mountpoint"
@@ -787,8 +786,7 @@ updateModel nn rl pl action = do
             notify LB.loadingBar $ LB.UpdateSubscriptions p sst
             mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
-    DisplayProfilePage mid xo -> do
-      io_ . liftIO . print $ "branko-dispatching displayprofilepage"
+    DisplayProfilePage mid xo ->
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
 
     LogConsole what ->
@@ -1102,7 +1100,7 @@ appView :: Model -> View Action
 appView m =
   -- div_ [onLoad AllLoaded] $
   div_ [] $
-    [ -- component LB.loadingBar,
+    [ component LB.loadingBar,
       newNotesIndicator,
       div_
         -- [class_ "main-container", id_ "top-top"]
@@ -1151,8 +1149,8 @@ displayFollowingView m followersOf =
     displayProfile :: (XOnlyPubKey, Profile) -> View Action
     displayProfile (xo, p) =
       div_
-        [class_ "profile", id_ $ "abc" <> getProfileElementId xo]
-        [
+        [class_ "profile", id_ $ getProfileElementId xo]
+        [ 
           div_
             [class_ "pic-container"]
             [displayProfilePic (Just $ getProfileElementId xo) xo $ p ^. #picture],
@@ -1255,27 +1253,25 @@ footerView Model {..} =
 
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
-  div_ [onClick $ DisplayProfilePage mid xo, onClick $ LogConsole "clickity-clack"]
-       [img]
-      --  [componentWith_ img (Just $ Key "whatever-1") [onMouseLeave $ LogConsole "branko-onmouseleave"]]
-      --  [component_ img]
-  where
-    img =
-      -- imgWithMouseActions
-      --     [ class_ "profile-pic",
-      --       class_ "hovered",
-      --       prop "src" $ pic
-      --     ]
-      --     [ class_ "profile-pic",
-      --       prop "src" $ pic
-      --     ]
-
-      imgKeyed_ (Key pic)
-        [ class_ "profile-pic",
-          prop "src" $ pic,
-          onClick $ DisplayProfilePage mid xo
-        ]
-displayProfilePic mid xo _ =
+  div_ [onClick $ DisplayProfilePage mid xo] 
+       [component_ img]
+  where 
+    img = 
+      imgWithMouseActions  
+          [ class_ "profile-pic", 
+            class_ "hovered",
+            prop "src" $ pic
+          ]
+          [ class_ "profile-pic",
+            prop "src" $ pic
+          ]
+      
+  -- imgKeyed_ (Key pic)
+  --   [ class_ "profile-pic",
+  --     prop "src" $ pic,
+  --     onClick $ DisplayProfilePage mid xo
+  --   ]
+displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
       onClick $ DisplayProfilePage mid xo
@@ -1384,9 +1380,9 @@ displayPagedNote :: Model -> (Lens' Model PagedEvents) -> (Event, [Content]) -> 
 displayPagedNote m pml ec@(e,_)
     | isJust (findParentEventOf e) =
         let mp = m ^. pml % #parents % at (e ^. #eventId)
-        in
-          div_ [class_ "parent-child-complex"]
-           [div_ [class_ "parent", class_ "whatever-shit"] [maybe emptyParent (\p -> displayNote m p) mp]
+        in 
+          div_ [class_ "parent-child-complex"] 
+           [div_ [class_ "parent"] [maybe emptyParent (\p -> displayNote m p) mp]
            ,div_ [class_ "child"] [displayNote m ec]]
     | otherwise =
         div_ [class_ "parent-child-complex"] [displayNote m ec]
@@ -1681,7 +1677,7 @@ displayThread m e =
         thread <- m ^. #threads % at reid
         parentId <- thread ^. #parents % at (e ^. #eventId)
         parent <- thread ^. #events % at parentId
-        pure $ div_ [class_ "parent", class_ "whatever-shit-2"] [displayNote m parent]
+        pure $ div_ [class_ "parent"] [displayNote m parent]
 
       repliesDisplay = do
         thread <- m ^. #threads % at reid

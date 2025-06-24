@@ -211,37 +211,36 @@ newtype CompactModel = CompactModel Model
 -- to determine if update is neccessary.
 instance Eq CompactModel where
   (==) (CompactModel m1) (CompactModel m2) 
-    = m1 == m2
-  --   | not . allEqual $ [eq #now, eq #notifs, eq #notifsNew, eq #reports] = False
-  --   | otherwise =
-  --       if m1 ^. #page /= m2 ^. #page then False
-  --       else 
-  --         case m1 ^. #page of  
-  --           -- TODO: would need heterogenous lists to get rid of eq 
-  --           FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
-  --           Following xo -> allEqual [eq #profiles, eq (#profileContacts % at xo)]
-  --           ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #replyDraft] ++ notesAndStuff
-  --           ProfilePage xo -> 
-  --             allEqual $ [eq #profiles, 
-  --                         eq (#profileRelays % at xo), 
-  --                         eq (#profileEvents % at xo), 
-  --                         eq (#profileContacts % at xo),
-  --                         eq myContacts,
-  --                         eq (#profileReactions % at xo), -- TODO: nuke this to venus
-  --                         eq #profileReactionsTo, 
-  --                         eq #profileTab] ++ notesAndStuff
-  --           RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
-  --           MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
-  --           NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
-  --           FindProfilePage -> allEqual $ [eq #findWho]
-  --           WritePostPage -> True
-  --           FindEventPage -> allEqual [eq #findEventModel]
-  --  where 
-  --   eq :: Eq a => Lens' Model a -> Bool
-  --   eq ls = m1 ^. ls == m2 ^. ls
-  --   allEqual = Prelude.all (==True) 
-  --   notesAndStuff = [eq #threads, eq #reactions, eq #embedded]
-  --   myContacts = #profileContacts % at (m1 ^. #me)
+    | not . allEqual $ [eq #now, eq #notifs, eq #notifsNew, eq #reports] = False
+    | otherwise =
+        if m1 ^. #page /= m2 ^. #page then False
+        else 
+          case m1 ^. #page of  
+            -- TODO: would need heterogenous lists to get rid of eq 
+            FeedPage -> allEqual $ [eq #feed, eq #feedNew, eq #profiles] ++ notesAndStuff
+            Following xo -> allEqual [eq #profiles, eq (#profileContacts % at xo)]
+            ThreadPage _ -> allEqual $ [eq #writeReplyTo, eq #replyDraft] ++ notesAndStuff
+            ProfilePage xo -> 
+              allEqual $ [eq #profiles, 
+                          eq (#profileRelays % at xo), 
+                          eq (#profileEvents % at xo), 
+                          eq (#profileContacts % at xo),
+                          eq myContacts,
+                          eq (#profileReactions % at xo), -- TODO: nuke this to venus
+                          eq #profileReactionsTo, 
+                          eq #profileTab] ++ notesAndStuff
+            RelaysPage -> allEqual [eq #relaysStats, eq #relayInput, eq #relaysList]
+            MyProfilePage -> allEqual $ [eq $ #profiles % at (m1 ^. #me)]
+            NotificationsPage -> allEqual $ [eq #notifs, eq #notifsNew] ++ notesAndStuff
+            FindProfilePage -> allEqual $ [eq #findWho]
+            WritePostPage -> True
+            FindEventPage -> allEqual [eq #findEventModel]
+   where 
+    eq :: Eq a => Lens' Model a -> Bool
+    eq ls = m1 ^. ls == m2 ^. ls
+    allEqual = Prelude.all (==True) 
+    notesAndStuff = [eq #threads, eq #reactions, eq #embedded]
+    myContacts = #profileContacts % at (m1 ^. #me)
 
 newtype RootEid = RootEid EventId deriving (Eq, Ord)
 
