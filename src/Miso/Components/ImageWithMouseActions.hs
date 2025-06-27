@@ -31,7 +31,7 @@ view hoveredOnProps defaultProps m =
             HoveredOn -> [img_ $ hoveredOnProps]
             NotHoveredOn -> [img_ $ defaultProps]
     -- ]
-imgWithMouseActions :: [Attribute Action] -> [Attribute Action] -> Component name Model Action
+imgWithMouseActions :: [Attribute Action] -> [Attribute Action] -> Component Dynamic Model Action
 imgWithMouseActions hoveredOnProps defaultProps =
   (defaultComponent
     NotHoveredOn

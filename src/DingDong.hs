@@ -136,7 +136,7 @@ start = do
       styles = []
   startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
   where
-    events = foldr Map.delete defaultEvents ["mouseup","mousedown","mouseleave", "mouseover","mouseout","mouseenter"] 
+    events = defaultEvents
     view (CompactModel m) = appView m
     -- mountPoint = "body"
     mountPoint = Just "miso-mountpoint"
@@ -786,7 +786,8 @@ updateModel nn rl pl action = do
             notify LB.loadingBar $ LB.UpdateSubscriptions p sst
             mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
 
-    DisplayProfilePage mid xo ->
+    DisplayProfilePage mid xo -> do
+      io_ . liftIO . print $ "branko-dispatching displayprofilepage"
       batchEff model [pure $ LoadProfile True True xo (ProfilePage xo), pure $ GoPage (ProfilePage xo) mid]
 
     LogConsole what ->
@@ -1100,7 +1101,7 @@ appView :: Model -> View Action
 appView m =
   -- div_ [onLoad AllLoaded] $
   div_ [] $
-    [ component LB.loadingBar,
+    [ component_  LB.loadingBar [],
       newNotesIndicator,
       div_
         -- [class_ "main-container", id_ "top-top"]
@@ -1253,24 +1254,22 @@ footerView Model {..} =
 
 displayProfilePic :: Maybe ElementId -> XOnlyPubKey -> Maybe Picture -> View Action
 displayProfilePic mid xo (Just pic) =
-  div_ [onClick $ DisplayProfilePage mid xo] 
-       [component_ img]
+  -- div_ [onClick $ DisplayProfilePage mid xo] 
+  --      [component_ imgComp []] 
+    -- component_ imgComp [onClick $ DisplayProfilePage mid xo]
+    component_ imgComp []
   where 
-    img = 
-      imgWithMouseActions  
-          [ class_ "profile-pic", 
-            class_ "hovered",
-            prop "src" $ pic
-          ]
-          [ class_ "profile-pic",
-            prop "src" $ pic
-          ]
+    imgComp = imgWithMouseActions 
+                (class_ "hovered" : commonProps)
+                commonProps
+    commonProps = 
+      [ class_ "profile-pic",
+        key_ pic,
+        prop "src" $ pic
+        -- TODO: below does not work because you can not fire parent events inside child, of course
+        -- onClick $ DisplayProfilePage mid xo
+      ]
       
-  -- imgKeyed_ (Key pic)
-  --   [ class_ "profile-pic",
-  --     prop "src" $ pic,
-  --     onClick $ DisplayProfilePage mid xo
-  --   ]
 displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
