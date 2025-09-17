@@ -18,6 +18,7 @@ import qualified Nostr.Kind as Kind
 import Nostr.Relay
 import Optics
 import qualified Data.Text as T
+import Data.List
 
 data Sentiment = Like | Dislike | Other -- Agree | Disagree
   deriving (Show, Eq, Ord) -- TODO: add emojis and whatnot support
@@ -98,7 +99,7 @@ processReceived reactions (event, relay) =
 
 reactionToEvent :: Event -> Maybe EventId
 reactionToEvent e = do
-  (ETag eid _ _) <- snd <$> (unsnoc . Prelude.filter isEtag . tags $ e)
+  (ETag eid _ _) <- snd <$> (Data.List.unsnoc . Prelude.filter isEtag . tags $ e)
   pure eid
 
 likeReactionOf :: XOnlyPubKey -> Reaction

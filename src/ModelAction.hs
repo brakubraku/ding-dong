@@ -35,6 +35,7 @@ import Miso (Sub)
 import Data.Text
 import Utils (Seconds)
 import Control.Concurrent (MVar)
+import Data.Aeson (FromJSON, ToJSON)
 
 type PagedEvents = PagedEventsModel (Event,[Content])
 type PagedReactions = PagedEventsModel (ReactionEvent, Reaction)
@@ -132,7 +133,7 @@ data Action where
 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
- deriving Eq
+ deriving (Eq, Generic, ToJSON, FromJSON)
 
 data ReportType = ErrorReport | SuccessReport
  deriving Eq
@@ -151,7 +152,7 @@ data Page
   | MyProfilePage 
   | NotificationsPage 
   | WritePostPage
-  deriving (Show, Eq, Generic, Ord)
+  deriving (Show, Eq, Generic, Ord, ToJSON, FromJSON)
 
 newtype ErrorCount = ErrorCount Int 
 --  deriving newtype (Num, Eq)

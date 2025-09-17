@@ -18,7 +18,7 @@ import Control.Concurrent
 import Control.Monad (when, unless, void)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Bifunctor (second, first)
+import Data.Bifunctor (second)
 import Data.Bool (bool)
 import Data.Either (fromRight)
 import Data.List (singleton, uncons)
@@ -26,9 +26,8 @@ import qualified Data.List as Prelude
 import qualified Data.Map as Map hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Set as Set
-import qualified Data.Text as T
 import Data.Time
-import Miso hiding (at, now, send, WebSocket(..), startSub)
+import Miso hiding (at, now, send, WebSocket(..), startSub, subscribe)
 import qualified Miso as Miso
 import Miso.String (MisoString, ms)
 import qualified Miso.String as S
@@ -59,20 +58,12 @@ import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
 import ProfilesLoader.Types (ProfOrRelays)
 import Data.DateTime (fromSeconds)
 import qualified Nostr.Reaction as Reaction
-import Debug.Trace
 import Nostr.Log (logError)
 import Network.URI
 import SubscriptionUtils
 
 import qualified Miso.Components.LoadingBar as LB
 import Nostr.Reaction (Reaction)
--- import qualified THBits as TH (script)
--- import qualified THBits as TH (script)
-import Miso.Components.ImageWithMouseActions
--- import Control.Monad.State (State, get, put, modify, runStateT)
-import Control.Monad.Trans.State.Strict (runStateT)
-import Control.Monad.State.Class (put, get)
-import Control.Monad.Trans.Writer.Strict (runWriter)
 
 import Control.Monad.RWS
 import Data.Hashable
@@ -134,7 +125,7 @@ start = do
           Map.empty
           defaultFindEventModel
       styles = []
-  startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, ..}
+  startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, isCacher = False, cacherNeedsRefresh = const . const $ False, ..}
   where
     events = defaultEvents
     view (CompactModel m) = appView m
@@ -295,7 +286,7 @@ updateModel nn rl pl action = do
                  hasNew
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
-    ListenToNotifs ->
+    ListenToNotifs ->  
       startSub "listen-to-notifications" runLoop
        where
         doSubscribe lnd sink =
@@ -576,8 +567,10 @@ updateModel nn rl pl action = do
             bool ((p, Nothing) : (fst p1, elementId) : rest) ps (fst p1 == p)
           add p [] = [(p, Nothing)]
           updated = model & #page .~ page & #history %~ add page
-       in effectSub updated $ \_ -> do
-            notify LB.loadingBar $ LB.UpdatePage page
+       in 
+        do
+          put updated
+          publish LB.loadingBarTopic $ LB.UpdatePage page
 
     GoBack ->
       let updated = do
@@ -782,9 +775,10 @@ updateModel nn rl pl action = do
           timeouts = (\r -> "Relay " <> (ms $ r ^. #uri) <> " timeouted") <$> toRels
           errors = (\(r, er) -> "Relay " <> (ms $ r ^. #uri)
                                 <> " returned error: " <> (fromMaybe "" er)) <$> erRels
-      in effectSub model $ \sink -> do
-            notify LB.loadingBar $ LB.UpdateSubscriptions p sst
-            mapM_ sink $ Report ErrorReport <$> timeouts ++ errors
+      in 
+        do 
+          publish LB.loadingBarTopic $ LB.UpdateSubscriptions p sst
+          mapM_ issue $ Report ErrorReport <$> timeouts ++ errors
 
     DisplayProfilePage mid xo -> do
       io_ . liftIO . print $ "branko-dispatching displayprofilepage"
@@ -1257,19 +1251,20 @@ displayProfilePic mid xo (Just pic) =
   -- div_ [onClick $ DisplayProfilePage mid xo] 
   --      [component_ imgComp []] 
     -- component_ imgComp [onClick $ DisplayProfilePage mid xo]
-    component_ imgComp []
+    -- component_ imgComp []
+    img
   where 
-    imgComp = imgWithMouseActions 
-                (class_ "hovered" : commonProps)
-                commonProps
+    -- imgComp = imgWithMouseActions 
+    --             (class_ "hovered" : commonProps)
+    --             commonProps
     commonProps = 
       [ class_ "profile-pic",
         key_ pic,
-        prop "src" $ pic
-        -- TODO: below does not work because you can not fire parent events inside child, of course
-        -- onClick $ DisplayProfilePage mid xo
+        prop "src" $ pic,
+        onClick $ DisplayProfilePage mid xo
       ]
-      
+    img = imgKeyed_ (Key pic) commonProps
+
 displayProfilePic mid xo _ = 
   div_
     [ class_ "profile-pic",
@@ -1465,17 +1460,46 @@ middlePanel m =
     [ displayPage
     ]
   where
-    displayPage = case m ^. #page of
-      FeedPage -> displayFeed m
-      Following xo -> displayFollowingView m xo
-      ThreadPage e -> displayThread m e
-      ProfilePage xo -> displayProfile True m xo
-      FindProfilePage -> displayFindProfilePage m
-      FindEventPage -> displayFindEventPage m
-      RelaysPage -> displayRelaysPage m
-      MyProfilePage -> displayMyProfilePage m
-      NotificationsPage -> displayNotificationsPage m
-      WritePostPage -> displayWritePostPage m
+    displayParticularPage = 
+      case m ^. #page of
+        FeedPage -> displayFeed m
+        Following xo -> displayFollowingView m xo
+        ThreadPage e -> displayThread m e
+        ProfilePage xo -> displayProfile True m xo
+        FindProfilePage -> displayFindProfilePage m
+        FindEventPage -> displayFindEventPage m
+        RelaysPage -> displayRelaysPage m
+        MyProfilePage -> displayMyProfilePage m
+        NotificationsPage -> displayNotificationsPage m
+        WritePostPage -> displayWritePostPage m
+
+    -- TODO: this section needs work broski
+    -- needsRefresh oldM newM = not $ oldM ^. #page /= newM ^. #page
+    needsRefresh oldM newM = newM ^. #page == FeedPage && oldM ^. #page == FeedPage
+    notificationsNeedRefresh _ _ = True
+    -- needsRefresh oldM newM = True 
+                            --  oldM ^. #feedNew /= newM ^. #feedNew ||
+                            --  oldM ^. #feedOld /= newM ^. #feedOld ||
+                            --  oldM ^. #reactions /= newM ^. #reactions ||
+                            --  oldM ^. #threads /= newM ^. #threads ||
+                            --  oldM ^. #profiles /= newM ^. #profiles ||
+                            --  oldM ^. #profileContacts /= newM ^. #profileContacts ||
+                            --  oldM ^. #notifsNew /= newM ^. #notifsNew
+    displayPage = div_ [] 
+     [ div_ [class_ $ bool "display-none" "visible" showFeed] [cacher needsRefresh m displayFeed []],
+       div_ [class_ $ bool "display-none" "visible" showNotifications] [cacher notificationsNeedRefresh m displayNotificationsPage []],
+       div_ [] [if showFeed || showNotifications then div_ [] [] else displayParticularPage]    
+     ]
+    showFeed = m ^. #page == FeedPage
+    showNotifications = m ^. #page == NotificationsPage
+    -- showFeed = False
+    logModel m = "Feed page is " <> show (m ^. #feed % #pg)
+    -- showFollowing = case m ^. #page of
+    --   Following _ -> True
+    --   _ -> False
+    -- display = \view page -> 
+    --             div_ [class_ "page-container", class_ $ bool "invisible" "visible" (page == m ^. #page)] 
+    --                  [view]
 
 rightPanel :: Model -> View Action
 rightPanel m = div_ [class_ "right-panel"] [ul_ [] reports]

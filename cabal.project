@@ -2,9 +2,9 @@ packages:
  .
 
 source-repository-package
-    type: git
-    location: https://github.com/dmjio/miso
-    tag: 5b1d9d41d660bde7f86279f542f670bd3fb6d351
+   type: git
+   location: https://github.com/brakubraku/miso
+   tag: 3e935bd03fd5d4604a7453d27a5514f5cc2e6ac8
 
 source-repository-package
    type: git

@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 
@@ -11,23 +12,29 @@ import Miso.String (ms)
 import qualified Data.Map as M
 import ModelAction (Page, SubState(..))
 import Miso hiding (update, view, at)
-import Nostr.Request
+import Nostr.Request hiding (Subscribe)
 import Optics hiding (view)
 import Data.Maybe
 import Data.Bool
 import GHC.Generics
 import qualified Data.Text as T
 import Control.Monad.State (get)
+import Miso.Concurrent (Waiter(wait))
+import Data.Aeson
+import Debug.Trace
+
+loadingBarTopic :: Topic Message
+loadingBarTopic = topic "loading-bar"
+
+data Message where 
+  UpdateSubscriptions :: Page -> (SubscriptionId, SubState) -> Message
+  UpdatePage :: Page -> Message
+  deriving (Generic, FromJSON, ToJSON)
 
 data Action where
-  UpdateSubscriptions :: Page -> (SubscriptionId, SubState) -> Action
-  UpdatePage :: Page -> Action
+  Subscribe :: Action
+  MessageReceived :: (Result Message) -> Action
 
-instance Show Action where
-  show (UpdateSubscriptions p sst) =
-    "LoadingBarAction: UpdateSubscriptions "
-  show (UpdatePage p) =
-    "LoadingBarAction: UpdatePage " <> show p
 
 data Model = Model {
   subscriptions :: M.Map Page [(SubscriptionId, SubState)],
@@ -38,12 +45,17 @@ update :: Action -> Effect Model Action
 update a = do
     m <- get
     case a of
-      UpdateSubscriptions p sst ->
-        noEff $
+      MessageReceived (Success (UpdateSubscriptions p sst)) -> do 
+        put $
           m & #subscriptions % at p
               %~ Just . fromMaybe [sst] . fmap (updateSubStates sst)
-      UpdatePage p ->
-        noEff $ m & #page ?~ p
+
+      MessageReceived (Success (UpdatePage p)) -> do
+        put $ m & #page ?~ p
+
+      MessageReceived (Error e) -> io_ $ consoleError $ "LoadingBarAction: Error: " <> ms e
+
+      Subscribe -> subscribe loadingBarTopic MessageReceived
 
 updateSubStates :: Eq a => (a, SubState) -> [(a, SubState)] -> [(a, SubState)]
 updateSubStates (sid, ss) substates =
@@ -81,5 +93,5 @@ areSubsRunning m =
         isRunning (_, _) = False
     pure . any isRunning $ subs
 
-loadingBar :: Component "loading-bar" Model Action
-loadingBar = defaultComponent (Model M.empty Nothing) update view
+loadingBar :: Component Model Action
+loadingBar = (component (Model M.empty Nothing) update view) {initialAction = Just Subscribe}

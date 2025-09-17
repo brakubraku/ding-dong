@@ -18,7 +18,7 @@ import Data.Either
 import Data.Text hiding (length, show)
 import qualified Data.Text as T hiding (length)
 import GHC.Generics (Generic)
-import Miso hiding (at, view)
+import Miso hiding (at, view, getSeconds)
 import Miso.String (MisoString, ms, fromMisoString)
 import Language.Javascript.JSaddle
 import Nostr.Filter

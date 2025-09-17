@@ -9,7 +9,6 @@
 module Nostr.Relay where
 
 import Data.Aeson
-import Data.Text (Text)
 import GHC.Exts (fromList)
 import GHC.Generics
 import Miso.String
@@ -46,4 +45,7 @@ instance ToJSON Relay where
     [ ( "uri", toJSON $ uri r)
     , ( "info", toJSON $ info r)
     ]
+
+instance ToJSONKey Relay
+instance FromJSONKey Relay
   

@@ -29,6 +29,7 @@ import Nostr.Response hiding (EOSE)
 import Optics
 import Nostr.Event
 import Data.Time
+import Data.Aeson hiding (Error)
 
 data SubscriptionState = SubscriptionState
   { relaysState :: Map Relay RelaySubState,
@@ -58,7 +59,7 @@ runNostr = flip runReaderT
 
 type NostrNetworkT = ReaderT NostrNetwork IO
 
-data RelaySubState = Running | EOSE | Error MisoString deriving (Eq, Show)
+data RelaySubState = Running | EOSE | Error MisoString deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
 -- Subscription is considered finished when none of Relays is in a Running state
 -- for that particular subscription Id.
