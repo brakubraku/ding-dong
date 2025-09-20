@@ -45,16 +45,16 @@ data Action
   | AddComment
   | NoOp
 
--- Independent style functions
 containerStyle :: [(MisoString, MisoString)]
 containerStyle = 
-  [ ("backgroundColor", "#fff")
+  [ ("backgroundColor", "#121212")
   , ("borderRadius", "12px")
-  , ("boxShadow", "0 2px 16px rgba(0, 0, 0, 0.1)")
+  , ("boxShadow", "0 2px 16px rgba(0, 0, 0, 0.4)")
   , ("width", "100%")
   , ("maxWidth", "500px")
   , ("overflow", "hidden")
   , ("margin", "20px auto")
+  , ("color", "#e0e0e0")
   ]
 
 headerStyle :: [(MisoString, MisoString)]
@@ -62,7 +62,7 @@ headerStyle =
   [ ("display", "flex")
   , ("alignItems", "center")
   , ("padding", "16px")
-  , ("borderBottom", "1px solid #e4e6eb")
+  , ("borderBottom", "1px solid #2c2c2c")
   ]
 
 profilePicStyle :: [(MisoString, MisoString)]
@@ -70,12 +70,13 @@ profilePicStyle =
   [ ("width", "40px")
   , ("height", "40px")
   , ("borderRadius", "50%")
-  , ("backgroundColor", "#ddd")
+  , ("backgroundColor", "#333333")
   , ("display", "flex")
   , ("alignItems", "center")
   , ("justifyContent", "center")
   , ("marginRight", "12px")
   , ("fontSize", "20px")
+  , ("color", "#e0e0e0")
   ]
 
 authorInfoStyle :: [(MisoString, MisoString)]
@@ -86,33 +87,33 @@ authorInfoStyle =
 authorNameStyle :: [(MisoString, MisoString)]
 authorNameStyle = 
   [ ("fontWeight", "600")
-  , ("color", "#050505")
+  , ("color", "#e0e0e0")
   , ("marginBottom", "2px")
   ]
 
 postTimeStyle :: [(MisoString, MisoString)]
 postTimeStyle = 
   [ ("fontSize", "13px")
-  , ("color", "#65676b")
+  , ("color", "#a0a0a0")
   ]
 
 contentStyle :: [(MisoString, MisoString)]
 contentStyle = 
   [ ("padding", "16px")
-  , ("color", "#050505")
+  , ("color", "#e0e0e0")
   , ("lineHeight", "1.4")
   ]
 
 imagePlaceholderStyle :: [(MisoString, MisoString)]
 imagePlaceholderStyle = 
-  [ ("background", "linear-gradient(135deg, #43cea2, #185a9d)")
+  [ ("background", "linear-gradient(135deg, #2d5c4b, #0f2a42)")
   , ("height", "200px")
   , ("borderRadius", "8px")
   , ("marginTop", "15px")
   , ("display", "flex")
   , ("alignItems", "center")
   , ("justifyContent", "center")
-  , ("color", "white")
+  , ("color", "#e0e0e0")
   , ("fontSize", "20px")
   ]
 
@@ -121,9 +122,9 @@ statsStyle =
   [ ("display", "flex")
   , ("justifyContent", "space-between")
   , ("padding", "12px 16px")
-  , ("color", "#65676b")
+  , ("color", "#a0a0a0")
   , ("fontSize", "14px")
-  , ("borderBottom", "1px solid #e4e6eb")
+  , ("borderBottom", "1px solid #2c2c2c")
   ]
 
 actionsStyle :: [(MisoString, MisoString)]
@@ -131,7 +132,7 @@ actionsStyle =
   [ ("display", "flex")
   , ("justifyContent", "space-around")
   , ("padding", "8px 0")
-  , ("borderBottom", "1px solid #e4e6eb")
+  , ("borderBottom", "1px solid #2c2c2c")
   ]
 
 buttonStyle :: [(MisoString, MisoString)]
@@ -144,7 +145,7 @@ buttonStyle =
   , ("borderRadius", "4px")
   , ("padding", "8px 16px")
   , ("cursor", "pointer")
-  , ("color", "#65676b")
+  , ("color", "#a0a0a0")
   , ("fontWeight", "600")
   , ("transition", "all 0.2s")
   , ("flex", "1")
@@ -161,7 +162,7 @@ activeLikeStyle =
   , ("borderRadius", "4px")
   , ("padding", "8px 16px")
   , ("cursor", "pointer")
-  , ("color", "#1877f2")
+  , ("color", "#4a8fe0")
   , ("fontWeight", "600")
   , ("transition", "all 0.2s")
   , ("flex", "1")
@@ -196,18 +197,19 @@ commentAvatarStyle =
   [ ("width", "32px")
   , ("height", "32px")
   , ("borderRadius", "50%")
-  , ("backgroundColor", "#e4e6eb")
+  , ("backgroundColor", "#333333")
   , ("marginRight", "10px")
   , ("flexShrink", "0")
   , ("display", "flex")
   , ("alignItems", "center")
   , ("justifyContent", "center")
   , ("fontSize", "14px")
+  , ("color", "#e0e0e0")
   ]
 
 commentContentStyle :: [(MisoString, MisoString)]
 commentContentStyle = 
-  [ ("background", "#f0f2f5")
+  [ ("background", "#2c2c2c")
   , ("padding", "10px 12px")
   , ("borderRadius", "18px")
   , ("flex", "1")
@@ -218,12 +220,13 @@ commentAuthorStyle =
   [ ("fontWeight", "600")
   , ("fontSize", "14px")
   , ("marginBottom", "4px")
+  , ("color", "#e0e0e0")
   ]
 
 commentTextStyle :: [(MisoString, MisoString)]
 commentTextStyle = 
   [ ("fontSize", "14px")
-  , ("color", "#050505")
+  , ("color", "#e0e0e0")
   ]
 
 commentInputStyle :: [(MisoString, MisoString)]
@@ -237,15 +240,17 @@ inputStyle :: [(MisoString, MisoString)]
 inputStyle = 
   [ ("flex", "1")
   , ("padding", "10px 12px")
-  , ("border", "1px solid #dddfe2")
+  , ("border", "1px solid #444444")
   , ("borderRadius", "20px")
   , ("outline", "none")
   , ("fontSize", "14px")
+  , ("backgroundColor", "#2c2c2c")
+  , ("color", "#e0e0e0")
   ]
 
 submitButtonStyle :: [(MisoString, MisoString)]
 submitButtonStyle = 
-  [ ("background", "#1877f2")
+  [ ("background", "#4a8fe0")
   , ("color", "white")
   , ("border", "none")
   , ("borderRadius", "20px")
