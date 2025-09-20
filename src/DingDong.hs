@@ -63,6 +63,9 @@ import Network.URI
 import SubscriptionUtils
 
 import qualified Miso.Components.LoadingBar as LB
+-- import Miso.Components.Dumb
+import Miso.Components.DumbTwo
+import Miso.Components.Post
 import Nostr.Reaction (Reaction)
 
 import Control.Monad.RWS
@@ -1463,7 +1466,9 @@ middlePanel m =
     displayParticularPage = 
       case m ^. #page of
         FeedPage -> displayFeed m
-        Following xo -> displayFollowingView m xo
+        -- Following xo -> displayFollowingView m xo
+        -- Following xo -> component_ dumbComponent []
+        Following xo -> component_ postComponent []
         ThreadPage e -> displayThread m e
         ProfilePage xo -> displayProfile True m xo
         FindProfilePage -> displayFindProfilePage m
