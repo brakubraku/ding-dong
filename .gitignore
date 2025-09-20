@@ -1,2 +1,3 @@
 dist-newstyle
 frontend/dist
+frontend/ghc_wasm_jsffi.js
