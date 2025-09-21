@@ -19,6 +19,7 @@
     padding-left: 10px;
     border: 1px solid black;
     overflow:scroll;
+    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.3);
 }
 
 .note-content {
@@ -587,9 +588,6 @@ body {
 .parent-child-complex {
     padding-left: 50px;
     padding-right: 50px;
-    border-bottom: 2px dashed #f73131;
-    padding-bottom: 15px;
-    padding-top: 15px;
 }
 
 .profile-follows {
@@ -634,4 +632,9 @@ body {
     flex:1;
     color: purple;
     cursor:pointer;
+}
+
+.divider {
+    border-bottom: 1px dashed black;
+    margin: 10px;
 }

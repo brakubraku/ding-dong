@@ -21,7 +21,7 @@ import Control.Monad.Reader
 import Data.Bifunctor (second)
 import Data.Bool (bool)
 import Data.Either (fromRight)
-import Data.List (singleton, uncons)
+import Data.List (singleton, uncons, intersperse)
 import qualified Data.List as Prelude
 import qualified Data.Map as Map hiding (filter, foldr, singleton)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
@@ -1212,7 +1212,7 @@ displayPagedEvents showIntervals pw m pml screen =
           Notes ->
             div_
               [class_ "notes-container"]
-              (displayPagedNote m pml <$> notes) -- TODO: ordering can be different
+              (intersperse divider $ displayPagedNote m pml <$> notes) -- TODO: ordering can be different
           Notifications ->
             div_ [] (displayPagedNotif m pml <$> notes))
         ,div_ [id_ "notes-container-bottom"] []
@@ -1223,6 +1223,7 @@ displayPagedEvents showIntervals pw m pml screen =
     pg = f ^. #pg
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
     notes = take pgSize . drop (pg * pgSize) $ f ^. #events
+    divider = div_ [class_ "divider"] []
 
 displayPagedReactions :: Model -> Lens' Model PagedReactions -> Page -> View Action
 displayPagedReactions m pml screen =
