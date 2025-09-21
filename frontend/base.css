@@ -17,7 +17,6 @@
     background: #d3d3d3a3;;
     border-radius: 15px;
     padding-left: 10px;
-    border: 1px solid black;
     overflow:scroll;
     box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.3);
 }
