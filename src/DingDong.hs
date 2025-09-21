@@ -66,6 +66,8 @@ import qualified Miso.Components.LoadingBar as LB
 -- import Miso.Components.Dumb
 import Miso.Components.DumbTwo
 import Miso.Components.Post
+-- import Miso.Components.AuthorInfoPanel
+import Miso.Components.SidePanel
 import Nostr.Reaction (Reaction)
 
 import Control.Monad.RWS
@@ -1508,7 +1510,9 @@ middlePanel m =
     --                  [view]
 
 rightPanel :: Model -> View Action
-rightPanel m = div_ [class_ "right-panel"] [ul_ [] reports]
+rightPanel m = 
+  -- div_ [class_ "right-panel"] [ul_ [] reports]
+  div_ [class_ "right-panel"] [component_ authorInfoComponent []]
   where
     reports =
       ( \(i, reportType, report) ->

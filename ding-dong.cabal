@@ -50,6 +50,8 @@ library
                       Miso.Components.ImageWithMouseActions
                       Miso.Components.DumbTwo
                       Miso.Components.Post
+                      Miso.Components.AuthorInfoPanel
+                      Miso.Components.SidePanel
                       -- Test
                       -- THBits
 
