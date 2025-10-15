@@ -75,10 +75,14 @@ import Data.Hashable
 
 start :: JSM ()
 start = do
-  (keys@(Keys _ me _), isNewKey) <- loadKeys
-  now <- liftIO getCurrentTime
+  keys <- loadKeys
   relaysList <- loadRelays
+  initAndStart keys relaysList
+
+initAndStart :: (Keys, Bool) -> [StoredRelay] -> JSM ()
+initAndStart (keys@(Keys _ me _), isNewKey) relaysList = do
   let activeRelays = relay <$> filter active relaysList
+  now <- liftIO getCurrentTime
   nn <-
     liftIO $
       initNetwork
