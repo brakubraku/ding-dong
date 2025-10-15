@@ -54,7 +54,7 @@ import Utils
 import Contacts
 import Language.Javascript.JSaddle hiding ((<#))
 import Data.Default
-import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay)
+import StoredRelay (active, relay, loadRelays, saveRelays, newActiveRelay, StoredRelay)
 import ProfilesLoader.Types (ProfOrRelays)
 import Data.DateTime (fromSeconds)
 import qualified Nostr.Reaction as Reaction
@@ -87,9 +87,6 @@ start = do
   reactionsLoader <- liftIO createReactionsLoader
   profilesLoader <- liftIO createProfilesLoader
   lastNotifDate <- loadLastNotifTime
-  let notifsFilter =
-            \(Since s) (Until u) ->
-              [DatedFilter (Mentions [me]) (Just s) (Just u)]
   let subs = [connectRelays nn HandleWebSocket]
       -- update :: Action -> Effect CompactModel Action
       update a =
@@ -98,45 +95,69 @@ start = do
               (a', m', w') = runRWS rws r m
           in (a', CompactModel m', w')
       initialModel =
-        CompactModel $ Model
-          (defFeedEvntsModel now)
-          []
-          (defNotifEvntsModel lastNotifDate notifsFilter)
-          []
-          ""
-          Map.empty
-          Map.empty
-          Map.empty
-          ProfilePosts
-          ""
-          relaysList
-          (Map.fromList ((\r -> (r,(False, ErrorCount 0,CloseCount 0))) <$> activeRelays ^.. folded % #uri))
-          (Reactions Map.empty Map.empty)
-          Map.empty
-          Map.empty
-          Map.empty
-          FeedPage
-          now
-          Map.empty
-          Nothing
-          [(FeedPage,Nothing)]
-          Map.empty
-          []
-          0
-          Map.empty
-          ""
-          ""
-          me
-          Map.empty
-          defaultFindEventModel
+        CompactModel $ createInitialModel now lastNotifDate relaysList activeRelays me
       styles = []
-  startComponent Component {initialAction = Just $ StartAction isNewKey, model = initialModel, isCacher = False, cacherNeedsRefresh = const . const $ False, ..}
+  startComponent 
+    Component {
+        initialAction = Just $ StartAction isNewKey,
+        model = initialModel, 
+        isCacher = False, 
+        cacherNeedsRefresh = const . const $ False,
+        ..}
   where
     events = defaultEvents
     view (CompactModel m) = appView m
     -- mountPoint = "body"
     mountPoint = Just "miso-mountpoint"
     logLevel = Off
+
+createInitialModel ::
+  UTCTime ->
+  UTCTime ->
+  [StoredRelay] ->
+  [Relay] ->
+  XOnlyPubKey ->
+  Model
+createInitialModel now lastNotifDate relaysList activeRelays me =
+    Model
+      { feed = defFeedEvntsModel now,
+        feedNew = [],
+        notifs = defNotifEvntsModel lastNotifDate notifsFilter,
+        notifsNew = [],
+        findWho = "",
+        profiles = Map.empty,
+        profileContacts = Map.empty,
+        profileRelays = Map.empty,
+        profileTab = ProfilePosts,
+        relayInput = "",
+        relaysList = relaysList,
+        relaysStats =
+          Map.fromList $
+            (\r -> (r, (False, ErrorCount 0, CloseCount 0)))
+              <$> activeRelays ^.. folded % #uri,
+        reactions = Reactions Map.empty Map.empty,
+        embedded = Map.empty,
+        threads = Map.empty,
+        fromRelays = Map.empty,
+        page = FeedPage,
+        now = now,
+        profileEvents = Map.empty,
+        writeReplyTo = Nothing,
+        history = [(FeedPage, Nothing)],
+        subCancelButtons = Map.empty,
+        reports = [],
+        reportCounter = 0,
+        profileReactions = Map.empty,
+        postDraft = "",
+        replyDraft = "",
+        me = me,
+        profileReactionsTo = Map.empty,
+        findEventModel = defaultFindEventModel
+      }
+  where
+    notifsFilter =
+      \(Since s) (Until u) ->
+        [DatedFilter (Mentions [me]) (Just s) (Just u)]
 
 updateModel ::
   NostrNetwork ->
