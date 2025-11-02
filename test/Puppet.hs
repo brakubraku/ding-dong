@@ -16,6 +16,8 @@ module Puppet where
 import System.IO (writeFile)
 import qualified Data.Map as Map
 
+import Configuration
+
 -- | Template for Puppeteer client.js code, with a placeholder for localStorage injection
 clientJsTemplate :: String
 clientJsTemplate = unlines
@@ -25,7 +27,7 @@ clientJsTemplate = unlines
   , "  const page = await browser.newPage();"
   , "  // Inject localStorage block here"
   , "  __LOCAL_STORAGE__"
-  , "  await page.goto('http://localhost:1234', {});"
+  , "  await page.goto('http://localhost:" <> show defaultWarpPort <> "', {});"
   , "  // ... rest of your client.js logic ..."
   , "})();"
   ]

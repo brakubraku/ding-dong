@@ -30,20 +30,6 @@ main e = Wasm.run Test.test
 #else   
 main ::  IO ()
 main = do
-  shutdownSignal <- newEmptyMVar
-  -- Start headless client in a separate thread and save its ThreadId
-  headlessTid <- forkIO $ do
-    putStrLn "Waiting 3 seconds for jsaddle-warp to fully start..."
-    threadDelay 3000000  -- Wait 3 seconds for jsaddle-warp to start
-    -- To request shutdown from this thread: putMVar shutdownSignal ()
-    Test.runHeadlessClient True Map.empty
-  -- You can add more child threads and save their ThreadIds in a list
-  -- Main thread waits for shutdown signal
-  forkIO $ Test.runTest shutdownSignal
-  readMVar shutdownSignal
-  -- On shutdown, kill all child threads and exit
-  putStrLn "Shutting down all threads."
-  killThread headlessTid
-  -- kill other threads if needed
+  Test.runTest
   exitSuccess
 #endif

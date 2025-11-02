@@ -139,6 +139,7 @@ executable test
   other-modules:    Test
                     Relay.RelayServer
                     Puppet
+                    Configuration
   if arch(wasm32)
     ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
   else 

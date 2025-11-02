@@ -12,7 +12,7 @@ import Nostr.Event
 import Nostr.Keys
 import Control.Monad.IO.Class (liftIO)
 import Language.Javascript.JSaddle (JSM, runJSM, askJSM)
-import Control.Concurrent (threadDelay, forkIO, newMVar, readMVar, MVar, ThreadId, putMVar)
+import Control.Concurrent (threadDelay, forkIO, newMVar, readMVar, MVar, ThreadId, putMVar, killThread, newEmptyMVar)
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process (createProcess, proc, terminateProcess, ProcessHandle, CreateProcess(..), StdStream(UseHandle))
@@ -29,7 +29,7 @@ import System.Posix.Signals (installHandler, sigKILL, Handler(Catch))
 import StoredRelay
 import Nostr.Network
 import DingDong (initAndStart)
-import Miso (startComponentForTest)
+import Miso (startComponentForTest, Sink)
 import ModelAction
 import Relay.RelayServer
 import Relay.Database
@@ -38,6 +38,7 @@ import qualified Data.Sequence as Seq
 import Control.Concurrent.Async (race)
 import Data.Either
 import Relay.Request
+import qualified Relay.Request as Relay
 import Nostr.Kind
 import Optics
 import Nostr.Kind (Kind(Metadata))
@@ -47,8 +48,11 @@ import Data.Either.Extra (mapLeft)
 import Control.Monad.Reader
 import qualified Data.Map as Map
 import Puppet
+import Configuration
 
-data TestCtx = TestCtx {
+data TestContext = TestContext {
+  requestLog :: MVar (Seq.Seq Relay.Request),
+  sink :: Sink Action,
   hStdOut :: Handle
 }
 
@@ -80,40 +84,57 @@ runHeadlessClient suppressOutput localStorageMap = do
 -- sink the actions you want
 -- observe the requests within some timeout
 
-runTest :: MVar () -> IO ()
-runTest shutdownTrigger = do
+withDingDong :: 
+ Keys ->
+ [Event] ->
+ Map.Map String String -> 
+ (TestContext -> JSM a) ->
+ IO ()
+withDingDong keys relayEvents localStorage runTests = do 
   requestLog <- newMVar Seq.empty
+
+  -- start relay
+  rt <- forkIO $ do 
+      putStrLn "=== Starting Nostr relay ==="
+      mdb <- newMVar $ buildTestDB relayEvents
+      runRelay mdb requestLog defaultRelayPort
+
+  -- start puppeteer
+  pt <- forkIO $ do
+      threadDelay 3000000  -- Wait 3 seconds for jsaddle-warp to start
+      -- To request shutdown from this thread: putMVar shutdownSignal ()
+      Test.runHeadlessClient True Map.empty
+
+  shutdownTrigger <- newEmptyMVar
+  -- start warp
+  wt <- forkIO $ do 
+      putStrLn "=== Starting Warp ==="
+      Warp.run defaultWarpPort $ do
+        (ostdout, ostderr) <- liftIO mute -- don't need to see all the debug crap
+        -- liftIO $ unmute ostdout ostderr
+        let relays =
+              newActiveRelay . newRelay
+                <$> ["ws://127.0.0.1:" <> T.pack (show defaultRelayPort)]
+        sink <- initAndStart (keys, True) relays startComponentForTest
+        runTests TestContext {hStdOut=ostdout,..} -- sink requestLog
+        let terminate = liftIO . putMVar shutdownTrigger $ ()
+        terminate
+
+  readMVar shutdownTrigger
+  mapM_ killThread [rt, pt, wt]
+
+runTest :: IO ()
+runTest = do
   newKeys <- generateKeys
-  let contacts = simpleContacts newKeys
-  forkIO $ do 
-     putStrLn "=== Starting Nostr relay ==="
-     mdb <- newMVar $ buildTestDB [contacts]
-     runRelay mdb requestLog 8080
- 
-  threadDelay 1000000
-  let active =
-        newActiveRelay . newRelay
-          <$> ["ws://127.0.0.1:8080"]
-
-  putStrLn "=== Starting Warp ==="
-  Warp.run 1234 $ do
-    (ostdout, ostderr) <- liftIO mute -- don't need to see all the debug crap
-    -- liftIO $ unmute ostdout ostderr
-    sink <- initAndStart (newKeys, True) active startComponentForTest
-
-    flip runReaderT (TestCtx ostdout) $ 
+  withDingDong newKeys [simpleContacts newKeys] Map.empty $ \t@TestContext{..} ->
+    flip runReaderT t $ 
       timeoutTest 
         "See if metadata and relaylist is requested" 
         1000000 
         "Did not find metadata and relaymetadata requests" $ 
-        -- pollUntilTrue requestLog 100000 $ \reqs -> any (findRequest (newKeys ^. #xo)) 
           pollUntilTrue requestLog 100000 $ 
-             \reqs -> trace (show reqs) $ any (findRequest (newKeys ^. #xo)) reqs
+             any (findRequest (newKeys ^. #xo))
 
-    terminate 
-
-  where 
-    terminate = liftIO . putMVar shutdownTrigger $ ()
 
     -- let sinkForever = do
     --       sink GoBack
@@ -171,13 +192,13 @@ metadataFilter xo f =
   f ^. #kinds == Just [Metadata] &&
   f ^. #authors == Just [xo]
 
-timeoutTest :: String -> Int -> String -> JSM a -> ReaderT TestCtx JSM () 
+timeoutTest :: String -> Int -> String -> JSM a -> ReaderT TestContext JSM () 
 timeoutTest testName i e a = do
   ctx <- ask 
   lift $ runTest ctx $ timeout i e a
  where 
-  runTest :: TestCtx -> JSM (Either String a) -> JSM ()
-  runTest TestCtx{..} test = do 
+  runTest :: TestContext -> JSM (Either String a) -> JSM ()
+  runTest TestContext{..} test = do 
     let printLn = hPutStrLn hStdOut
         print = hPutStr hStdOut
     liftIO $ print $ "Running test " <> testName <> " ........ "
