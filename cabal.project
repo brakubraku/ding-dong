@@ -4,7 +4,7 @@ packages:
 source-repository-package
    type: git
    location: https://github.com/brakubraku/miso
-   tag: 3e935bd03fd5d4604a7453d27a5514f5cc2e6ac8
+   tag: 566b57ff24cc123dfe9f06160580ee66ca3f8c25
 
 source-repository-package
    type: git

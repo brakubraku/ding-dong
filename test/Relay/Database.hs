@@ -66,7 +66,7 @@ add e DB{..} =
 emptyDB :: DB
 emptyDB = DB M.empty M.empty M.empty M.empty M.empty
 
-buildTestDB :: [Event] -> DB 
+buildTestDB :: [Event] -> DB
 buildTestDB es = Prelude.foldr add emptyDB es
 
 createEvent :: UTCTime -> Keys -> Maybe Event

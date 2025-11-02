@@ -245,7 +245,7 @@ signEvent u sk xo = do
         sig = signature
       }
   where
-    eid = EventId . SHA256.hash . toStrict . encode $ u
+    eid = EventId . SHA256.hash . toStrict . encode $ u { pubKey' = xo}
 
 -- TODO: use this to debug the problems with verifying signatures
 -- checking below event (taken from nostr) works with verifyThis function

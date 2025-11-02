@@ -1,0 +1,12 @@
+{
+  "name": "jsaddle-warp-puppeteer-test",
+  "version": "1.0.0",
+  "description": "Simple Puppeteer client for testing jsaddle-warp server",
+  "scripts": {
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

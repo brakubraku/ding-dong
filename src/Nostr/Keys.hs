@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedLabels #-}
 
 module Nostr.Keys where
 
@@ -23,6 +25,7 @@ import MyCrypto
     parseXOnlyPubKey,
   )
 import System.Entropy 
+import GHC.Generics (Generic)
 
 type ProfileName = Text
 
@@ -33,7 +36,7 @@ data Keys = Keys
     xo :: XOnlyPubKey,
     current :: Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 instance Ord Keys where
   compare k1 k2 =

@@ -52,8 +52,6 @@ library
                       Miso.Components.Post
                       Miso.Components.AuthorInfoPanel
                       Miso.Components.SidePanel
-                      -- Test
-                      -- THBits
 
 
     build-depends:    base >=4.20.0.0
@@ -109,12 +107,12 @@ executable nostr-wasm
     , optics
 
 executable websockets-server
-  Hs-source-dirs:   src/Relay
-  Main-is:          Main.hs
+  Hs-source-dirs:   test/
+  Main-is:          RunRelay.hs
   other-modules:    Relay.RelayServer
                     Relay.Request
                     Relay.Database
-  -- ghc-options: -main-is WSServer.main 
+  ghc-options: -main-is RunRelay -threaded
   Default-language: Haskell2010
 
   Build-depends:
@@ -130,4 +128,46 @@ executable websockets-server
     base16,
     bytestring,
     time,
-    datetime
+    datetime,
+    miso,
+    hslogger,
+    directory
+    
+executable test
+  Hs-source-dirs:   test
+  Main-is:          MainTest.hs
+  other-modules:    Test
+                    Relay.RelayServer
+                    Puppet
+  if arch(wasm32)
+    ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
+  else 
+    ghc-options: -main-is MainTest.main -threaded
+  Default-language: Haskell2010
+
+  Build-depends:
+    base,
+    jsaddle,
+    jsaddle-wasm,
+    jsaddle-warp,
+    ghc-experimental,
+    text < 2.1.2,
+    ding-dong,
+    mtl,
+    containers,
+    optics,
+    time,
+    datetime,
+    process,
+    miso,
+    aeson,
+    bytestring,
+    http-conduit,
+    http-types,
+    vector,
+    websockets,
+    async,
+    extra,
+    hslogger,
+    directory,
+    unix

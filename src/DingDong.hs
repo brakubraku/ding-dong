@@ -77,10 +77,10 @@ start :: JSM ()
 start = do
   keys <- loadKeys
   relaysList <- loadRelays
-  initAndStart keys relaysList
+  initAndStart keys relaysList startComponent
 
-initAndStart :: (Keys, Bool) -> [StoredRelay] -> JSM ()
-initAndStart (keys@(Keys _ me _), isNewKey) relaysList = do
+initAndStart :: (Keys, Bool) -> [StoredRelay] -> (Component CompactModel Action -> JSM b) -> JSM b
+initAndStart (keys@(Keys _ me _), isNewKey) relaysList startComponent = do
   let activeRelays = relay <$> filter active relaysList
   now <- liftIO getCurrentTime
   nn <-
@@ -111,8 +111,9 @@ initAndStart (keys@(Keys _ me _), isNewKey) relaysList = do
   where
     events = defaultEvents
     view (CompactModel m) = appView m
-    -- mountPoint = "body"
-    mountPoint = Just "miso-mountpoint"
+    -- view = const $ div_ [] []
+    mountPoint = Just "body"
+    -- mountPoint = Just "miso-mountpoint"
     logLevel = Off
 
 createInitialModel ::
@@ -243,7 +244,7 @@ updateModel nn rl pl action = do
         void . liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
 
       startSub "reactions-loader" $ startLoader nn rl ReceivedReactions reportErrorAction
-      startSub "profiles-loader" $ startLoader nn pl ReceivedProfiles reportErrorAction
+      startSub "profiles-loader"  $ startLoader nn pl ReceivedProfiles  reportErrorAction
 
       -- fetch my profile
       io_ $ load pl $ [model ^. #me]

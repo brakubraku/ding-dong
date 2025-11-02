@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Relay.Request where
 
@@ -13,6 +14,7 @@ import Miso.String
 import qualified Data.Vector as V
 
 import MyCrypto
+import GHC.Generics
 
 type SubscriptionId = MisoString
 
@@ -20,7 +22,7 @@ data Subscription = Subscription
   { filters :: [Filter],
     subId :: SubscriptionId
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 data Request
   = SendEvent Event
@@ -56,7 +58,7 @@ data Filter = Filter {
   until :: Maybe Int,
   limit :: Maybe Int
 }
- deriving (Eq, Show)
+ deriving (Eq, Show, Generic)
 
 instance FromJSON Filter where 
   parseJSON = withObject "Filter" $ \f -> 
