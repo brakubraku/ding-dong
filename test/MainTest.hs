@@ -31,5 +31,4 @@ main e = Wasm.run Test.test
 main ::  IO ()
 main = do
   Test.runTest
-  exitSuccess
 #endif

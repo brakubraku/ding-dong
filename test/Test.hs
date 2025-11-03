@@ -88,7 +88,7 @@ withDingDong ::
  Keys ->
  [Event] ->
  Map.Map String String -> 
- (TestContext -> JSM a) ->
+ ReaderT TestContext JSM a ->
  IO ()
 withDingDong keys relayEvents localStorage runTests = do 
   requestLog <- newMVar Seq.empty
@@ -116,7 +116,7 @@ withDingDong keys relayEvents localStorage runTests = do
               newActiveRelay . newRelay
                 <$> ["ws://127.0.0.1:" <> T.pack (show defaultRelayPort)]
         sink <- initAndStart (keys, True) relays startComponentForTest
-        runTests TestContext {hStdOut=ostdout,..} -- sink requestLog
+        flip runReaderT TestContext {hStdOut=ostdout,..} $ runTests
         let terminate = liftIO . putMVar shutdownTrigger $ ()
         terminate
 
@@ -126,8 +126,8 @@ withDingDong keys relayEvents localStorage runTests = do
 runTest :: IO ()
 runTest = do
   newKeys <- generateKeys
-  withDingDong newKeys [simpleContacts newKeys] Map.empty $ \t@TestContext{..} ->
-    flip runReaderT t $ 
+  withDingDong newKeys [simpleContacts newKeys] Map.empty $ do
+      TestContext{..} <- ask
       timeoutTest 
         "See if metadata and relaylist is requested" 
         1000000 
