@@ -107,15 +107,15 @@ executable nostr-wasm
     , optics
 
 executable websockets-server
-  Hs-source-dirs:   test/
-  Main-is:          RunRelay.hs
+  hs-source-dirs:   test/
+  main-is:          RunRelay.hs
   other-modules:    Relay.RelayServer
                     Relay.Request
                     Relay.Database
   ghc-options: -main-is RunRelay -threaded
-  Default-language: Haskell2010
+  default-language: Haskell2010
 
-  Build-depends:
+  build-depends:
     base,
     websockets,
     text < 2.1.2,
@@ -134,19 +134,22 @@ executable websockets-server
     directory
     
 executable test
-  Hs-source-dirs:   test
-  Main-is:          MainTest.hs
+  hs-source-dirs:   test
+  main-is:          MainTest.hs
   other-modules:    Test
-                    Relay.RelayServer
+                    TestEvents
                     Puppet
                     Configuration
+                    Relay.RelayServer
+                    Relay.Database
+                    Relay.Request
   if arch(wasm32)
     ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
   else 
-    ghc-options: -main-is MainTest.main -threaded
-  Default-language: Haskell2010
+    ghc-options: -main-is MainTest -threaded
+  default-language: Haskell2010
 
-  Build-depends:
+  build-depends:
     base,
     jsaddle,
     jsaddle-wasm,

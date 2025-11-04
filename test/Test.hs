@@ -37,7 +37,6 @@ import Language.Javascript.JSaddle.Warp as Warp
 import qualified Data.Sequence as Seq
 import Control.Concurrent.Async (race)
 import Data.Either
-import Relay.Request
 import qualified Relay.Request as Relay
 import Nostr.Kind
 import Optics
@@ -55,6 +54,45 @@ data TestContext = TestContext {
   sink :: Sink Action,
   hStdOut :: Handle
 }
+
+withDingDong :: 
+ Keys ->
+ [Event] ->
+ Map.Map String String -> 
+ ReaderT TestContext JSM a ->
+ IO ()
+withDingDong keys relayEvents localStorage runTests = do 
+  requestLog <- newMVar Seq.empty
+
+  -- start relay
+  rt <- forkIO $ do 
+      putStrLn "=== Starting Nostr relay ==="
+      mdb <- newMVar $ buildTestDB relayEvents
+      runRelay mdb requestLog defaultRelayPort
+
+  -- start puppeteer
+  pt <- forkIO $ do
+      threadDelay 3000000  -- Wait 3 seconds for jsaddle-warp to start
+      Test.runHeadlessClient True Map.empty
+
+  shutdownTrigger <- newEmptyMVar
+  -- start warp
+  wt <- forkIO $ do 
+      putStrLn "=== Starting Warp ==="
+      Warp.run defaultWarpPort $ do
+        (ostdout, ostderr) <- liftIO mute -- don't need to see all the debug crap
+        -- liftIO $ unmute ostdout ostderr
+        let relays =
+              newActiveRelay . newRelay
+                <$> ["ws://127.0.0.1:" <> T.pack (show defaultRelayPort)]
+        sink <- initAndStart (keys, True) relays startComponentForTest
+        flip runReaderT TestContext {hStdOut=ostdout,..} $ runTests
+        let terminate = liftIO . putMVar shutdownTrigger $ ()
+        terminate
+
+  -- wait for shutdown
+  readMVar shutdownTrigger
+  mapM_ killThread [rt, pt, wt]
 
 -- Function to run the headless client with custom localStorage
 runHeadlessClient :: Bool -> Map.Map String String -> IO ()
@@ -76,73 +114,6 @@ runHeadlessClient suppressOutput localStorageMap = do
     putStrLn "ThreadKilled caught, terminating Puppeteer client."
     terminateProcess ph
 
--- Test group 1
--- test that when triggering some Action, certain requests are sent to the relay/relays
-
--- how to implement it 
--- startComponent but get the sink from it. 
--- sink the actions you want
--- observe the requests within some timeout
-
-withDingDong :: 
- Keys ->
- [Event] ->
- Map.Map String String -> 
- ReaderT TestContext JSM a ->
- IO ()
-withDingDong keys relayEvents localStorage runTests = do 
-  requestLog <- newMVar Seq.empty
-
-  -- start relay
-  rt <- forkIO $ do 
-      putStrLn "=== Starting Nostr relay ==="
-      mdb <- newMVar $ buildTestDB relayEvents
-      runRelay mdb requestLog defaultRelayPort
-
-  -- start puppeteer
-  pt <- forkIO $ do
-      threadDelay 3000000  -- Wait 3 seconds for jsaddle-warp to start
-      -- To request shutdown from this thread: putMVar shutdownSignal ()
-      Test.runHeadlessClient True Map.empty
-
-  shutdownTrigger <- newEmptyMVar
-  -- start warp
-  wt <- forkIO $ do 
-      putStrLn "=== Starting Warp ==="
-      Warp.run defaultWarpPort $ do
-        (ostdout, ostderr) <- liftIO mute -- don't need to see all the debug crap
-        -- liftIO $ unmute ostdout ostderr
-        let relays =
-              newActiveRelay . newRelay
-                <$> ["ws://127.0.0.1:" <> T.pack (show defaultRelayPort)]
-        sink <- initAndStart (keys, True) relays startComponentForTest
-        flip runReaderT TestContext {hStdOut=ostdout,..} $ runTests
-        let terminate = liftIO . putMVar shutdownTrigger $ ()
-        terminate
-
-  readMVar shutdownTrigger
-  mapM_ killThread [rt, pt, wt]
-
-runTest :: IO ()
-runTest = do
-  newKeys <- generateKeys
-  withDingDong newKeys [simpleContacts newKeys] Map.empty $ do
-      TestContext{..} <- ask
-      timeoutTest 
-        "See if metadata and relaylist is requested" 
-        1000000 
-        "Did not find metadata and relaymetadata requests" $ 
-          pollUntilTrue requestLog 100000 $ 
-             any (findRequest (newKeys ^. #xo))
-
-
-    -- let sinkForever = do
-    --       sink GoBack
-    --       liftIO $ putStrLn "Sent GoBack action"
-    --       liftIO $ threadDelay 1000000  -- 1 second delay (in microseconds)
-    --       sinkForever
-    
-    -- sinkForever
 
 -- | Runs a JSM action and returns either its result or an error message if
 -- the action does not complete within the given time.j
@@ -177,7 +148,7 @@ pollUntilTrue mVar interval check = liftIO $
           else threadDelay interval >> poll
   in poll
 
-findRequest xo (Subscribe s) = 
+findRequest xo (Relay.Subscribe s) = 
   let filters = s ^. #filters
   in trace ("Filters are: " <> show filters) $ 
         any (relayListFilter xo) filters 
@@ -201,7 +172,7 @@ timeoutTest testName i e a = do
   runTest TestContext{..} test = do 
     let printLn = hPutStrLn hStdOut
         print = hPutStr hStdOut
-    liftIO $ print $ "Running test " <> testName <> " ........ "
+    liftIO $ print $ testName <> " ........ "
     result <- test 
     liftIO $ case result of 
       Left errorMsg -> print errorMsg 

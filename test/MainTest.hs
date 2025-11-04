@@ -1,34 +1,27 @@
-{-# LANGUAGE CPP                        #-}
--- {-# LANGUAGE ExtendedDefaultRules       #-}
-{-# LANGUAGE ForeignFunctionInterface       #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE RecordWildCards #-}
+
 module MainTest where 
 
-import qualified Test
-import Relay.RelayServer
-import Relay.Database
-
-#ifdef wasi_HOST_OS
-import GHC.Wasm.Prim
-import qualified Language.Javascript.JSaddle.Wasm as Wasm
-#else 
-import Language.Javascript.JSaddle.Types
-import Language.Javascript.JSaddle.Warp as Warp
-import Control.Concurrent (forkIO, threadDelay, newEmptyMVar, putMVar, takeMVar, killThread, ThreadId, readMVar)
-import Control.Exception (bracket_, try, SomeException)
-import System.Process (createProcess, proc, waitForProcess, CreateProcess(..))
-import System.Exit (exitSuccess)
+import Test
+import TestEvents
+import Optics
+import Control.Monad.Reader
 import qualified Data.Map as Map
-#endif
 
-#ifdef wasi_HOST_OS
+import Nostr.Keys
 
-foreign export javascript "hs_start" main :: JSString -> IO ()
-
-main :: JSString -> IO ()
-main e = Wasm.run Test.test
-
-#else   
+runTest :: IO ()
+runTest = do
+  newKeys <- generateKeys
+  withDingDong newKeys [simpleContacts newKeys] Map.empty $ do
+      TestContext{..} <- ask
+      timeoutTest 
+        "See if metadata and relaylist is requested" 
+        1000000 
+        "Did not find metadata and relaymetadata requests" $ 
+          pollUntilTrue requestLog 100000 $ 
+             any (findRequest (newKeys ^. #xo))
+  
 main ::  IO ()
-main = do
-  Test.runTest
-#endif
+main = runTest
