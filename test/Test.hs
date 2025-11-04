@@ -7,24 +7,16 @@
 
 module Test where
 
-import TestEvents
 import Nostr.Event
 import Nostr.Keys
-import Control.Monad.IO.Class (liftIO)
 import Language.Javascript.JSaddle (JSM, runJSM, askJSM)
-import Control.Concurrent (threadDelay, forkIO, newMVar, readMVar, MVar, ThreadId, putMVar, killThread, newEmptyMVar)
-import Data.Text (Text)
+import Control.Concurrent (threadDelay, forkIO, newMVar, readMVar, MVar, putMVar, killThread, newEmptyMVar)
 import qualified Data.Text as T
-import System.Process (createProcess, proc, terminateProcess, ProcessHandle, CreateProcess(..), StdStream(UseHandle))
-import Control.Exception (try, SomeException, catch, throwTo, AsyncException(..))
-import Network.HTTP.Conduit
-import Network.HTTP.Types.Status (status200)
-import qualified Data.ByteString.Lazy.Char8 as L8
-import qualified Data.ByteString.Char8 as C8
+import System.Process (createProcess, proc, terminateProcess, CreateProcess(..), StdStream(UseHandle))
+import Control.Exception (catch, AsyncException(..))
 import System.IO (openFile, stdout, stderr, IOMode(WriteMode), hPutStrLn, hPutStr, Handle)
 import GHC.IO.Handle (hDuplicateTo, hDuplicate, hFlush)
 import System.Directory (setCurrentDirectory)
-import System.Posix.Signals (installHandler, sigKILL, Handler(Catch))
 
 import StoredRelay
 import Nostr.Network
@@ -36,13 +28,8 @@ import Relay.Database
 import Language.Javascript.JSaddle.Warp as Warp
 import qualified Data.Sequence as Seq
 import Control.Concurrent.Async (race)
-import Data.Either
+-- import Data.Either
 import qualified Relay.Request as Relay
-import Nostr.Kind
-import Optics
-import Nostr.Kind (Kind(Metadata))
-import Debug.Trace
-import Nostr.Profile (Profile(about))
 import Data.Either.Extra (mapLeft)
 import Control.Monad.Reader
 import qualified Data.Map as Map
@@ -73,7 +60,7 @@ withDingDong keys relayEvents localStorage runTests = do
   -- start puppeteer
   pt <- forkIO $ do
       threadDelay 3000000  -- Wait 3 seconds for jsaddle-warp to start
-      Test.runHeadlessClient True Map.empty
+      Test.runHeadlessClient localStorage
 
   shutdownTrigger <- newEmptyMVar
   -- start warp
@@ -95,8 +82,8 @@ withDingDong keys relayEvents localStorage runTests = do
   mapM_ killThread [rt, pt, wt]
 
 -- Function to run the headless client with custom localStorage
-runHeadlessClient :: Bool -> Map.Map String String -> IO ()
-runHeadlessClient suppressOutput localStorageMap = do
+runHeadlessClient :: Map.Map String String -> IO ()
+runHeadlessClient localStorageMap = do
   putStrLn "=== Starting Puppeteer ==="
   setCurrentDirectory "test/puppeteer"
   -- Generate client.js with custom localStorage
@@ -113,7 +100,6 @@ runHeadlessClient suppressOutput localStorageMap = do
   waitLoop `catch` \ThreadKilled -> do
     putStrLn "ThreadKilled caught, terminating Puppeteer client."
     terminateProcess ph
-
 
 -- | Runs a JSM action and returns either its result or an error message if
 -- the action does not complete within the given time.j
@@ -147,21 +133,6 @@ pollUntilTrue mVar interval check = liftIO $
           then pure () 
           else threadDelay interval >> poll
   in poll
-
-findRequest xo (Relay.Subscribe s) = 
-  let filters = s ^. #filters
-  in trace ("Filters are: " <> show filters) $ 
-        any (relayListFilter xo) filters 
-         && any (metadataFilter xo) filters
-findRequest _ _ = False
-
-relayListFilter xo f = 
-  f ^. #kinds == Just [RelayList] && 
-  f ^. #authors == Just [xo]
-
-metadataFilter xo f = 
-  f ^. #kinds == Just [Metadata] &&
-  f ^. #authors == Just [xo]
 
 timeoutTest :: String -> Int -> String -> JSM a -> ReaderT TestContext JSM () 
 timeoutTest testName i e a = do
