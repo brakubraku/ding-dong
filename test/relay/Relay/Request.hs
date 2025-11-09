@@ -35,7 +35,7 @@ instance FromJSON Request where
     type' <- parseJSON $ arr V.! 0
     case type' of
       String "EVENT" -> do
-        e <- parseJSON $ arr V.! 2
+        e <- parseJSON $ arr V.! 1
         pure $ SendEvent e
       String "CLOSE" -> do
         subId <- parseJSON $ arr V.! 1
