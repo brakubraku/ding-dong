@@ -43,11 +43,13 @@ import           Nostr.Network
 import           Nostr.Relay
 import           Nostr.RelayPool
 import           Nostr.Response
+import           Nostr.Request
 import           Optics hiding ((#))
 import           Prelude hiding (map)
 import           Data.Time
 import           Nostr.Event
 import           Utils
+import Debug.Trace
 
 data WebSocketAction =
   WebSocketOpen Relay |
@@ -62,14 +64,17 @@ connectRelays nn sendMsg sink = do
   -- connect a relay
   relays <- liftIO $ readMVar (nn ^. #relays)
   now <- liftIO getCurrentTime
-  mapM_ (forkJSM . conRelay (0, now)) relays
+  mapM_ (forkJSM . conRelay (0, now) Nothing) relays
   where
-    conRelay :: (Int, UTCTime) -> Relay -> JSM ()
-    conRelay (recnt, lastReconnect) relay = do
+    conRelay :: (Int, UTCTime) -> Maybe (TChan Request)-> Relay -> JSM ()
+    conRelay (recnt, lastReconnect) mReqCh relay = do
       isReconnectingMVar <- liftIO $ newMVar False
       socket <- createWebSocket (ms (relay ^. #uri)) []
+      rc <- case mReqCh of 
+        Nothing -> liftIO . atomically . dupTChan $ (nn ^. #requestCh)
+        Just ch -> pure ch
       let
-        reconnect =
+        reconnect reqCh =
           do
             isReconnecting <- liftIO $ readMVar isReconnectingMVar
             unless isReconnecting $ do
@@ -81,10 +86,10 @@ connectRelays nn sendMsg sink = do
               case (recnt > 3, diff > 1) of -- TODO: take time into account?
                 (True, _) -> do
                   liftIO . sleep . Seconds $ 5
-                  conRelay (0, now) relay
+                  conRelay (0, now) (Just reqCh) relay
                 (False, _) -> do
                   liftIO . sleep . Seconds $ 0.5
-                  conRelay (recnt + 1, now) relay
+                  conRelay (recnt + 1, now) (Just reqCh) relay
 
       addEventListener (getSocket socket) "open" $ \_ -> do
          do
@@ -140,7 +145,7 @@ connectRelays nn sendMsg sink = do
         clean <- wasClean e
         sink . sendMsg $ (WebSocketClose relay $ decodeError code clean reason)
         liftIO . print $ "closed connection " <> show relay <> " because " <> show code <> show reason <> show clean
-        reconnect
+        reconnect rc
 
       addEventListener (getSocket socket) "error" $ \v -> do
         d' <- v ! ("data" :: MisoString)
@@ -151,9 +156,8 @@ connectRelays nn sendMsg sink = do
           else do
             Just d <- fromJSVal d'
             sink . sendMsg $ (WebSocketError relay d)
-        reconnect
+        reconnect rc
 
-      rc <- liftIO . atomically . dupTChan $ (nn ^. #requestCh)
       let doLoop =
             do
               state <- socketState socket
@@ -166,6 +170,7 @@ connectRelays nn sendMsg sink = do
                   -- ready
                   -- try reading requests to send
                   requests <- liftIO . collectJustM . atomically . tryReadTChan $ rc
+                  forM_ requests $ \r -> traceM ("branko-request: " <> show r)
                   mapM_ (sendJson' socket) requests
                   liftIO . sleep $ Seconds 0.05 -- TODO:
                   doLoop
