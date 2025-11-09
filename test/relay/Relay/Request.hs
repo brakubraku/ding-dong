@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Relay.Request where
 
@@ -15,6 +16,9 @@ import qualified Data.Vector as V
 
 import MyCrypto
 import GHC.Generics
+
+import Data.Time.Format (formatTime, defaultTimeLocale)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 
 type SubscriptionId = MisoString
 
@@ -58,7 +62,25 @@ data Filter = Filter {
   until :: Maybe Int,
   limit :: Maybe Int
 }
- deriving (Eq, Show, Generic)
+ deriving (Eq, Generic)
+
+showMaybeIntTime :: Maybe Int -> String
+showMaybeIntTime Nothing = "Nothing"
+showMaybeIntTime (Just i) = 
+  formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (posixSecondsToUTCTime $ fromIntegral i)
+
+instance Show Filter where
+  show (Filter {..}) =
+    "Filter { " ++
+    "ids = " ++ show ids ++ ", " ++
+    "authors = " ++ show authors ++ ", " ++
+    "kinds = " ++ show kinds ++ ", " ++
+    "etags = " ++ show etags ++ ", " ++
+    "ptags = " ++ show ptags ++ ", " ++
+    "since = " ++ showMaybeIntTime since ++ ", " ++
+    "until = " ++ showMaybeIntTime until ++ ", " ++
+    "limit = " ++ show limit ++
+    " }"
 
 instance FromJSON Filter where 
   parseJSON = withObject "Filter" $ \f -> 

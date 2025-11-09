@@ -18,6 +18,7 @@ where
 import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Time.Clock
+import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.DateTime
 import Data.Maybe (catMaybes)
 import GHC.Exts (Item, fromList)
@@ -31,7 +32,17 @@ data DatedFilter = DatedFilter
     since :: Maybe UTCTime,
     until :: Maybe UTCTime
   }
-  deriving (Eq, Show)
+  deriving (Eq)
+
+instance Show DatedFilter where
+  show (DatedFilter f s u) =
+    "DatedFilter { eventfilter = " ++ show f ++
+    ", since = " ++ showMaybeTime s ++
+    ", until = " ++ showMaybeTime u ++ " }"
+
+showMaybeTime :: Maybe UTCTime -> String
+showMaybeTime Nothing = "Nothing"
+showMaybeTime (Just t) = formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" t
 
 data Filter
   = MetadataFilter [XOnlyPubKey]
