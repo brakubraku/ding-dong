@@ -28,7 +28,6 @@ import Relay.Database
 import Language.Javascript.JSaddle.Warp as Warp
 import qualified Data.Sequence as Seq
 import Control.Concurrent.Async (race)
--- import Data.Either
 import qualified Relay.Request as Relay
 import Data.Either.Extra (mapLeft)
 import Control.Monad.Reader
@@ -67,7 +66,19 @@ withDingDong keys relayEvents localStorage runTests = do
   wt <- forkIO $ do 
       putStrLn "=== Starting Warp ==="
       Warp.run defaultWarpPort $ do
-        (ostdout, ostderr) <- liftIO mute -- don't need to see all the debug crap
+        (ostdout, ostderr) <- liftIO $ do
+          origOut <- hDuplicate stdout
+          origErr <- hDuplicate stderr
+          
+          logHandle <- openFile "test-warp.log" WriteMode
+          hDuplicateTo logHandle stdout
+          hDuplicateTo logHandle stderr
+
+          -- devNull <- openFile "/dev/null" WriteMode
+          -- hDuplicateTo devNull stdout
+          -- hDuplicateTo devNull stderr
+
+          pure (origOut, origErr)
         -- liftIO $ unmute ostdout ostderr
         let relays =
               newActiveRelay . newRelay
@@ -89,9 +100,10 @@ runHeadlessClient localStorageMap = do
   -- Generate client.js with custom localStorage
   _ <- writePuppeteerClient localStorageMap
   devNull <- openFile "/dev/null" WriteMode
+  logHandle <- openFile "test-puppeteer.log" WriteMode
   let cp = (proc "node" ["client.generated.js"]) {
-              std_out = UseHandle devNull,
-              std_err = UseHandle devNull
+              std_out = UseHandle logHandle,
+              std_err = UseHandle logHandle
             }
   (_, _, _, ph) <- createProcess cp
   let waitLoop = do
