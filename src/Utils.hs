@@ -80,3 +80,11 @@ collectJustM action = do
     Just x -> do
       xs <- collectJustM action
       return (x : xs)
+
+-- when you don't want the update loop to care about comparing some field
+newtype AlwaysEqual a = AlwaysEqual { 
+  getAlwaysEqual :: a 
+}
+
+instance Eq (AlwaysEqual a) where 
+  (==) _ _ = True

@@ -637,3 +637,32 @@ body {
     border-bottom: 1px dashed black;
     margin: 10px;
 }
+
+.modal-window {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    margin: 15% auto;
+    padding: 20px;
+    width: 80%;
+    max-width: 500px;
+    text-align: center;
+    position: relative;
+    background: white;
+}
+
+ .close-btn {
+     background: #ff4757;
+     color: white;
+     border: none;
+     padding: 10px 20px;
+     border-radius: 5px;
+     cursor: pointer;
+     margin-top: 10px;
+ }

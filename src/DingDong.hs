@@ -157,7 +157,10 @@ createInitialModel now lastNotifDate relaysList activeRelays me =
         replyDraft = "",
         me = me,
         profileReactionsTo = Map.empty,
-        findEventModel = defaultFindEventModel
+        findEventModel = defaultFindEventModel,
+        showModal = True, 
+        modalView = Just . AlwaysEqual $ 
+                      div_ [] [text "What's up you fucking modal clicker"]
       }
   where
     notifsFilter =
@@ -955,6 +958,8 @@ updateModel nn rl pl action = do
         displayThread :: [(Event, Relay)] -> Action
         displayThread (er:_) = DisplayThread $ fst er
         displayThread [] = UpdateField (#findEventModel % #error) (Just "Event not found on any connected relay!")
+    
+    CloseModal -> put $ model & #showModal .~ False
 
     _ -> noEff model
 
@@ -1135,9 +1140,14 @@ appView m =
           middlePanel m,
           rightPanel m
         ],
-      footerView m
+      footerView m,
+      div_ [class_ $ bool "display-none" "visible" (m ^. #showModal)] [modalView]
     ]
   where
+    modalView = div_ [class_ "modal-window"] 
+                     [div_ [class_ "modal-content"] $ 
+                         maybe [] (singleton . getAlwaysEqual) (m ^. #modalView) ++ 
+                        [div_ [class_ "close-btn", onClick CloseModal] [text "Close Modal"]]]
     howMany = length $ m ^. #feedNew
     newNotesIndicator =
       div_

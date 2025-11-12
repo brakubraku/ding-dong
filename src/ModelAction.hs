@@ -31,9 +31,8 @@ import Optics as O
 import StoredRelay
 import ProfilesLoader.Types
 import Language.Javascript.JSaddle
-import Miso (Sub)
-import Data.Text
-import Utils (Seconds)
+import Miso (Sub, View)
+import Utils (Seconds, AlwaysEqual)
 import Control.Concurrent (MVar)
 import Data.Aeson (FromJSON, ToJSON)
 
@@ -130,6 +129,7 @@ data Action where
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
   LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
   StartSub :: MisoString -> Sub Action -> Action
+  CloseModal :: Action
 
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
@@ -193,7 +193,9 @@ data Model = Model
     postDraft :: MisoString,
     me :: XOnlyPubKey,
     subCancelButtons :: Map MisoString (MVar ()),
-    findEventModel :: FindEventModel
+    findEventModel :: FindEventModel,
+    modalView :: Maybe (AlwaysEqual (View Action)),
+    showModal :: Bool
   }
   deriving (Eq, Generic)
 
