@@ -420,14 +420,23 @@ updateModel nn rl pl action = do
               & pml % #events .~ updatedEvents
           events = fst <$> ecs
           reactions = catMaybes $ Nostr.Reaction.extract <$> events
-       in effectSub updated $ \sink -> do
-            load rl $ (eventId <$> events) ++ enotes
-            load pl $ (pubKey <$> events) ++ eprofs
-            sink $ SubscribeForPagedReactionsTo pml screen reactions
-            sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
-            sink $ SubscribeForReplies $ (eventId <$> events)
-            sink $ SubscribeForEmbeddedReplies enotes screen
-            sink $ SubscribeForEmbedded enotes
+       in do 
+        io_ $ load rl $ (eventId <$> events) ++ enotes
+        io_ $ load pl $ (pubKey <$> events) ++ eprofs
+        subscribeForPagedReactionsTo pml screen reactions
+        subscribeForParentsOf pml screen $ (fst <$> replies)
+        subscribeForReplies (eventId <$> events)
+        subscribeForEmbeddedReplies enotes screen
+        subscribeForEmbedded enotes
+        put updated
+        effectSub updated $ \sink -> do
+            -- TODO: replace all of the below with functions. you don't need Action-s for them at all
+            --       Action-s should be only those occurences which occur asynchronously, nothing else.
+            -- sink $ SubscribeForPagedReactionsTo pml screen reactions
+            -- sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
+            -- sink $ SubscribeForReplies $ (eventId <$> events)
+            -- sink $ SubscribeForEmbeddedReplies enotes screen
+            -- sink $ SubscribeForEmbedded enotes
             sink $ LoadMoreIfNecessary (castOptic pml) $ LoadMoreEvents pml screen
 
     ShowPrevious pml ->
@@ -481,29 +490,9 @@ updateModel nn rl pl action = do
           )
           (pm ^. #filter)
 
-    SubscribeForReplies [] -> noEff model
-    SubscribeForReplies eids ->
-      effectSub model $ subscribeForEventsReplies nn eids FeedPage
-
-    SubscribeForEmbeddedReplies [] _ -> noEff $ model
-    SubscribeForEmbeddedReplies eids page ->
-        startSubscription nn $
-         periodicUntilEOSOnPage
-          page
-          [anytimeF $ LinkedEvents eids]
-          RepliesRecvNoEmbedLoading
-
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
        in noEff $ model & #threads .~ updated
-
-    SubscribeForPagedReactionsTo _ _ [] -> noEff model
-    SubscribeForPagedReactionsTo pml screen res ->
-        startSubscription nn $
-          periodicUntilEOSOnPage
-            screen
-            [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
-            (PagedReactionsToProcess pml screen)
 
     PagedReactionsToProcess pml _ ers ->
       let process (e,_) m =
@@ -511,26 +500,6 @@ updateModel nn rl pl action = do
           updated = Prelude.foldr process model ers
       in
         noEff updated
-
-    SubscribeForParentsOf _ _ [] ->
-      noEff model
-    SubscribeForParentsOf pml screen replies ->
-      let insert e (pmap, pids) =
-           fromMaybe (pmap, pids) $ do
-              parentEid <- findParentEventOf e
-              let eid = e ^. #eventId
-              pure $
-               (pmap & at parentEid %~ -- record which parent goes with which child/children
-                  Just
-                   . fromMaybe (Set.singleton eid)
-                   . fmap (Set.insert eid), parentEid : pids)
-          (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
-      in
-        startSubscription nn $
-          periodicUntilEOSOnPage
-            screen
-            [anytimeF $ EventsWithId pids]
-            (FeedEventParentsProcess pmap pml screen)
 
     FeedEventParentsProcess pmap pml screen rs ->
        let  (notes, enotes, eprofs) = processReceivedEvents rs
@@ -542,22 +511,14 @@ updateModel nn rl pl action = do
                   (\chids -> Prelude.foldr (upd ec) m chids)
                   (pmap ^. at (p ^. #eventId))
             updatedModel = Prelude.foldr update model notes
-       in  effectSub updatedModel $ \sink -> do
+       in do 
+          subscribeForReplies (eventId <$> events)
+          subscribeForEmbeddedReplies enotes screen
+          subscribeForEmbedded enotes
+          effectSub updatedModel $ \sink -> do
             load rl $ (eventId <$> events) ++ enotes
             load pl $ (pubKey <$> events) ++ eprofs
-            sink $ SubscribeForReplies (eventId <$> events)
-            sink $ SubscribeForEmbeddedReplies enotes screen
-            sink $ SubscribeForEmbedded enotes
-
-    SubscribeForEmbedded [] ->
-      noEff model
-    SubscribeForEmbedded eids ->
-        startSubscription nn $
-         allAtEOSOnPage
-          FeedPage
-          [anytimeF $ EventsWithId eids]
-          EmbeddedEventsProcess
-
+    
     EmbeddedEventsProcess es ->
       let process :: (Event, Relay) -> (Model, Set.Set XOnlyPubKey) -> (Model, Set.Set XOnlyPubKey)
           process (e, rel) (m, xos) =
@@ -648,11 +609,14 @@ updateModel nn rl pl action = do
     ThreadEvents _  [] -> noEff $ model
     ThreadEvents screen es ->
       let (updated, enotes, eprofs) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
-       in effectSub (model & #threads .~ updated) $ \sink -> do
+       in do 
+        subscribeForEmbeddedReplies enotes screen
+        subscribeForEmbedded enotes
+        effectSub (model & #threads .~ updated) $ \sink -> do
             load rl $ (eventId . fst <$> es) ++ enotes
             load pl $ (pubKey . fst <$> es) ++ eprofs
-            sink . SubscribeForEmbedded $ enotes
-            sink $ SubscribeForEmbeddedReplies enotes screen
+            -- sink . SubscribeForEmbedded $ enotes
+            -- sink $ SubscribeForEmbeddedReplies enotes screen
 
     UpdateField l v -> noEff $ model & l .~ v
 
@@ -1032,6 +996,52 @@ updateModel nn rl pl action = do
               otherEvts
        in evts
 
+    subscribeForPagedReactionsTo pml screen res =
+      startSubscription nn $
+        periodicUntilEOSOnPage
+          screen
+          [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
+          (PagedReactionsToProcess pml screen)
+
+    subscribeForParentsOf _ _ [] = pure ()
+    subscribeForParentsOf pml screen replies =
+      let insert e (pmap, pids) =
+           fromMaybe (pmap, pids) $ do
+              parentEid <- findParentEventOf e
+              let eid = e ^. #eventId
+              pure $
+               (pmap & at parentEid %~ -- record which parent goes with which child/children
+                  Just
+                   . fromMaybe (Set.singleton eid)
+                   . fmap (Set.insert eid), parentEid : pids)
+          (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
+      in
+        startSubscription nn $
+          periodicUntilEOSOnPage
+            screen
+            [anytimeF $ EventsWithId pids]
+            (FeedEventParentsProcess pmap pml screen)
+
+    subscribeForReplies [] = pure ()
+    subscribeForReplies eids =
+      subscribeForEventsReplies nn eids FeedPage
+
+    subscribeForEmbeddedReplies [] _ = pure ()
+    subscribeForEmbeddedReplies eids page =
+        startSubscription nn $
+         periodicUntilEOSOnPage
+          page
+          [anytimeF $ LinkedEvents eids]
+          RepliesRecvNoEmbedLoading
+
+    subscribeForEmbedded [] = pure ()
+    subscribeForEmbedded eids =
+        startSubscription nn $
+         allAtEOSOnPage
+          FeedPage
+          [anytimeF $ EventsWithId eids]
+          EmbeddedEventsProcess
+
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
     --       This allows to handle Delete events effectivelly.
@@ -1097,13 +1107,13 @@ subscribeForWholeThread nn e page = do
       [anytimeF $ LinkedEvents eids, anytimeF $ EventsWithId (eids ++ replyTo)]
       (ThreadEvents page)
 
-subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Sub Action
-subscribeForEventsReplies _ [] _ = const $ pure ()
+subscribeForEventsReplies :: NostrNetwork -> [EventId] -> Page -> Effect model Action
+subscribeForEventsReplies _ [] _ = pure ()
 subscribeForEventsReplies nn eids page =
   -- TODO: this subscribes for whole threads for all of those eids. What you need is a lighter query which only gets the replies
   --       Seems like there is no protocol support for only subscribe to Reply e tags. You always subscribe for both Reply and Root e tags.
   --  this makes queries which only want replies (and not root replies) to a single event possibly very inefficient
-  subscribe nn $
+  startSubscription nn $
      periodicUntilEOSOnPage
       page
       [anytimeF $ LinkedEvents eids]

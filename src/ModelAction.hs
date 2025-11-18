@@ -60,17 +60,11 @@ data Action where
   DisplayReplyThread :: Event -> Action
   ThreadEvents :: Page -> [(Event, Relay)] -> Action
   ProfileEvents :: [(Event, Relay)] -> Action
-  SubscribeForReplies :: [EventId] -> Action
-  SubscribeForParentsOf :: (Lens' Model PagedEvents) ->
-                             Page ->
-                             [Event] ->
-                             Action
   FeedEventParentsProcess :: (Map.Map EventId (Set.Set EventId)) ->
                                (Lens' Model PagedEvents) ->
                                Page ->
                                [(Event, Relay)] ->
                                Action
-  SubscribeForEmbedded :: [EventId] -> Action
   EmbeddedEventsProcess :: [(Event, Relay)] -> Action
   GoBack :: Action
   UpdateField :: (Lens' Model a) -> a -> Action
@@ -89,7 +83,6 @@ data Action where
                     Action
   LogConsole :: String -> Action
   ScrollTo :: (Maybe Seconds) -> MisoString -> Action
-  SubscribeForEmbeddedReplies :: [EventId] -> Page -> Action
   RepliesRecvNoEmbedLoading :: [(Event, Relay)] -> Action
   Report :: ReportType -> MisoString -> Action
   StartFeedLongRunning :: UTCTime -> [XOnlyPubKey] -> Action
@@ -104,10 +97,6 @@ data Action where
   Reload :: Action
   ListenToNotifs :: Action
   ShowNotifications :: Action
-  SubscribeForPagedReactionsTo :: (Lens' Model PagedEvents) ->
-                                    Page ->
-                                    [ReactionEvent] ->
-                                    Action
   PagedReactionsToProcess :: (Lens' Model PagedEvents) ->
                                Page ->
                                [(Event, Relay)] ->
