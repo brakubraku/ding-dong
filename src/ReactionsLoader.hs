@@ -13,10 +13,11 @@ import Nostr.Response
 import PeriodicLoader
 import qualified Data.Set as S
 import Utils
+import qualified Data.Map as M
 
 createReactionsLoader :: IO (PeriodicLoader EventId (ReactionEvent, Relay))
 createReactionsLoader = do
-  buffers <- newMVar $ LoaderData S.empty S.empty
+  buffers <- newMVar $ LoaderData S.empty M.empty
   let createFilter = \eids -> [DatedFilter (ReactionsTo eids) Nothing Nothing] -- TODO: Nothing Nothing
       extract = extractReactEvent
       period = Seconds 0.2 

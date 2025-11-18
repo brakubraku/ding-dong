@@ -164,6 +164,7 @@ executable test
                     TestEvents
                     Puppet
                     Configuration
+                    UnitTest.PeriodicLoader
   if arch(wasm32)
     ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
   else

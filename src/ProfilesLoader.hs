@@ -21,10 +21,11 @@ import Data.Bifunctor
 import Nostr.Kind (Kind(Metadata, RelayList))
 import ProfilesLoader.Types
 import Data.DateTime (fromSeconds)
+import qualified Data.Map as M
 
 createProfilesLoader :: IO (PeriodicLoader XOnlyPubKey ProfOrRelays)
 createProfilesLoader = do
-  buffers <- newMVar $ LoaderData S.empty S.empty
+  buffers <- newMVar $ LoaderData S.empty M.empty
   let createFilter = \xos -> [DatedFilter (MetadataFilter xos) Nothing Nothing, 
                               DatedFilter (RelayListMetadata xos) Nothing Nothing] -- TODO: Nothing Nothing
       extract = extractProfile
