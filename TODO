@@ -1,0 +1,1 @@
+prune Action-s. Only asynchronous events should be Action-s. Everything else can be a function
