@@ -78,14 +78,11 @@ data Action where
               Page ->
               Action
   ShowPrevious :: (Lens' Model (PagedEventsModel a)) -> Action
-  LoadMoreEvents :: (Lens' Model (PagedEventsModel a)) -> 
-                    Page -> 
-                    Action
   LogConsole :: String -> Action
   ScrollTo :: (Maybe Seconds) -> MisoString -> Action
   RepliesRecvNoEmbedLoading :: [(Event, Relay)] -> Action
   Report :: ReportType -> MisoString -> Action
-  StartFeedLongRunning :: UTCTime -> [XOnlyPubKey] -> Action
+  StartFeedLongRunning :: MVar () -> [XOnlyPubKey] -> Action
   FeedLongRunningProcess :: [(Event, Relay)] -> Action
   ShowNewNotes :: Action
   SendReplyTo :: Event -> (JSM MisoString) -> Action
@@ -116,10 +113,8 @@ data Action where
   DisplayThreadWithId :: EventId -> Action
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
-  LoadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Action -> Action
   StartSub :: MisoString -> Sub Action -> Action
   CloseModal :: Action
-
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving (Eq, Generic, ToJSON, FromJSON)

@@ -72,6 +72,7 @@ import Nostr.Reaction (Reaction)
 
 import Control.Monad.RWS
 import Data.Hashable
+import Debug.Trace
 
 start :: JSM ()
 start = do
@@ -281,7 +282,7 @@ updateModel nn rl pl action = do
       issue $ GoPage FeedPage Nothing
       when isNew $ issue CreateInitialProfile
       -- start displaying notifications
-      issue $ LoadMoreEvents #notifs NotificationsPage
+      loadMoreEvents #notifs NotificationsPage
       issue ListenToNotifs
 
       where
@@ -301,10 +302,41 @@ updateModel nn rl pl action = do
           updated =
             model & #feed .~ defFeedEvntsModel (model ^. #now)
                   & #feed % #filter ?~ pagedFilter
-       in batchEff
-            updated
-            [ pure $ LoadMoreEvents #feed FeedPage
-            , pure $ StartFeedLongRunning (model ^. #now) contacts]
+       in do 
+        put updated 
+        loadMoreEvents #feed FeedPage
+        io $ do 
+          -- create cancel button for the new subscription
+          cb <- liftIO newEmptyMVar
+          pure $ StartFeedLongRunning cb contacts
+
+    StartFeedLongRunning cb contacts -> do
+        model <- get
+        -- cancel the existing subscription
+        io_ . liftIO . mapM_ cancelSub $ (model ^. #subCancelButtons % at "feed-long-running")
+        -- save cancel button for the new subscription
+        put $ model & #subCancelButtons % at "feed-long-running" ?~ cb
+        startSub "periodic-feed-update" $ runLoop cb
+       where
+        doSubscribe cb sink = do
+          now <- liftIO $ addUTCTime (-60) <$> getCurrentTime -- look back 60 seconds
+          subscribe
+            nn
+            ( periodicForever
+                (textNotesWithDeletes (Just now) Nothing contacts)
+                FeedLongRunningProcess
+                (Just cb)
+            )
+            sink
+
+        runLoop cb sink =
+          do
+            doSubscribe cb sink
+            isCancelled <- isSubCanceled cb
+            unless isCancelled $
+              do
+                waitForReconnect $ sink
+                runLoop cb sink
 
     ShowNotifications ->
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
@@ -357,39 +389,6 @@ updateModel nn rl pl action = do
     StartSub name sub -> do
        startSub name sub
 
-    StartFeedLongRunning since contacts -> do
-        compName <- ask
-        withSink $ \sink ->
-         do
-          -- cancel the existing subscription
-          sequence_ $ cancelSub <$> (model ^. #subCancelButtons % at "feed-long-running")
-          -- create cancel button for the new subscription
-          cb <- liftIO newEmptyMVar
-          let updateCBs = O.set (#subCancelButtons % at "feed-long-running") (Just cb)
-          -- save cancel button for the new subscription
---TODO: better to start sub here than doing all the theather of issuing and action to do it
-          sink $ StartSub "periodic-feed-update" (runLoop cb)
-          sink $ UpdateModel updateCBs []
-       where
-        doSubscribe cb sink =
-          subscribe
-            nn
-            ( periodicForever
-                (textNotesWithDeletes (Just since) Nothing contacts)
-                FeedLongRunningProcess
-                (Just cb)
-            )
-            sink
-
-        runLoop cb sink =
-          do
-            doSubscribe cb sink
-            isCancelled <- isSubCanceled cb
-            unless isCancelled $
-              do
-                waitForReconnect $ sink
-                runLoop cb sink
-
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
               m & #fromRelays % at e
@@ -429,15 +428,7 @@ updateModel nn rl pl action = do
         subscribeForEmbeddedReplies enotes screen
         subscribeForEmbedded enotes
         put updated
-        effectSub updated $ \sink -> do
-            -- TODO: replace all of the below with functions. you don't need Action-s for them at all
-            --       Action-s should be only those occurences which occur asynchronously, nothing else.
-            -- sink $ SubscribeForPagedReactionsTo pml screen reactions
-            -- sink $ SubscribeForParentsOf pml screen $ (fst <$> replies)
-            -- sink $ SubscribeForReplies $ (eventId <$> events)
-            -- sink $ SubscribeForEmbeddedReplies enotes screen
-            -- sink $ SubscribeForEmbedded enotes
-            sink $ LoadMoreIfNecessary (castOptic pml) $ LoadMoreEvents pml screen
+        loadMoreIfNecessary (castOptic pml) $ loadMoreEvents pml screen
 
     ShowPrevious pml ->
       let newModel =
@@ -458,37 +449,17 @@ updateModel nn rl pl action = do
     ShowNext pml page ->
       let (Until start) = model ^. pml % #until
           nextPage = model ^. pml % #pg + 1
-          newModel = model & pml % #pg .~ nextPage
+          updated = model & pml % #pg .~ nextPage
                            & pml % #pgStart % at nextPage ?~ start
-          f = newModel ^. pml
+          f = updated ^. pml
           needsSub =
             f ^. #pgSize * f ^. #pg
               + f ^. #pgSize
               > length (f ^. #events)
-       in batchEff
-            newModel
-            [ pure $ ScrollTo Nothing "top-top",
-              pure $ bool NoAction (LoadMoreEvents pml page) needsSub
-            ]
-
-    LoadMoreEvents pml page ->
-      let pm = model ^. pml
-          Until until = pm ^. #until
-          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
-          updated =
-            model & pml % #until .~ Until newSince
-       in do
+       in do 
         put updated
-        maybe
-          (io_ . liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
-          (\filter ->
-              startSubscription nn $
-                  allAtEOSOnPage
-                    page
-                    (filter (Since newSince) (Until until))
-                    (model ^. pml % #process $ page)
-          )
-          (pm ^. #filter)
+        issue $ ScrollTo Nothing "top-top"
+        when needsSub $ loadMoreEvents pml page
 
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -677,9 +648,7 @@ updateModel nn rl pl action = do
       let
         reactions = defProfReactionsModel xo $ model ^. #now
       in
-        batchEff model $
-         pure <$>
-          [LoadMoreEvents (#profileReactions % at xo % non reactions) page]
+        loadMoreEvents (#profileReactions % at xo % non reactions) page
 
     ProcessProfileReactions xo page rs ->
       let events = removeDeletetedAndDuplicates rs
@@ -699,42 +668,17 @@ updateModel nn rl pl action = do
              (fst <$> ers)
       in
         case mPm of
-          Nothing ->
-            effectSub model $ \sink ->
-               do
-                 liftIO . logError $ "Missing PagedNotes model for loading reactions"
-                 sink NoAction
+          Nothing -> io_ . liftIO . logError $ "Missing PagedNotes model for processing profile reactions"
           Just pm -> do
             put $ model & #profileReactions % at xo ?~ pm
+            loadMoreIfNecessary (#profileReactions % ixAt xo) $
+                loadMoreEvents (#profileReactions % at xo % non pm) page
             startSubscription nn $
               allAtEOSOnPage
                 page
                 [DatedFilter (EventsWithId (processed ^.. folded % _1 % #reactionTo)) Nothing Nothing]
                 (\ers -> UpdateModel (updateReactionsTo ers) [])
-            issue $
-              LoadMoreIfNecessary (#profileReactions % ixAt xo) $
-                LoadMoreEvents (#profileReactions % at xo % non pm) page
-
-    LoadMoreIfNecessary pml loadMoreAction ->
-      let
-        updAction =
-          do
-          pm <- model ^? pml
-          let loadMore =
-               length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
-                    && (pm ^. #factor) < 100
-          pure $
-            if loadMore then
-              ((model & pml .~ (pm & #factor %~ (*2))), loadMoreAction)
-            else
-              ((model & pml .~ (pm & #factor .~ 1)), NoAction)
-      in
-        case updAction of
-          Just (updated, act) ->
-            updated <# pure act
-          _ ->
-            batchEff model [(liftIO . logError) "No model in PML!" >> pure NoAction]
-
+ 
     LoadProfile isLoadNotes isLoadFollowing xo page ->
       let
          textNotes = defProfEvntsModel xo $ model ^. #now
@@ -747,8 +691,7 @@ updateModel nn rl pl action = do
               page
               [DatedFilter (MetadataFilter [xo]) Nothing Nothing]
               ReceivedProfiles
-          when isLoadNotes . issue $
-             LoadMoreEvents (#profileEvents % at xo % non textNotes) page
+          when isLoadNotes $ loadMoreEvents (#profileEvents % at xo % non textNotes) page
           when isLoadFollowing . issue $
               LoadContactsOf
                 xo
@@ -1041,6 +984,45 @@ updateModel nn rl pl action = do
           FeedPage
           [anytimeF $ EventsWithId eids]
           EmbeddedEventsProcess
+
+    loadMoreIfNecessary :: AffineTraversal' Model (PagedEventsModel a) -> Effect Model Action -> Effect Model Action
+    loadMoreIfNecessary pml loadMore = do 
+      model <- get
+      case model ^? pml of 
+        Just pm -> 
+          let shouldLoadMore =
+               length (pm ^. #events) < (pm ^. #pgSize) * (pm ^. #pg) + (pm ^. #pgSize)
+                    && (pm ^. #factor) < 100
+          in 
+            if shouldLoadMore 
+            then do
+              put $ model & pml .~ (pm & #factor %~ (*2))
+              loadMore
+            else
+              put $ model & pml .~ (pm & #factor .~ 1)
+        
+        _ -> io_ . liftIO . logError $ "No model in PML!"
+
+    loadMoreEvents :: Lens' Model (PagedEventsModel a) -> Page -> Effect Model Action
+    loadMoreEvents pml page = do
+      model <- get
+      let pm = model ^. pml
+          Until until = pm ^. #until
+          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
+          updated =
+            model & pml % #until .~ Until newSince
+      put updated
+      maybe
+        (io_ . liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
+        (\filter ->
+            startSubscription nn $
+                allAtEOSOnPage
+                  page
+                  (filter (Since newSince) (Until until))
+                  (model ^. pml % #process $ page)
+        )
+        (pm ^. #filter)
+
 
     -- Note: this only works correctly when subscription is AtEOS,
     --       i.e. all events are returned at once, not periodically as they arrive
