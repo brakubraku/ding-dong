@@ -92,7 +92,7 @@ executable nostr-wasm
   if arch(wasm32)
     ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
   else
-    ghc-options: -main-is App.main
+    ghc-options: -main-is App.main -prof -fprof-auto
   build-depends:
       ding-dong
     , aeson
@@ -105,6 +105,10 @@ executable nostr-wasm
     , base
     , mtl
     , optics
+
+  if !arch(wasm32)
+      build-depends:
+        jsaddle-warp
 
 library test-relay
   hs-source-dirs: test/relay/
