@@ -92,7 +92,6 @@ data Action where
   UpdatedRelaysList :: [StoredRelay] -> Action
   RemoveRelay :: MisoString -> Action
   Reload :: Action
-  ListenToNotifs :: Action
   ShowNotifications :: Action
   PagedReactionsToProcess :: (Lens' Model PagedEvents) ->
                                Page ->
@@ -113,7 +112,6 @@ data Action where
   DisplayThreadWithId :: EventId -> Action
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
-  StartSub :: MisoString -> Sub Action -> Action
   CloseModal :: Action
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)

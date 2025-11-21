@@ -283,7 +283,7 @@ updateModel nn rl pl action = do
       when isNew $ issue CreateInitialProfile
       -- start displaying notifications
       loadMoreEvents #notifs NotificationsPage
-      issue ListenToNotifs
+      listenToNotifications
 
       where
         loadContactsFromNostr mine = LoadContactsOf (model ^. #me) (model ^. #page) $ uploadIfNoContacts mine
@@ -352,43 +352,6 @@ updateModel nn rl pl action = do
                  hasNew
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
 
-    ListenToNotifs ->  
-      startSub "listen-to-notifications" runLoop
-       where
-        doSubscribe lnd sink =
-          subscribe
-            nn
-            ( periodicForever
-                [sinceF lnd $ Mentions [model ^. #me]]
-                (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
-                Nothing
-            )
-            sink
-        runLoop sink =
-          do
-            lnd <- loadLastNotifTime
-            doSubscribe lnd sink
-            -- subscription will terminate when any relay returns an error
-            -- and new one will be created instead. you want this with
-            -- "forever running" subscriptions, in this case to constantly check for
-            -- notifications
-            waitForReconnect $ sink
-            runLoop sink
-        processNewNotifs m ers =
-          let update er@(e, r) m =
-                m & #fromRelays % at e
-                     %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
-                & case (e `elem` (fst <$> m ^. #notifsNew),
-                        e `elem` (fst <$> m ^. #notifs % #events),
-                        any (== e ^. #kind) [TextNote, Reaction])
-                  of
-                    (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
-                    _ -> id
-          in Prelude.foldr update m ers
-
-    StartSub name sub -> do
-       startSub name sub
-
     FeedLongRunningProcess ers ->
        let update er@(e, r) m =
               m & #fromRelays % at e
@@ -399,7 +362,7 @@ updateModel nn rl pl action = do
                   of
                     (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
                     _ -> id
-           updated =  Prelude.foldr update model ers
+           updated = Prelude.foldr update model ers
        in noEff updated
 
     ShowNewNotes ->
@@ -1069,6 +1032,45 @@ updateModel nn rl pl action = do
           False ->
             sink . Report SuccessReport $
               "Reconnected to all relays"
+    
+    listenToNotifications :: Effect Model Action
+    listenToNotifications = do
+      model <- get
+      let 
+        doSubscribe lnd sink =
+            subscribe
+              nn
+              ( periodicForever
+                  [sinceF lnd $ Mentions [model ^. #me]]
+                  (\ers -> UpdateModel (\m -> processNewNotifs m ers) [])
+                  Nothing
+              )
+              sink
+
+        runLoop sink = do
+          lnd <- loadLastNotifTime
+          doSubscribe lnd sink
+          -- subscription will terminate when any relay returns an error
+          -- and new one will be created instead. you want this with
+          -- "forever running" subscriptions, in this case to constantly check for
+          -- notifications
+          waitForReconnect $ sink
+          runLoop sink
+
+        processNewNotifs m ers =
+          let update er@(e, r) m =
+                m & #fromRelays % at e
+                    %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
+                & case (e `elem` (fst <$> m ^. #notifsNew),
+                        e `elem` (fst <$> m ^. #notifs % #events),
+                        any (== e ^. #kind) [TextNote, Reaction])
+                  of
+                    (False, False, True) -> #notifsNew %~ (\ers' -> ers' ++ [er])
+                    _ -> id
+          in Prelude.foldr update m ers
+
+      startSub "listen-to-notifications" runLoop
+          
 
 startSubscription :: NostrNetwork -> SubscriptionParams action -> Effect model action
 startSubscription nn sp = startSub filterHash $ subscribe nn sp
