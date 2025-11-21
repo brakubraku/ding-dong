@@ -324,7 +324,7 @@ updateModel nn rl pl action = do
             nn
             ( periodicForever
                 (textNotesWithDeletes (Just now) Nothing contacts)
-                FeedLongRunningProcess
+                (\ers -> UpdateModel (\m -> process m ers) [])
                 (Just cb)
             )
             sink
@@ -337,6 +337,19 @@ updateModel nn rl pl action = do
               do
                 waitForReconnect $ sink
                 runLoop cb sink
+        
+        process = 
+          let 
+            update er@(e, r) m =
+              m & #fromRelays % at e
+                     %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
+                & case (e `elem` (fst <$> m ^. #feedNew),
+                        e `elem` (fst <$> m ^. #feed % #events),
+                        any (== e ^. #kind) [TextNote])
+                  of
+                    (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
+                    _ -> id
+          in Prelude.foldr update
 
     ShowNotifications ->
       let updated = model & #notifs % #pg .~ 0 & #notifsNew .~ []
@@ -351,19 +364,6 @@ updateModel nn rl pl action = do
                  [pure $ PagedEventsProcess True #notifs NotificationsPage new]
                  hasNew
                ++ [pure $ GoPage NotificationsPage Nothing, saveLast]
-
-    FeedLongRunningProcess ers ->
-       let update er@(e, r) m =
-              m & #fromRelays % at e
-                     %~ Just . fromMaybe (Set.singleton r) . fmap (Set.insert r)
-                & case (e `elem` (fst <$> m ^. #feedNew),
-                        e `elem` (fst <$> m ^. #feed % #events),
-                        any (== e ^. #kind) [TextNote])
-                  of
-                    (False, False, True) -> #feedNew %~ (\ers' -> ers' ++ [er])
-                    _ -> id
-           updated = Prelude.foldr update model ers
-       in noEff updated
 
     ShowNewNotes ->
       let updated = model & #feed % #pg .~ 0 & #feedNew .~ []

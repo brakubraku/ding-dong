@@ -83,7 +83,6 @@ data Action where
   RepliesRecvNoEmbedLoading :: [(Event, Relay)] -> Action
   Report :: ReportType -> MisoString -> Action
   StartFeedLongRunning :: MVar () -> [XOnlyPubKey] -> Action
-  FeedLongRunningProcess :: [(Event, Relay)] -> Action
   ShowNewNotes :: Action
   SendReplyTo :: Event -> (JSM MisoString) -> Action
   AllLoaded :: Action
