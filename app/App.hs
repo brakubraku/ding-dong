@@ -9,6 +9,7 @@ import GHC.Wasm.Prim
 import qualified Language.Javascript.JSaddle.Wasm as JSaddle.Wasm
 #else 
 import Language.Javascript.JSaddle.Types
+import Language.Javascript.JSaddle.Warp as Warp
 #endif
 
 import qualified DingDong
@@ -22,5 +23,5 @@ main e = JSaddle.Wasm.run DingDong.start
 
 #else   
 main ::  IO ()
-main = pure ()
+main = Warp.run 8000 DingDong.start
 #endif  
