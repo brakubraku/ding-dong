@@ -111,6 +111,7 @@ data Action where
   DisplayThreadWithId :: EventId -> Action
   LoadProfileReactions :: XOnlyPubKey -> Page -> Action
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
+  ConnectRelays :: Action -> Action
   CloseModal :: Action
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)

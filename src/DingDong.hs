@@ -104,7 +104,7 @@ initAndStart (keys@(Keys _ me _), isNewKey) relaysList startComponent = do
       styles = []
   startComponent 
     Component {
-        initialAction = Just $ StartAction isNewKey,
+        initialAction = Just $ ConnectRelays $ StartAction isNewKey,
         model = initialModel, 
         isCacher = False, 
         cacherNeedsRefresh = const . const $ False,
@@ -242,11 +242,17 @@ updateModel nn rl pl action = do
     Reload ->
       io_ reloadPage
 
-    StartAction isNew -> do
-      io_ $
+    ConnectRelays andThen -> do
+      let startConnections = do
+            liftIO . print $ "Waiting for connections..."
+            relays <- liftIO . readMVar $ nn ^. #relays
         -- wait for connections to relays having been established
-        void . liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 2)
+            unconnected <- liftIO . runInNostr $ RP.waitForActiveConnections (Seconds 5)
+            when (length unconnected == length relays) $ startConnections
 
+      io $ startConnections >> pure andThen
+
+    StartAction isNew -> do
       startSub "reactions-loader" $ startLoader nn rl ReceivedReactions reportErrorAction
       startSub "profiles-loader"  $ startLoader nn pl ReceivedProfiles  reportErrorAction
 
