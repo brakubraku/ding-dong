@@ -199,6 +199,9 @@ subscribe nn SubscriptionParams{..} sink = do
     processMsgs rrs = do
       let processed = extractResults <$> rrs
       liftIO . mapM_ (logError . fromMisoString) $ lefts processed
+      -- WARNING: don't be tempted to only run actOnResults when there are some results. 
+      --          Application logic depends on being called even with empty results.
+      -- TODO: add the above to regression tests
       sink . actOnResults . rights $ processed
 
     addStats :: (Monad a) => Int -> StateT SubData a ()
