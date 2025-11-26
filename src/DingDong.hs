@@ -908,11 +908,13 @@ updateModel nn rl pl action = do
               otherEvts
        in evts
 
-    subscribeForPagedReactionsTo pml screen res =
+    subscribeForPagedReactionsTo pml screen res = do
+      let events = res ^.. folded % #reactionTo
+      unless (null events) $ 
       startSubscription nn $
         periodicUntilEOSOnPage
           screen
-          [anytimeF . EventsWithId $ res ^.. folded % #reactionTo]
+            [anytimeF . EventsWithId $ events]
           (PagedReactionsToProcess pml screen)
 
     subscribeForParentsOf _ _ [] = pure ()
@@ -927,7 +929,7 @@ updateModel nn rl pl action = do
                    . fromMaybe (Set.singleton eid)
                    . fmap (Set.insert eid), parentEid : pids)
           (pmap, pids) = Prelude.foldr insert (Map.empty,[]) replies
-      in
+      in unless (null pids) $
         startSubscription nn $
           periodicUntilEOSOnPage
             screen
@@ -936,10 +938,12 @@ updateModel nn rl pl action = do
 
     subscribeForReplies [] = pure ()
     subscribeForReplies eids =
+      unless (null eids) $
       subscribeForEventsReplies nn eids FeedPage
 
     subscribeForEmbeddedReplies [] _ = pure ()
     subscribeForEmbeddedReplies eids page =
+       unless (null eids) $
         startSubscription nn $
          periodicUntilEOSOnPage
           page
@@ -948,6 +952,7 @@ updateModel nn rl pl action = do
 
     subscribeForEmbedded [] = pure ()
     subscribeForEmbedded eids =
+      unless (null eids) $
         startSubscription nn $
          allAtEOSOnPage
           FeedPage
