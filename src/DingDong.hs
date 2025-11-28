@@ -837,6 +837,23 @@ updateModel nn rl pl action = do
     
     CloseModal -> put $ model & #showModal .~ False
 
+    OpenReactionsModal reactions -> do
+      let updated = model & #modalView ?~ AlwaysEqual 
+            (div_ @Action []
+              [ h2_ [] [text "Reactions"]
+              , ul_ []
+                  ( fmap
+                      (\r ->
+                        displayReaction model r 
+                        --div_ [] [text $ "Reaction: " <> ms (show r)]
+                        -- , div_ [] [text $ "From relays: " <> ms (show (fmap (^. #uri) $ Set.toList rels))]
+                      )
+                      (Set.toList reactions)
+                  )
+              ])
+      io_ . load pl $ reactions ^.. folded % #author
+      put $ updated & #showModal .~ True
+
     _ -> noEff model
 
   where
@@ -1313,7 +1330,7 @@ displayProfilePic mid xo (Just pic) =
     img = imgKeyed_ (Key pic) commonProps
 
 displayProfilePic mid xo _ = 
-  div_
+  img_
     [ class_ "profile-pic",
       onClick $ DisplayProfilePage mid xo
     ]
@@ -1790,11 +1807,12 @@ displayReactions :: Model -> Event -> Maybe (Map.Map Sentiment (Set.Set Reaction
 -- displayReactions Nothing = div_ [class_ "reactions-container"] [text ("")]
 displayReactions m e rcs =
   let howMany = ms . length
+      allReactions = fromMaybe (Set.empty) $ Set.unions . Map.elems <$> rcs
       likeReactions = fromMaybe (Set.empty) $ rcs ^? _Just % at Like % _Just
       isLikedByMe = Set.member (m ^. #me) . Set.fromList $ likeReactions ^.. folded % #author
       likeCls = bool "like-reaction" "like-reaction-liked" $ isLikedByMe
       likeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Like % _Just
-      likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [] [text $ " " <> likeCnt]]
+      likes = [span_ [class_ likeCls, onClick $ SendLike e] [text "♥"], span_ [onClick $ OpenReactionsModal allReactions] [text $ " " <> likeCnt]]
       dislikeCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Dislike % _Just
       dislikes = span_ [class_ "dislike-reaction"] [text $ "🖓 " <> dislikeCnt]
       otherCnt = fromMaybe "" $ howMany <$> rcs ^? _Just % at Nostr.Reaction.Other % _Just
@@ -1802,6 +1820,13 @@ displayReactions m e rcs =
    in div_
         [class_ "reactions-container"]
         $ likes ++ [dislikes, others]
+
+displayReaction m r = 
+  div_ [] [displayProfilePic Nothing xo pic, span_ [] [text $ r ^. #content]]
+  where 
+    xo = r ^. #author
+    profile = fst <$> m ^. #profiles % at xo
+    pic = maybe Nothing (\p -> p ^. #picture) profile
 
 displayFindEventPage :: Model -> View Action
 displayFindEventPage m =

@@ -113,6 +113,7 @@ data Action where
   ProcessProfileReactions :: XOnlyPubKey -> Page -> [(Event,Relay)] -> Action
   ConnectRelays :: Action -> Action
   CloseModal :: Action
+  OpenReactionsModal :: Set.Set Reaction -> Action
 
 data SubState = SubRunning (Map.Map Relay RelaySubState) | SubFinished (Map.Map Relay RelaySubState)
  deriving (Eq, Generic, ToJSON, FromJSON)
