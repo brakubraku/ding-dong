@@ -1334,7 +1334,6 @@ displayProfilePic mid xo _ =
     [ class_ "profile-pic",
       onClick $ DisplayProfilePage mid xo
     ]
-    []
 
 displayNoteContent :: Bool -> Model -> (Event, [Content]) -> View Action
 displayNoteContent withEmbed m (e,content) =
