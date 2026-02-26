@@ -3,3 +3,9 @@ frontend/dist
 frontend/ghc_wasm_jsffi.js
 test/puppeteer/node_modules/
 .github/
+*.hp
+*.aux
+*.prof
+*.log
+test/puppeteer/client.generated.js
+*.gitignore
