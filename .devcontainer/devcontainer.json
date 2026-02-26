@@ -1,0 +1,57 @@
+{
+  "name": "Ding-Dong Dev Container",
+  "dockerFile": "../Dockerfile",
+  "runArgs": ["--security-opt", "label:disable"],
+  
+  // Use docker volume for nix store
+  "mounts": [
+    "source=nix-store,target=/nix,type=volume"
+  ],
+  
+  // Configure VS Code settings for the container
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash",
+            "args": ["-l"]
+          }
+        }
+      },
+      
+      // Install useful VS Code extensions in the container
+      "extensions": [
+        "haskell.haskell",
+        "justusadam.language-haskell",
+        "jnoortheen.nix-ide",
+        "arrterian.nix-env-selector"
+      ]
+    }
+  },
+  
+  // Mount the workspace folder
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  
+  "postCreateCommand": ". ~/.nix-profile/etc/profile.d/nix.sh && nix develop --command wasm32-wasi-cabal update && echo 'Development environment ready!'",
+
+  // Keep container running
+  "overrideCommand": true,
+  
+  // Forward ports if needed (add your application ports here)
+  "forwardPorts": [8080, 3000],
+  
+  // Use 'nix develop' as the default shell
+  "postAttachCommand": "nix develop",
+  
+  // Run as root to avoid permission issues with Nix
+  "remoteUser": "root",
+  
+  // Environment variables
+  "remoteEnv": {
+    "NIX_CONF_DIR": "/home/nixuser/.config/nix",
+    "XDG_RUNTIME_DIR": "/home/nixuser/.runtime"
+  }
+}

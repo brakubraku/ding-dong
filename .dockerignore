@@ -1,0 +1,30 @@
+# Ignore build artifacts
+dist-newstyle/
+.ghc.environment.*
+*.hi
+*.o
+*.dyn_o
+*.dyn_hi
+
+# Ignore generated files
+*.prof
+*.hp
+*.aux
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore dev container
+.devcontainer/
+
+# Ignore Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Ignore node modules if any
+node_modules/
