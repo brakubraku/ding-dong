@@ -21,3 +21,6 @@ source-repository-package
     type: git
     location: https://github.com/amesgen/entropy
     tag: f771c8010f001b87c5ccf9b61703b6912f7062d5
+
+constraints:
+  servant > 0.20 && < 0.22
