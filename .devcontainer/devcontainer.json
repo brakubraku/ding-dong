@@ -43,9 +43,6 @@
   // Forward ports if needed (add your application ports here)
   "forwardPorts": [8080, 3000],
   
-  // Use 'nix develop' as the default shell
-  "postAttachCommand": "nix develop",
-  
   // Run as root to avoid permission issues with Nix
   "remoteUser": "root",
   
