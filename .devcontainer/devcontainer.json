@@ -37,6 +37,8 @@
   
   "postCreateCommand": ". ~/.nix-profile/etc/profile.d/nix.sh && nix develop --command wasm32-wasi-cabal update && echo 'Development environment ready!'",
 
+  "postStartCommand": "nohup python3 -m http.server 8080 --directory /workspace/frontend/dist > /tmp/httpserver.log 2>&1 &",
+
   // Keep container running
   "overrideCommand": true,
   
@@ -52,3 +54,4 @@
     "XDG_RUNTIME_DIR": "/home/nixuser/.runtime"
   }
 }
+
