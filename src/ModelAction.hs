@@ -240,7 +240,7 @@ type Threads = Map.Map RootEid Thread
 
 data PagedEventsModel a = PagedEventsModel
   { filter :: Maybe (Since -> Until -> [DatedFilter]),
-    until :: Until,
+    since :: UTCTime,
     step :: NominalDiffTime,
     factor :: Integer,
     pg :: Int,
@@ -256,12 +256,12 @@ data PagedEventsModel a = PagedEventsModel
   }
   deriving (Generic)
 
-defaultPagedModel :: Until ->
+defaultPagedModel :: UTCTime ->
   (PagedEventsModel a)
-defaultPagedModel until@(Until t) =
+defaultPagedModel t =
   PagedEventsModel
     { filter = Nothing,
-      until = until,
+      since = t,
       step = nominalDay / 6,
       factor = 1,
       pg = 0,
@@ -277,20 +277,20 @@ defaultPagedModel until@(Until t) =
 
 defFeedEvntsModel :: UTCTime -> PagedEventsModel (Event, [Content])
 defFeedEvntsModel now = 
-  defaultPagedModel (Until now)
+  defaultPagedModel now
     & #process .~ PagedEventsProcess False #feed
     & #getEvent .~ fst
 
 defNotifEvntsModel :: UTCTime -> (Since -> Until -> [DatedFilter]) -> PagedEvents
 defNotifEvntsModel lastNotifDate notifsFilter =
-  defaultPagedModel (Until lastNotifDate) 
+  defaultPagedModel lastNotifDate 
     & #filter .~ Just notifsFilter
     & #process .~ PagedEventsProcess False #notifs
     & #getEvent .~ fst
 
 defProfEvntsModel :: XOnlyPubKey -> UTCTime -> PagedEvents
 defProfEvntsModel xo now  = 
-  defaultPagedModel (Until now)
+  defaultPagedModel now
       & #filter .~ Just (pagedFilter [xo])
       & #factor .~ 1
       & #step .~ nominalDay/2
@@ -306,7 +306,7 @@ defProfEvntsModel xo now  =
   
 defProfReactionsModel :: XOnlyPubKey -> UTCTime -> PagedReactions
 defProfReactionsModel xo now  = 
-  defaultPagedModel (Until now)
+  defaultPagedModel now
         & #filter .~ Just (reactionsFilter [xo])
         & #factor .~ 1
         & #step .~ nominalDay/2
@@ -325,7 +325,7 @@ instance Eq (PagedEventsModel a) where
   f1 == f2 = 
          f1 ^. #pg == f2 ^. #pg
       && f1 ^. #factor == f2 ^. #factor
-      && f1 ^. #until == f2 ^. #until
+      && f1 ^. #since == f2 ^. #since
       && f1 ^. #pgSize == f2 ^. #pgSize
       && f1 ^. #step == f2 ^. #step
       && Prelude.length (f1 ^. #events) == Prelude.length (f2 ^. #events)

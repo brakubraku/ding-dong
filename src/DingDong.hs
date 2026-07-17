@@ -159,7 +159,7 @@ createInitialModel now lastNotifDate relaysList activeRelays me =
         me = me,
         profileReactionsTo = Map.empty,
         findEventModel = defaultFindEventModel,
-        showModal = True, 
+        showModal = False, 
         modalView = Just . AlwaysEqual $ 
                       div_ [] [text "What's up you fucking modal clicker"]
       }
@@ -416,19 +416,24 @@ updateModel nn rl pl action = do
          sink NoAction
 
     ShowNext pml page ->
-      let (Until start) = model ^. pml % #until
+      let start = model ^. pml % #since
           nextPage = model ^. pml % #pg + 1
           updated = model & pml % #pg .~ nextPage
-                           & pml % #pgStart % at nextPage ?~ start
-          f = updated ^. pml
-          needsSub =
-            f ^. #pgSize * f ^. #pg
-              + f ^. #pgSize
-              > length (f ^. #events)
+                          & pml % #pgStart % at nextPage ?~ start
+          pm = model ^. pml
+          pageFull =
+            pm ^. #pgSize * pm ^. #pg
+              + pm ^. #pgSize
+              < length (pm ^. #events)
+          nextPageAlreadyLoaded = isJust $ model ^. pml % #pgStart % at nextPage
        in do 
-        put updated
-        issue $ ScrollTo Nothing "top-top"
-        when needsSub $ loadMoreEvents pml page
+        case nextPageAlreadyLoaded of 
+          True -> put $ model & pml % #pg .~ nextPage
+          False -> do 
+            when pageFull $ do 
+              put updated
+              issue $ ScrollTo Nothing "top-top"
+            loadMoreEvents pml page
 
     RepliesRecvNoEmbedLoading es -> -- don't load any embedded events present in the replies
       let (updated, _, _) = Prelude.foldr updateThreads (model ^. #threads, [], []) es
@@ -928,10 +933,10 @@ updateModel nn rl pl action = do
     subscribeForPagedReactionsTo pml screen res = do
       let events = res ^.. folded % #reactionTo
       unless (null events) $ 
-      startSubscription nn $
+       startSubscription nn $
         periodicUntilEOSOnPage
           screen
-            [anytimeF . EventsWithId $ events]
+          [anytimeF . EventsWithId $ events]
           (PagedReactionsToProcess pml screen)
 
     subscribeForParentsOf _ _ [] = pure ()
@@ -998,10 +1003,10 @@ updateModel nn rl pl action = do
     loadMoreEvents pml page = do
       model <- get
       let pm = model ^. pml
-          Until until = pm ^. #until
-          newSince = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
+          until = pm ^. #since
+          since = addUTCTime (pm ^. #step * (-fromInteger (pm ^. #factor))) until
           updated =
-            model & pml % #until .~ Until newSince
+            model & pml % #since .~ since
       put updated
       maybe
         (io_ . liftIO . print $ "[ERROR] EEempty filter in LoadMoreEvents")
@@ -1009,7 +1014,7 @@ updateModel nn rl pl action = do
             startSubscription nn $
                 allAtEOSOnPage
                   page
-                  (filter (Since newSince) (Until until))
+                  (filter (Since since) (Until until))
                   (model ^. pml % #process $ page)
         )
         (pm ^. #filter)
@@ -1258,7 +1263,7 @@ displayPagedContent showIntervals m pml screen content =
     pg = f ^. #pg
     -- notes = take (pageSize * page + pageSize) $ f ^. #events
     events = f ^. #getEvent <$> (take pgSize . drop (pg * pgSize) $ f ^. #events)
-    (Until until) = f ^. #until
+    until = f ^. #since
     since' = f ^. #pgStart % at pg
     since = fromMaybe "" (ms . show <$> since')
     ps = maybe since (ms . show . fromSeconds . O.view #created_at . fst ) $ Prelude.uncons events
@@ -1526,9 +1531,9 @@ middlePanel m =
     displayParticularPage = 
       case m ^. #page of
         FeedPage -> displayFeed m
-        -- Following xo -> displayFollowingView m xo
+        Following xo -> displayFollowingView m xo
         -- Following xo -> component_ dumbComponent []
-        Following xo -> component_ postComponent []
+        -- Following xo -> component_ postComponent []
         ThreadPage e -> displayThread m e
         ProfilePage xo -> displayProfile True m xo
         FindProfilePage -> displayFindProfilePage m
@@ -1568,8 +1573,8 @@ middlePanel m =
 
 rightPanel :: Model -> View Action
 rightPanel m = 
-  -- div_ [class_ "right-panel"] [ul_ [] reports]
-  div_ [class_ "right-panel"] [component_ authorInfoComponent []]
+  div_ [class_ "right-panel"] [ul_ [] reports]
+  -- div_ [class_ "right-panel"] [component_ authorInfoComponent []]
   where
     reports =
       ( \(i, reportType, report) ->
